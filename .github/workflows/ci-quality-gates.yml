@@ -1,0 +1,46 @@
+name: CI Quality Gates
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  build-test-quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Transformations.sln
+
+      - name: Build
+        run: dotnet build Transformations.sln --configuration Release --no-restore
+
+      - name: Test with coverage
+        run: dotnet test Transformations.Tests/Transformations.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage"
+
+      - name: Verify coverage thresholds
+        shell: pwsh
+        run: |
+          $report = Get-ChildItem -Path . -Filter coverage.cobertura.xml -Recurse | Select-Object -First 1
+          if (-not $report) { throw "No cobertura report found." }
+          ./tools/verify-coverage-thresholds.ps1 -CoverageReportPath $report.FullName -LineThreshold 65 -BranchThreshold 55
+
+      - name: Verify critical public methods have tests
+        shell: pwsh
+        run: ./tools/verify-public-method-tests.ps1
+
+      - name: Publish XML docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xmldocs
+          path: |
+            **/bin/Release/net10.0/*.xml

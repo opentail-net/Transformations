@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <LangVersion>latestMajor</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations.Data</AssemblyName><RootNamespace>Transformations</RootNamespace><PackageId>Transformations.Data</PackageId><Version>2.0.0</Version><PackageVersion>2.0.0</PackageVersion><Description>Data-focused transformation helpers for DataRow, DataReader, SQL, and table/list conversion.</Description><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><PackageTags>transformations;extensions;data;sql;datatable;datareader;csv</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/dreche4k/transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://opentail.net</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Transformations\CollectionConvertor.cs" Link="CollectionConvertor.cs" />
+    <Compile Include="..\Transformations\CsvHelper.cs" Link="CsvHelper.cs" />
+    <Compile Include="..\Transformations\DataReaderHelper.cs" Link="DataReaderHelper.cs" />
+    <Compile Include="..\Transformations\DataRowConverter.cs" Link="DataRowConverter.cs" />
+    <Compile Include="..\Transformations\SqlHelper.cs" Link="SqlHelper.cs" />
+    <Compile Include="..\Transformations\StringHelper.SqlClient.cs" Link="StringHelper.SqlClient.cs" />
+    <Compile Include="..\Transformations\TransformationsHelper.SqlClient.cs" Link="TransformationsHelper.SqlClient.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.0" />
+  </ItemGroup>
+</Project>
+

@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <LangVersion>latestMajor</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations.EntityFramework</AssemblyName><RootNamespace>Transformations.EntityFramework</RootNamespace><PackageId>Transformations.EntityFramework</PackageId><Version>2.0.0</Version><PackageVersion>2.0.0</PackageVersion><Description>EF Core resilience extensions â€” async SaveChanges retry, ChangeTracker audit logging, and IQueryable CSV export, powered by Transformations.Core.</Description><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><PackageTags>transformations;entityframework;efcore;resilience;retry;audit;changelog;csv</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/dreche4k/transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://opentail.net</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.7" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+</Project>
+

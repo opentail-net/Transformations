@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <LangVersion>latestMajor</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations.Core</AssemblyName><RootNamespace>Transformations</RootNamespace><PackageId>Transformations.Core</PackageId><Version>2.0.0</Version><PackageVersion>2.0.0</PackageVersion><Description>Core transformation helpers for strings, collections, conversion, dates, and files.</Description><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><PackageTags>transformations;extensions;utilities;core;strings;collections;diagnostics;batching</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/dreche4k/transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://opentail.net</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Transformations\Properties\Resources.Designer.cs" Link="Properties\Resources.Designer.cs" />
+    <Compile Include="..\Transformations\AdditionalStringHelper.cs" Link="AdditionalStringHelper.cs" />
+    <Compile Include="..\Transformations\ArrayHelper.cs" Link="ArrayHelper.cs" />
+    <Compile Include="..\Transformations\BasicTypeConverter.cs" Link="BasicTypeConverter.cs" />
+    <Compile Include="..\Transformations\BatchTransformations.cs" Link="BatchTransformations.cs" />
+    <Compile Include="..\Transformations\BitConvertor.cs" Link="BitConvertor.cs" />
+    <Compile Include="..\Transformations\CollectionHelper.cs" Link="CollectionHelper.cs" />
+    <Compile Include="..\Transformations\ComparableHelper.cs" Link="ComparableHelper.cs" />
+    <Compile Include="..\Transformations\DateHelper.cs" Link="DateHelper.cs" />
+    <Compile Include="..\Transformations\DirectoryInfoHelper.cs" Link="DirectoryInfoHelper.cs" />
+    <Compile Include="..\Transformations\DiagnosticExtensions.cs" Link="DiagnosticExtensions.cs" />
+    <Compile Include="..\Transformations\EnumHelper.cs" Link="EnumHelper.cs" />
+    <Compile Include="..\Transformations\ExtensionHelper.cs" Link="ExtensionHelper.cs" />
+    <Compile Include="..\Transformations\FileInfoHelper.cs" Link="FileInfoHelper.cs" />
+    <Compile Include="..\Transformations\Helper.cs" Link="Helper.cs" />
+    <Compile Include="..\Transformations\HolidayHelper.cs" Link="HolidayHelper.cs" />
+    <Compile Include="..\Transformations\Inspect.cs" Link="Inspect.cs" />
+    <Compile Include="..\Transformations\DiagnosticsProbe.cs" Link="DiagnosticsProbe.cs" />
+    <Compile Include="..\Transformations\MiscHelper.cs" Link="MiscHelper.cs" />
+    <Compile Include="..\Transformations\MeasurementExtensions.cs" Link="MeasurementExtensions.cs" />
+    <Compile Include="..\Transformations\RegExHelper.cs" Link="RegExHelper.cs" />
+    <Compile Include="..\Transformations\RangeSemanticsHelper.cs" Link="RangeSemanticsHelper.cs" />
+    <Compile Include="..\Transformations\ObjectDelta.cs" Link="ObjectDelta.cs" />
+    <Compile Include="..\Transformations\Resilience.cs" Link="Resilience.cs" />
+    <Compile Include="..\Transformations\SemanticStringComparer.cs" Link="SemanticStringComparer.cs" />
+    <Compile Include="..\Transformations\StopwatchHelper.cs" Link="StopwatchHelper.cs" />
+    <Compile Include="..\Transformations\StreamHelper.cs" Link="StreamHelper.cs" />
+    <Compile Include="..\Transformations\StreamExtensions.cs" Link="StreamExtensions.cs" />
+    <Compile Include="..\Transformations\StringHelper.cs" Link="StringHelper.cs" />
+    <Compile Include="..\Transformations\TimeSpanHelper.cs" Link="TimeSpanHelper.cs" />
+    <Compile Include="..\Transformations\Transform.cs" Link="Transform.cs" />
+    <Compile Include="..\Transformations\TransformationsHelper.cs" Link="TransformationsHelper.cs" />
+    <Compile Include="..\Transformations\WebAndFileExtensions.cs" Link="WebAndFileExtensions.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\Transformations\Properties\Resources.resx" Link="Properties\Resources.resx" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+</Project>
+
