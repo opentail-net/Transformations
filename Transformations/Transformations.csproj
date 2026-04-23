@@ -1,8 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
-    <LangVersion>latestMajor</LangVersion>
-    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations</AssemblyName><RootNamespace>Transformations</RootNamespace><PackageId>Transformations</PackageId><Version>2.0.0</Version><PackageVersion>2.0.0</PackageVersion><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><Description>Modern .NET transformation helpers for conversion, strings, collections, data, web, diagnostics, batching, and resilience.</Description><PackageTags>transformations;extensions;utilities;dotnet;batching;sanitization;diagnostics;resilience</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/dreche4k/transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://opentail.net</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+	<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+	<IsPackable>true</IsPackable>
+	<AssemblyName>Transformations</AssemblyName>
+	<RootNamespace>Transformations</RootNamespace>
+	<PackageId>Transformations</PackageId>
+	<Description>Modern .NET transformation helpers for conversion, strings, collections, data, web, diagnostics, batching, and resilience.</Description>
+	<PackageTags>transformations;extensions;utilities;dotnet;batching;sanitization;diagnostics;resilience</PackageTags>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.0" />
@@ -26,4 +35,5 @@
     </ItemGroup>
   </Target>
 </Project>
+
 

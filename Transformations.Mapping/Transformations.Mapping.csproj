@@ -1,8 +1,20 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
-    <LangVersion>latestMajor</LangVersion>
-    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations.Mapping</AssemblyName><RootNamespace>Transformations.Mapping</RootNamespace><PackageId>Transformations.Mapping</PackageId><Version>2.0.0</Version><PackageVersion>2.0.0</PackageVersion><Description>Zero-reflection object mapper powered by source generation and Transformations.Core type conversion.</Description><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><PackageTags>transformations;mapper;sourcegenerator;aot;zero-reflection;codegen</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/dreche4k/transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://opentail.net</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+	<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+	<IsPackable>true</IsPackable>
+	<AssemblyName>Transformations.Mapping</AssemblyName>
+	<RootNamespace>Transformations.Mapping</RootNamespace>
+	<PackageId>Transformations.Mapping</PackageId>
+	<Description>Zero-reflection object mapper powered by source generation and Transformations.Core type conversion.</Description>
+	<PackageTags>transformations;mapper;sourcegenerator;aot;zero-reflection;codegen</PackageTags>
+	<RepositoryUrl>https://github.com/opentail-net/Transformations</RepositoryUrl>
+	<RepositoryType>git</RepositoryType>
+	<PackageProjectUrl>https://github.com/opentail-net/Transformations</PackageProjectUrl>
+	<PackageReadmeFile>README.md</PackageReadmeFile>  
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
   </ItemGroup>
@@ -19,4 +31,5 @@
     </ItemGroup>
   </Target>
 </Project>
+
 

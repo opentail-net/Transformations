@@ -1,8 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
-    <LangVersion>latestMajor</LangVersion>
-    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations.Core</AssemblyName><RootNamespace>Transformations</RootNamespace><PackageId>Transformations.Core</PackageId><Version>2.0.0</Version><PackageVersion>2.0.0</PackageVersion><Description>Core transformation helpers for strings, collections, conversion, dates, and files.</Description><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><PackageTags>transformations;extensions;utilities;core;strings;collections;diagnostics;batching</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/dreche4k/transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://opentail.net</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+	<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+	<IsPackable>true</IsPackable>
+	<AssemblyName>Transformations.Core</AssemblyName>
+	<RootNamespace>Transformations</RootNamespace>
+	<PackageId>Transformations.Core</PackageId>
+	<Description>Core transformation helpers for strings, collections, conversion, dates, and files.</Description>
+	<PackageTags>transformations;extensions;utilities;core;strings;collections;diagnostics;batching</PackageTags>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Transformations\Properties\Resources.Designer.cs" Link="Properties\Resources.Designer.cs" />
     <Compile Include="..\Transformations\AdditionalStringHelper.cs" Link="AdditionalStringHelper.cs" />
@@ -45,4 +54,5 @@
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 </Project>
+
 

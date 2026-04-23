@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2012
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11527.330
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations", "Transformations\Transformations.csproj", "{570785EB-B08E-41FC-99AF-89E15E738BD2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Tests", "Transformations.Tests\Transformations.Tests.csproj", "{B56F103F-A52F-4D29-A1A9-418601660D60}"
@@ -28,6 +30,18 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Mapping", "Transformations.Mapping\Transformations.Mapping.csproj", "{F964A6C6-95F6-47ED-8AF8-F6CAB2DF5F26}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Mapping.Tests", "Transformations.Mapping.Tests\Transformations.Mapping.Tests.csproj", "{61873A05-148D-4EE5-BC27-B13F21616977}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{80229944-E54C-4173-88A5-4DF441693E95}"
+	ProjectSection(SolutionItems) = preProject
+		build_rich_readmes.ps1 = build_rich_readmes.ps1
+		Directory.Build.props = Directory.Build.props
+		generate_readmes.ps1 = generate_readmes.ps1
+		README.md = README.md
+		repack-nuget.ps1 = repack-nuget.ps1
+		TRANSFORMATIONS_README_TEMPLATE.md = TRANSFORMATIONS_README_TEMPLATE.md
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Text", "Transformations.TextExtractor\Transformations.Text.csproj", "{1B64F8EE-E961-4075-B18C-931159A0266E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -207,8 +221,23 @@ Global
 		{61873A05-148D-4EE5-BC27-B13F21616977}.Release|x64.Build.0 = Release|Any CPU
 		{61873A05-148D-4EE5-BC27-B13F21616977}.Release|x86.ActiveCfg = Release|Any CPU
 		{61873A05-148D-4EE5-BC27-B13F21616977}.Release|x86.Build.0 = Release|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Debug|x64.Build.0 = Debug|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Debug|x86.Build.0 = Debug|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|x64.ActiveCfg = Release|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|x64.Build.0 = Release|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|x86.ActiveCfg = Release|Any CPU
+		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {13E52504-5DFC-40C1-96D6-19D81A5F3C4B}
 	EndGlobalSection
 EndGlobal

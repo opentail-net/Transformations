@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <LangVersion>latestMajor</LangVersion>
-    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations.Dapper</AssemblyName><RootNamespace>Transformations.Dapper</RootNamespace><PackageId>Transformations.Dapper</PackageId><Version>2.0.0</Version><PackageVersion>2.0.0</PackageVersion><Description>Dapper resilience extensions â€” async retry with transient SQL fault detection, powered by Transformations.Core.</Description><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><PackageTags>transformations;dapper;resilience;retry;sql;transient;extensions</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/dreche4k/transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://opentail.net</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
+    <ImplicitUsings>disable</ImplicitUsings>    <GenerateAssemblyInfo>false</GenerateAssemblyInfo><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><IsPackable>true</IsPackable><AssemblyName>Transformations.Dapper</AssemblyName><RootNamespace>Transformations.Dapper</RootNamespace><PackageId>Transformations.Dapper</PackageId><Version>2.0.1</Version><PackageVersion>2.0.1</PackageVersion><Description>Dapper resilience extensions â€” async retry with transient SQL fault detection, powered by Transformations.Core.</Description><Authors>opentail.net, Dmitri Rechetilov</Authors><Company>opentail.net</Company><Copyright>Copyright © opentail.net</Copyright><PackageTags>transformations;dapper;resilience;retry;sql;transient;extensions</PackageTags><PackageLicenseExpression>MIT</PackageLicenseExpression><RepositoryUrl>https://github.com/opentail-net/Transformations</RepositoryUrl><RepositoryType>git</RepositoryType><PackageProjectUrl>https://github.com/opentail-net/Transformations</PackageProjectUrl><PackageReadmeFile>README.md</PackageReadmeFile>  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
   </ItemGroup>
@@ -14,4 +14,5 @@
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 </Project>
+
 

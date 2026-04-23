@@ -1,28 +1,42 @@
 <Project>
   <PropertyGroup>
+
+	<Version>2.0.2</Version>
+	<PackageVersion>$(Version)</PackageVersion>  
+	<LangVersion>latestMajor</LangVersion>
+    <Authors>opentail.net, Dmitri Rechetilov</Authors>
+	<Company>opentail.net</Company>
+	<Copyright>Copyright © opentail.net</Copyright>
+	<PackageLicenseExpression>MIT</PackageLicenseExpression>
+	
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-
+    <DebugType>embedded</DebugType>
     <Deterministic>true</Deterministic>
     <DeterministicSourcePaths>true</DeterministicSourcePaths>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-
+    <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release'">true</ContinuousIntegrationBuild>
+	<RepositoryUrl>https://github.com/opentail-net/Transformations</RepositoryUrl>
+	<RepositoryType>git</RepositoryType>
+	<PackageProjectUrl>https://github.com/opentail-net/Transformations</PackageProjectUrl>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::IsOSPlatform('Windows'))">7.0</SupportedOSPlatformVersion>
+	
     <!-- Deprecation rollout plan
-         vNext (2.0.0): warning-only (default)
+         vNext (2.0.1): warning-only (default)
          vNext+1: set DeprecationErrorLevel=true to escalate CS0618/CS0612
          vNext+2: remove obsolete APIs -->
     <DeprecationErrorLevel>false</DeprecationErrorLevel>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+  <PropertyGroup>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <IncludeSymbols Condition="'$(DebugType)' != 'embedded'">true</IncludeSymbols>
+    <IncludeSymbols Condition="'$(DebugType)' == 'embedded'">false</IncludeSymbols>
+    <SymbolPackageFormat Condition="'$(IncludeSymbols)' == 'true'">snupkg</SymbolPackageFormat>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 

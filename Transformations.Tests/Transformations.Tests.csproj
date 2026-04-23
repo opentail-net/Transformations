@@ -13,11 +13,12 @@
     <PackageReference Include="NUnit" Version="4.3.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="NUnit.Analyzers" Version="4.4.0" />
-    <PackageReference Include="FluentAssertions" Version="8.9.0" />
+	<PackageReference Include="FluentAssertions" Version="8.9.0" />
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Transformations.TextExtractor\Transformations.Text.csproj" />
     <ProjectReference Include="..\Transformations\Transformations.csproj" />
   </ItemGroup>
 

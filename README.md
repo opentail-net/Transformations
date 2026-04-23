@@ -1,12 +1,14 @@
-# Transformations
-
-The .NET extension method library that kills boilerplate. Type conversions, string manipulation, collection utilities, date helpers, HTML sanitization, batch processing, diagnostics, resilience — all as clean one-liners on the types you already use.
+# **Transformations**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
 [![NUnit](https://img.shields.io/badge/Tests-NUnit-green)]()
 
-> **Built by [opentail.net](https://opentail.net)** — Dmitri Rechetilov
+Transformations is a .NET extension method library designed to reduce boilerplate across your projects. It provides safe type conversions, context-aware string manipulation, and resilient data access through clean one-liners on the types you already use.
+
+Initially developed to handle the edge cases of tricky automapping conversions, the library has since expanded into a comprehensive utility suite for strings, collections, date arithmetic, and database resilience.
+
+**Built by [opentail.net](https://opentail.net/)** — Dmitri Rechetilov
 
 ---
 
@@ -15,6 +17,85 @@ The .NET extension method library that kills boilerplate. Type conversions, stri
 Every .NET project ends up writing the same utility code. Safe type conversion with fallbacks. String truncation that doesn't break HTML entities. Date arithmetic that handles edge cases. Retry loops with backoff. Pluralization. CSV export. DataRow extraction that doesn't throw on `DBNull`.
 
 This library is that code — battle-tested, documented, and shipped as a single `using Transformations;` import.
+
+---
+
+## **Modular Packages**
+
+You can install the full library or pick specific slices to keep your dependency graph lean.
+
+| Package | Purpose | Primary Dependencies |
+| :---- | :---- | :---- |
+| **Transformations** | The all-in-one package | ASP.NET Core, SqlClient |
+| **Transformations.Core** | Strings, collections, conversion, dates, resilience | SqlClient |
+| **Transformations.Data** | DataRow/DataReader extraction, SQL parameters, CSV | Core |
+| **Transformations.Web** | HTTP, session, cookies, query strings, config | Core \+ ASP.NET Core |
+| **Transformations.Dapper** | Resilient Dapper queries with fault detection | Core \+ Dapper |
+| **Transformations.EntityFramework** | Resilient SaveChanges, Audit logging, CSV export | Core \+ EF Core |
+| **Transformations.Mapping** | Zero-reflection compile-time object mapper | Core \+ Source Generator |
+
+---
+
+## **Core Capabilities**
+
+### **Safe Type Conversion**
+
+Moves between types with explicit fallbacks rather than throwing exceptions.
+
+C\#  
+string input \= "42";  
+int value \= input.ConvertTo\<int\>();          // 42  
+int safe  \= "nope".ConvertTo\<int\>(-1);       // \-1  
+bool active \= "yes".ConvertTo\<bool\>();       // Handles common truthy strings
+
+### **Context-Aware Strings**
+
+Handles text based on its structure, such as HTML or grammatical rules.
+
+C\#  
+// HTML-aware truncation that respects tags and entities  
+string html \= "\<div\>Hello \<b\>World\</b\>\</div\>";  
+var teaser \= html.TruncateSemantic(10);      // "\<div\>Hello...\</div\>"
+
+// Pluralization for irregular nouns  
+"child".Pluralize(3);                        // "children"  
+"person".Pluralize(5);                       // "people"
+
+// Strips scripts and unsafe tags  
+var clean \= rawHtml.SanitizeHtml(HtmlSanitizationPolicy.PermitLinks);
+
+### **Infrastructure Resilience**
+
+Built-in logic for transient SQL fault detection and exponential backoff.
+
+C\#  
+// Simple retry with exponential backoff  
+int result \= Resilience.Retry(() \=\> CallService(), retryCount: 3);
+
+// SQL transient fault detection for deadlocks and timeouts  
+catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex)) {  
+    // Safely retry or log  
+}
+
+---
+
+## **Compile-Time Mapping (Transformations.Mapping)**
+
+The library’s original core, this module uses C\# Source Generators to create mapping code at compile time. This avoids the runtime performance cost of reflection and ensures type safety during the build.
+
+C\#  
+\[MapTo\<UserDto\>\]  
+public partial class User  
+{  
+    public int Id { get; set; }  
+    public string Name { get; set; }  
+      
+    \[IgnoreMap\]  
+    public string InternalToken { get; set; }  
+}
+
+// Usage: user.ToUserDto() is generated at compile time
+
 
 ---
 
@@ -456,4 +537,9 @@ GitHub Actions workflow: `.github/workflows/ci-quality-gates.yml`
 
 ## License
 
-[MIT](https://opensource.org/licenses/MIT) — Copyright © 2025 [opentail.net](https://opentail.net)
+[MIT](https://opensource.org/licenses/MIT) — Copyright © 2026 [opentail.net](https://opentail.net)
+
+---
+
+*Built for .NET professionals by [opentail.net](https://opentail.net/)*
+
