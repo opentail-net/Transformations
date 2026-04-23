@@ -1,0 +1,168 @@
+# Transformations.Text
+
+A comprehensive text extraction and transformation library for .NET that supports multiple document and structured data formats.
+
+## Overview
+
+`Transformations.Text` provides unified text extraction capabilities across various file formats including Office documents, structured data formats, and more. Extract and normalize text from diverse sources with a simple, consistent API.
+
+## Features
+
+- **Multi-Format Text Extraction**: Extract text from multiple document types with a single unified interface
+- **Text Normalization**: Automatically normalizes line endings and whitespace across all formats
+- **Structured Data Support**: Parse and transform XML, YAML, JSON, and CSV data
+- **Office Document Support**: Extract text from Word documents (.docx), Excel files, and more
+- **Email Support**: Extract text from email messages (.eml, .msg)
+- **PDF Support**: Extract text from PDF documents
+- **HTML Support**: Parse and extract text from HTML documents
+- **Markdown Support**: Handle Markdown formatted content
+- **Consistent Results**: Returns structured results with success status and extracted content
+
+## Supported Formats
+
+### Document Formats
+- **Word** (.docx) - Extract text while preserving paragraph separation
+- **Excel** (.xlsx, .xls) - Extract text from cells and worksheets
+- **PDF** - Extract text content from PDF files
+- **HTML** - Parse HTML and extract text content
+- **Markdown** - Process Markdown formatted text
+
+### Structured Data Formats
+- **XML** - Parse and extract data from XML documents
+- **YAML** - Parse YAML configuration and data files
+- **JSON** - Extract and transform JSON data
+- **CSV** - Parse and extract CSV data
+
+### Email Formats
+- **Email Messages** (.eml, .msg) - Extract text from MIME/MimeKit formats
+
+### Plain Text
+- **Text Files** (.txt) - Normalize and process plain text
+
+## Installation
+
+```
+dotnet add package Transformations.Text
+```
+
+Or via NuGet Package Manager:
+
+```
+Install-Package Transformations.Text
+```
+
+## Supported .NET Versions
+
+- .NET 10.0
+- .NET 9.0
+
+## Quick Start
+
+```
+using Transformations.Text;
+
+// Create an instance of TextExtractor
+var extractor = new TextExtractor();
+
+// Extract text from a file
+byte[] fileBytes = File.ReadAllBytes("document.docx");
+var result = extractor.GetText("document.docx", fileBytes);
+
+if (result.IsSuccess)
+{
+    Console.WriteLine("Extracted Text:");
+    Console.WriteLine(result.Text);
+}
+else
+{
+    Console.WriteLine($"Extraction failed: {result.ErrorMessage}");
+}
+```
+
+## Usage Examples
+
+### Extract from Word Document
+```
+var extractor = new TextExtractor();
+byte[] docxBytes = File.ReadAllBytes("report.docx");
+var result = extractor.GetText("report.docx", docxBytes);
+
+if (result.IsSuccess)
+{
+    var paragraphs = result.Text.Split(Environment.NewLine);
+    // Process paragraphs...
+}
+```
+
+### Extract and Normalize Plain Text
+```
+var extractor = new TextExtractor();
+byte[] txtBytes = File.ReadAllBytes("notes.txt");
+var result = extractor.GetText("notes.txt", txtBytes);
+
+// Automatically normalizes line endings and whitespace
+var normalizedText = result.Text;
+```
+
+### Parse Structured Data
+```
+var extractor = new TextExtractor();
+
+// Extract from XML
+byte[] xmlBytes = File.ReadAllBytes("data.xml");
+var xmlResult = extractor.GetText("data.xml", xmlBytes);
+
+// Extract from YAML
+byte[] yamlBytes = File.ReadAllBytes("config.yaml");
+var yamlResult = extractor.GetText("config.yaml", yamlBytes);
+
+// Extract from JSON
+byte[] jsonBytes = File.ReadAllBytes("data.json");
+var jsonResult = extractor.GetText("data.json", jsonBytes);
+```
+
+## API Reference
+
+### TextExtractor.GetText(fileName, fileBytes)
+
+Extracts text from the provided file content based on the file extension.
+
+**Parameters:**
+- `fileName` (string): Name of the file including extension (used to determine format)
+- `fileBytes` (byte[]): Raw file content as bytes
+
+**Returns:** `TextExtractionResult`
+- `IsSuccess` (bool): Indicates whether extraction was successful
+- `Text` (string): Extracted and normalized text content
+- `ErrorMessage` (string): Error details if extraction failed
+
+## Features & Behavior
+
+- **Automatic Normalization**: Line endings are normalized to the current environment's standard (Environment.NewLine)
+- **Whitespace Handling**: Leading and trailing whitespace is trimmed; internal spacing is preserved
+- **Paragraph Preservation**: Multi-line spacing and paragraph structure is maintained where applicable
+- **Error Handling**: Graceful error handling with detailed error messages
+
+## Dependencies
+
+- **CsvHelper** - CSV data parsing
+- **DocumentFormat.OpenXml** - Office Open XML support (.docx, .xlsx)
+- **ExcelDataReader** - Excel file reading
+- **HtmlAgilityPack** - HTML parsing
+- **Markdig** - Markdown processing
+- **MimeKit** - Email message handling
+- **PdfPig** - PDF text extraction
+- **YamlDotNet** - YAML parsing
+- **System.Text.Json** - JSON handling
+
+## License
+
+This project is part of the Transformations suite. See the main repository for licensing information.
+
+## Contributing
+
+Contributions are welcome! Please ensure your changes include appropriate tests and follow the project's coding standards.
+
+---
+
+For more information, visit the [GitHub repository](https://github.com/dreche4k/Transformations).
