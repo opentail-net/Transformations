@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Transformations.Text;
 
+
 public class TxtExtractor : ITextExtractor
 {
     public bool CanHandle(string extension) =>
