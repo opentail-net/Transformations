@@ -11,6 +11,7 @@ A comprehensive text extraction and transformation library for .NET that support
 - **Multi-Format Text Extraction**: Extract text from multiple document types with a single unified interface
 - **Text Normalization**: Automatically normalizes line endings and whitespace across all formats
 - **Structured Data Support**: Parse and transform XML, YAML, JSON, and CSV data
+- **JSON Schema Utilities**: Validate JSON, list schema errors, normalize AI-emitted JSON, and compare JSON payloads
 - **Office Document Support**: Extract text from Word documents (.docx), Excel files, and more
 - **Email Support**: Extract text from email messages (.eml, .msg)
 - **PDF Support**: Extract text from PDF documents
@@ -55,6 +56,7 @@ Install-Package Transformations.Text
 
 - .NET 10.0
 - .NET 9.0
+- .NET 8.0
 
 ## Quick Start
 
@@ -121,6 +123,27 @@ byte[] jsonBytes = File.ReadAllBytes("data.json");
 var jsonResult = extractor.GetText("data.json", jsonBytes);
 ```
 
+### Validate JSON with JsonSchema.Net
+```
+using Transformations.Text;
+
+string rawJson = "```json\n{\"name\":\"OpenTail\"}\n```";
+string schemaJson = """
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "minLength": 1 }
+  },
+  "required": ["name"]
+}
+""";
+
+bool isValid = JsonSchemaValidator.ValidateJson(rawJson, schemaJson);
+List<string> errors = JsonSchemaValidator.ListSchemaErrors(rawJson, schemaJson);
+string normalized = JsonSchemaValidator.NormalizeJson(rawJson);
+bool hasChanged = JsonSchemaValidator.CompareJson("{\"a\":1}", "{\"a\":2}");
+```
+
 ## API Reference
 
 ### TextExtractor.GetText(fileName, fileBytes)
@@ -135,6 +158,15 @@ Extracts text from the provided file content based on the file extension.
 - `IsSuccess` (bool): Indicates whether extraction was successful
 - `Text` (string): Extracted and normalized text content
 - `ErrorMessage` (string): Error details if extraction failed
+
+### JsonSchemaValidator
+
+Utility methods for schema-driven JSON workflows:
+
+- `ValidateJson(rawJson, schemaJson)` -> `bool`
+- `ListSchemaErrors(rawJson, schemaJson)` -> `List<string>`
+- `NormalizeJson(input)` -> `string`
+- `CompareJson(leftJson, rightJson)` -> `bool` (returns `true` when payloads differ)
 
 ## Features & Behavior
 
@@ -154,6 +186,7 @@ Extracts text from the provided file content based on the file extension.
 - **PdfPig** - PDF text extraction
 - **YamlDotNet** - YAML parsing
 - **System.Text.Json** - JSON handling
+- **JsonSchema.Net** - JSON schema validation and diagnostics
 
 ## License
 
