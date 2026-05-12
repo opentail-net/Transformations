@@ -510,4 +510,91 @@ public class TextExtractorSanityTests
         // Result should be either valid extraction or a proper error
         Assert.That(result.IsSuccess || result.ErrorMessage != null, Is.True);
     }
+
+    [Test]
+    public void GetTextWithMetadata_ReturnsBaselineMetadata_ForPlainText()
+    {
+        string text = "Line one\n\nLine two";
+        byte[] bytes = Encoding.UTF8.GetBytes(text);
+
+        var result = _extractor.GetTextWithMetadata("sample.txt", bytes);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Metadata.ContainsKey("file.extension"), Is.True);
+        Assert.That(result.Metadata["file.extension"], Is.EqualTo(".txt"));
+        Assert.That(result.Metadata.ContainsKey("text.wordCount"), Is.True);
+    }
+
+    [Test]
+    public void GetTextWithMetadata_ReturnsMarkdownMetadata()
+    {
+        string markdown = "# Title\n\n## Sub\nBody";
+        byte[] bytes = Encoding.UTF8.GetBytes(markdown);
+
+        var result = _extractor.GetTextWithMetadata("doc.md", bytes);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Metadata["markdown.headingCount"], Is.EqualTo("2"));
+        Assert.That(result.Metadata["markdown.sectionCount"], Is.Not.Null.And.Not.Empty);
+        Assert.That(result.Metadata["markdown.headings"], Does.Contain("H1:Title"));
+    }
+
+    [Test]
+    public void GetTextWithMetadata_ReturnsJsonMetadata()
+    {
+        string json = "{ \"name\": \"OpenTail\", \"enabled\": true }";
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+
+        var result = _extractor.GetTextWithMetadata("meta.json", bytes);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Metadata["json.rootKind"], Is.EqualTo("Object"));
+        Assert.That(result.Metadata["json.topLevelPropertyCount"], Is.EqualTo("2"));
+        Assert.That(result.Metadata["json.topLevelProperties"], Does.Contain("name"));
+    }
+
+    [Test]
+    public void GetTextWithMetadata_EmailIncludesMessageAndSpecialAttachmentMetadata()
+    {
+        var message = new MimeMessage();
+        message.Subject = "Attachment Metadata";
+        message.From.Add(new MailboxAddress("Alice", "alice@example.com"));
+        message.To.Add(new MailboxAddress("Ops", "ops@example.com"));
+        message.Date = new DateTimeOffset(2026, 4, 23, 10, 0, 0, TimeSpan.Zero);
+
+        var body = new TextPart("plain") { Text = "Email body content" };
+        var specialAttachment = new MimePart("application", "octet-stream")
+        {
+            FileName = "special-context.bin",
+            Content = new MimeContent(new MemoryStream(new byte[] { 0x01, 0x02, 0x03 })),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64
+        };
+
+        var regularAttachment = new MimePart("text", "plain")
+        {
+            FileName = "notes.txt",
+            Content = new MimeContent(new MemoryStream(Encoding.UTF8.GetBytes("hello"))),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64
+        };
+
+        var multipart = new MimeKit.Multipart("mixed");
+        multipart.Add(body);
+        multipart.Add(specialAttachment);
+        multipart.Add(regularAttachment);
+        message.Body = multipart;
+
+        using var mem = new MemoryStream();
+        message.WriteTo(mem);
+
+        var result = _extractor.GetTextWithMetadata("mail.eml", mem.ToArray());
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Metadata["email.subject"], Is.EqualTo("Attachment Metadata"));
+        Assert.That(result.Metadata["email.attachment.count"], Is.EqualTo("2"));
+        Assert.That(result.Metadata["email.attachment.names"], Does.Contain("special-context.bin"));
+        Assert.That(result.Metadata["email.attachment.special.count"], Is.EqualTo("1"));
+        Assert.That(result.Metadata["email.attachment.special.names"], Does.Contain("special-context.bin"));
+    }
 }

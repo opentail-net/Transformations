@@ -6,12 +6,22 @@ A comprehensive text extraction and transformation library for .NET that support
 
 `Transformations.Text` provides unified text extraction capabilities across various file formats including Office documents, structured data formats, and more. Extract and normalize text from diverse sources with a simple, consistent API.
 
+## What's New in 2.0.3
+
+- Added `GetTextWithMetadata` for text plus metadata extraction.
+- Added `MarkdownStructureExtractor` for heading maps and section extraction.
+- Added `DocumentContent` common normalize/compare façade.
+- Added `JsonSchemaValidator` schema-based JSON validation helpers.
+
 ## Features
 
 - **Multi-Format Text Extraction**: Extract text from multiple document types with a single unified interface
 - **Text Normalization**: Automatically normalizes line endings and whitespace across all formats
 - **Structured Data Support**: Parse and transform XML, YAML, JSON, and CSV data
 - **JSON Schema Utilities**: Validate JSON, list schema errors, normalize AI-emitted JSON, and compare JSON payloads
+- **Markdown Structure Utilities**: Normalize Markdown, build heading maps, extract sections, and compare normalized Markdown
+- **Common Document Utilities**: Format-aware normalize/compare for plain text, Markdown, and JSON via a unified API
+- **Extraction Metadata API**: Extract normalized text plus cross-format metadata for indexing, diagnostics, and RAG prep
 - **Office Document Support**: Extract text from Word documents (.docx), Excel files, and more
 - **Email Support**: Extract text from email messages (.eml, .msg)
 - **PDF Support**: Extract text from PDF documents
@@ -144,6 +154,43 @@ string normalized = JsonSchemaValidator.NormalizeJson(rawJson);
 bool hasChanged = JsonSchemaValidator.CompareJson("{\"a\":1}", "{\"a\":2}");
 ```
 
+### Extract Text with Metadata
+```
+using Transformations.Text;
+
+var extractor = new TextExtractor();
+byte[] emlBytes = File.ReadAllBytes("mail.eml");
+
+var result = extractor.GetTextWithMetadata("mail.eml", emlBytes);
+
+if (result.IsSuccess)
+{
+    Console.WriteLine(result.Text);
+    Console.WriteLine($"Attachment count: {result.Metadata[\"email.attachment.count\"]}");
+    Console.WriteLine($"Special attachments: {result.Metadata[\"email.attachment.special.names\"]}");
+}
+```
+
+### Markdown Structure for Docs and RAG
+```
+using Transformations.Text;
+
+string markdown = File.ReadAllText("README.md");
+
+var headings = MarkdownStructureExtractor.BuildHeadingMap(markdown);
+var sections = MarkdownStructureExtractor.ExtractSections(markdown);
+string normalized = MarkdownStructureExtractor.NormalizeMarkdown(markdown);
+bool changed = MarkdownStructureExtractor.CompareMarkdown(markdown, normalized);
+```
+
+### Common Document Pattern
+```
+using Transformations.Text;
+
+string normalized = DocumentContent.Normalize(rawContent, DocumentFormat.Markdown);
+bool changed = DocumentContent.Compare(oldContent, newContent, DocumentFormat.Json);
+```
+
 ## API Reference
 
 ### TextExtractor.GetText(fileName, fileBytes)
@@ -154,10 +201,29 @@ Extracts text from the provided file content based on the file extension.
 - `fileName` (string): Name of the file including extension (used to determine format)
 - `fileBytes` (byte[]): Raw file content as bytes
 
-**Returns:** `TextExtractionResult`
+**Returns:** `ExtractionResult`
 - `IsSuccess` (bool): Indicates whether extraction was successful
 - `Text` (string): Extracted and normalized text content
 - `ErrorMessage` (string): Error details if extraction failed
+
+### TextExtractor.GetTextWithMetadata(fileName, fileBytes)
+
+Extracts normalized text and returns metadata for supported formats.
+
+**Returns:** `ExtractionMetadataResult`
+- `IsSuccess` (bool)
+- `Text` (string)
+- `Metadata` (`Dictionary<string,string>`)
+- `ErrorMessage` (string)
+
+Common metadata keys:
+- `file.name`, `file.extension`, `file.bytes`
+- `text.length`, `text.lineCount`, `text.wordCount`
+
+Format metadata examples:
+- Markdown: `markdown.headingCount`, `markdown.sectionCount`, `markdown.headings`
+- JSON: `json.rootKind`, `json.topLevelPropertyCount`, `json.topLevelProperties`, `json.topLevelArrayLength`
+- EML: `email.subject`, `email.fromCount`, `email.toCount`, `email.date`, `email.attachment.count`, `email.attachment.names`, `email.attachment.special.count`, `email.attachment.special.names`
 
 ### JsonSchemaValidator
 
@@ -167,6 +233,27 @@ Utility methods for schema-driven JSON workflows:
 - `ListSchemaErrors(rawJson, schemaJson)` -> `List<string>`
 - `NormalizeJson(input)` -> `string`
 - `CompareJson(leftJson, rightJson)` -> `bool` (returns `true` when payloads differ)
+
+### MarkdownStructureExtractor
+
+Utility methods for Markdown structure-aware processing:
+
+- `NormalizeMarkdown(markdown)` -> `string`
+- `BuildHeadingMap(markdown)` -> `List<MarkdownHeading>`
+- `ExtractSections(markdown)` -> `List<MarkdownSection>`
+- `CompareMarkdown(leftMarkdown, rightMarkdown)` -> `bool` (returns `true` when payloads differ)
+
+### DocumentContent
+
+Unified normalize/compare façade:
+
+- `Normalize(content, format)` -> `string`
+- `Compare(left, right, format)` -> `bool`
+
+Supported `DocumentFormat` values:
+- `PlainText`
+- `Markdown`
+- `Json`
 
 ## Features & Behavior
 
