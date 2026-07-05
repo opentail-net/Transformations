@@ -994,6 +994,20 @@ namespace Transformations.Mapping.Generator
             var projectableProperties = target.Properties.Where(CanProjectProperty).ToList();
             var nonProjectableProperties = target.Properties.Where(prop => !CanProjectProperty(prop)).ToList();
 
+            if (nonProjectableProperties.Count == 0 && model.SourceTypeParameterNames.Count == 0)
+            {
+                string expressionFieldName = $"s_projectTo{target.TargetClassName}Expression";
+                sb.AppendLine($"{indent}private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{model.SourceFullName}, {target.TargetFullName}>> {expressionFieldName} = item => new {target.TargetFullName}()");
+                sb.AppendLine($"{indent}{{");
+                foreach (var prop in projectableProperties)
+                {
+                    string assignment = GetProjectionAssignmentExpression(prop);
+                    sb.AppendLine($"{indent}    @{prop.TargetPropertyName} = {assignment},");
+                }
+                sb.AppendLine($"{indent}}};");
+                sb.AppendLine();
+            }
+
             sb.AppendLine($"{indent}/// <summary>");
             sb.AppendLine($"{indent}/// Projects a queryable sequence of {model.SourceClassName} instances to {target.TargetClassName} instances.");
             sb.AppendLine($"{indent}/// </summary>");
@@ -1015,16 +1029,25 @@ namespace Transformations.Mapping.Generator
                 return;
             }
 
-            sb.AppendLine($"{indent}    return global::System.Linq.Queryable.Select(source, item => new {target.TargetFullName}()");
-            sb.AppendLine($"{indent}    {{");
-
-            foreach (var prop in projectableProperties)
+            if (model.SourceTypeParameterNames.Count == 0)
             {
-                string assignment = GetProjectionAssignmentExpression(prop);
-                sb.AppendLine($"{indent}        @{prop.TargetPropertyName} = {assignment},");
+                string expressionFieldName = $"s_projectTo{target.TargetClassName}Expression";
+                sb.AppendLine($"{indent}    return global::System.Linq.Queryable.Select(source, {expressionFieldName});");
+            }
+            else
+            {
+                sb.AppendLine($"{indent}    return global::System.Linq.Queryable.Select(source, item => new {target.TargetFullName}()");
+                sb.AppendLine($"{indent}    {{");
+
+                foreach (var prop in projectableProperties)
+                {
+                    string assignment = GetProjectionAssignmentExpression(prop);
+                    sb.AppendLine($"{indent}        @{prop.TargetPropertyName} = {assignment},");
+                }
+
+                sb.AppendLine($"{indent}    }});");
             }
 
-            sb.AppendLine($"{indent}    }});");
             sb.AppendLine($"{indent}}}");
         }
 
