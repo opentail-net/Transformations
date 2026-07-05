@@ -1,0 +1,2820 @@
+﻿diff --git a/MAPPING_BENCHMARKS.md b/MAPPING_BENCHMARKS.md
+new file mode 100644
+index 0000000..46f29e7
+--- /dev/null
++++ b/MAPPING_BENCHMARKS.md
+@@ -0,0 +1,58 @@
++# Transformations.Mapping Benchmarks
++
++`Transformations.Mapping.Benchmarks` compares generated Transformations mappings against manual mapping, AutoMapper, and Mapster.
++
++## Run
++
++```bash
++dotnet run --project Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj -c Release -- --filter *
++```
++
++Run one benchmark group:
++
++```bash
++dotnet run --project Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj -c Release -- --filter *SingleObjectMappingBenchmarks* --join
++dotnet run --project Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj -c Release -- --filter *CollectionMappingBenchmarks* --join
++dotnet run --project Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj -c Release -- --filter *ProjectionBenchmarks* --join
++dotnet run --project Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj -c Release -- --filter *ConfigurationBenchmarks* --join
++```
++
++BenchmarkDotNet writes detailed reports to:
++
++```text
++BenchmarkDotNet.Artifacts/results
++```
++
++## Coverage
++
++The benchmark suite measures:
++
++- Single object mapping throughput and allocations
++- Collection mapping throughput and allocations
++- `IQueryable` projection throughput and allocations
++- Startup/configuration cost for libraries that need runtime configuration
++
++## Initial Result
++
++Measured on July 5, 2026 with:
++
++- BenchmarkDotNet 0.15.8
++- .NET SDK 10.0.301 / .NET 10.0.9
++- Windows 11 25H2
++- AMD Ryzen 7 5700G
++- ShortRun job
++
++Single-object mapping:
++
++| Method | Mean | Allocated | Ratio |
++| --- | ---: | ---: | ---: |
++| Manual | 10.96 ns | 80 B | 1.01 |
++| Transformations | 12.21 ns | 80 B | 1.12 |
++| AutoMapper | 61.61 ns | 80 B | 5.65 |
++| Mapster | 17.35 ns | 80 B | 1.59 |
++
++ShortRun results are useful as a smoke test and directional comparison. Use full BenchmarkDotNet runs before publishing headline performance claims.
++
++## NativeAOT And Trimming Notes
++
++Transformations mapping code is generated at compile time and does not depend on runtime reflection or runtime mapping configuration. That keeps the runtime mapping path friendly to trimming and NativeAOT scenarios. AutoMapper and Mapster are included here because they are common comparison points for automapping users, but consumers should verify their own trimming and NativeAOT constraints independently.
+diff --git a/MAPPING_CAPABILITY_PLAN.md b/MAPPING_CAPABILITY_PLAN.md
+new file mode 100644
+index 0000000..ed76048
+--- /dev/null
++++ b/MAPPING_CAPABILITY_PLAN.md
+@@ -0,0 +1,115 @@
++# Transformations.Mapping Capability Plan
++
++## Core Direction
++
++- [x] Define the mapping package promise:
++  - [x] Compile-time only
++  - [x] Zero reflection
++  - [x] NativeAOT/trimming safe
++  - [x] Convention-first, attribute-overridable
++  - [x] Readable generated code
++- [x] Add or link this roadmap from `MAPPING_GUIDE.md`
++
++## Phase 1: Harden Current Mapper
++
++- [x] Verify generic source classes
++- [x] Verify nested partial classes
++- [x] Verify multiple `[MapTo<T>]` targets
++- [x] Verify inherited properties
++- [ ] Verify nullable mismatch handling
++- [ ] Verify unsupported conversion handling
++- [x] Verify unmapped required-member diagnostics
++- [x] Add focused generator tests for each completed case
++
++## Phase 2: Collection Mapping
++
++- [x] Generate `IEnumerable<TSource>` mapping helpers
++- [x] Generate `To{Target}List()`
++- [x] Generate `To{Target}Array()`
++- [x] Add `To{Target}Enumerable()`
++- [x] Add tests for empty, single-item, multi-item, and null-item collections
++- [x] Document collection mapping examples
++
++## Phase 3: Update Existing Target
++
++- [x] Generate methods that map into an existing target object
++- [x] Support pattern like `source.MapTo(existingTarget)`
++- [x] Support update/request model scenarios
++- [x] Decide naming: `MapTo`, `ApplyTo`, or `Update`
++- [x] Add tests for preserving unmapped target values
++- [x] Add tests for nullable source behavior
++
++## Phase 4: Diagnostics Expansion
++
++- [x] Split `TXMAP001` into a small diagnostic family
++- [x] Add diagnostic for unmapped target member
++- [x] Add diagnostic for unsupported type conversion
++- [x] Add diagnostic for nullable-to-nonnullable risk
++- [x] Add diagnostic for missing `partial` source type
++- [x] Add diagnostic for missing `partial` containing type
++- [x] Add diagnostic for invalid source path
++- [x] Add diagnostic for ambiguous property match
++- [x] Document diagnostics and severity controls
++
++## Phase 5: Explicit Flattening
++
++- [x] Add explicit source-path mapping support
++- [x] Design attribute shape, for example `[MapProperty("CustomerName", SourcePath = "Customer.Name")]`
++- [x] Support simple nested property paths
++- [x] Add null-safe path handling
++- [x] Add tests for nested object flattening
++- [x] Add tests for missing/invalid path diagnostics
++- [ ] Consider convention-based flattening later
++
++## Phase 6: Custom Conversion Hooks
++
++- [x] Design a compile-time-safe custom conversion hook
++- [x] Consider `[MapWith(nameof(FormatDate))]`
++- [x] Support static converter methods
++- [x] Validate converter method signatures at compile time
++- [x] Add diagnostics for invalid converter methods
++- [x] Add tests for formatting, parsing, and custom object conversion
++
++## Phase 7: IQueryable Projection
++
++- [x] Generate expression-based projection helpers
++- [x] Support `db.Users.ProjectToUserDto()`
++- [x] Limit first version to simple property access and safe conversions
++- [x] Avoid runtime reflection
++- [ ] Verify EF Core compatibility
++- [x] Add tests with in-memory query providers
++- [x] Document projection limitations clearly
++
++## Phase 8: Benchmarks
++
++- [x] Create benchmark project
++- [x] Compare against manual mapping
++- [x] Compare against AutoMapper
++- [x] Compare against Mapster
++- [x] Measure startup/configuration cost
++- [x] Measure throughput
++- [x] Measure allocations
++- [x] Include NativeAOT/trimming notes where possible
++- [x] Publish benchmark results in docs
++
++## Phase 9: Documentation Polish
++
++- [x] Rewrite mapping quick start
++- [x] Add DTO mapping examples
++- [x] Add list mapping examples
++- [x] Add rename/ignore examples
++- [x] Add flattening examples
++- [x] Add update-existing-object examples
++- [x] Add diagnostics guide
++- [x] Add EF projection guide
++- [x] Add "Migrating from AutoMapper" guide
++
++## Suggested Implementation Order
++
++- [x] 1. Collection mapping
++- [x] 2. Update existing target
++- [x] 3. Diagnostics expansion
++- [x] 4. Explicit flattening
++- [x] 5. Custom conversion hooks
++- [x] 6. IQueryable projection
++- [x] 7. Benchmarks and documentation polish
+diff --git a/MAPPING_GUIDE.md b/MAPPING_GUIDE.md
+index 1f666f4..e5e061e 100644
+--- a/MAPPING_GUIDE.md
++++ b/MAPPING_GUIDE.md
+@@ -29,7 +29,14 @@ public sealed class UserDto
+ Generated methods:
+ 
+ - `user.ToUserDto()`
++- `user.MapTo(existingUserDto)`
+ - `User.FromUserDto(dto)`
++- `users.ToUserDtoEnumerable()`
++- `users.ToUserDtoList()`
++- `users.ToUserDtoArray()`
++- `db.Users.ProjectToUserDto()`
++
++There is no runtime profile, startup registration, or reflection scan. If the source type is `partial`, the generator emits normal C# methods during compilation.
+ 
+ ## Requirements
+ 
+@@ -59,6 +66,26 @@ Maps a source property to a differently named target property.
+ public string Name { get; set; } = string.Empty;
+ ```
+ 
++Use `SourcePath` when the target should be populated from a nested source property.
++
++```csharp
++[MapProperty("CustomerName", SourcePath = "Customer.Name")]
++[MapProperty("City", SourcePath = "Customer.Address.City")]
++public Customer? Customer { get; set; }
++```
++
++Use `Converter` when a target property needs explicit formatting, parsing, or custom object conversion.
++
++```csharp
++[MapProperty("CreatedOn", Converter = nameof(FormatDate))]
++public DateTime CreatedAt { get; set; }
++
++private static string FormatDate(DateTime value)
++{
++    return value.ToString("yyyy-MM-dd");
++}
++```
++
+ ## Type Conversion Rules
+ 
+ When source and target types differ:
+@@ -83,9 +110,128 @@ Generated methods include both:
+ - `ToBriefItem()` / `FromBriefItem(...)`
+ - `ToDetailedItem()` / `FromDetailedItem(...)`
+ 
+-## Unmapped Member Diagnostics
++Collection helpers are generated for each target as well:
++
++- `items.ToBriefItemList()`
++- `items.ToDetailedItemArray()`
++
++## Collection Mapping
++
++Every `[MapTo<TTarget>]` source also gets zero-reflection collection helpers for `IEnumerable<TSource>`.
++
++```csharp
++var users = new[]
++{
++    new User { Id = 1, Name = "Ada" },
++    new User { Id = 2, Name = "Linus" }
++};
++
++IEnumerable<UserDto> stream = users.ToUserDtoEnumerable();
++List<UserDto> list = users.ToUserDtoList();
++UserDto[] array = users.ToUserDtoArray();
++```
++
++`To{Target}Enumerable()` maps lazily. `To{Target}List()` and `To{Target}Array()` materialize through the lazy helper. A null source sequence throws `ArgumentNullException`; null items are preserved as null target items.
++
++## Queryable Projection
++
++Every `[MapTo<TTarget>]` source also gets a `ProjectTo{Target}()` helper for `IQueryable<TSource>`.
+ 
+-The generator emits diagnostic `TXMAP001` when a target property is not mapped.
++```csharp
++IQueryable<UserDto> query = db.Users.ProjectToUserDto();
++```
++
++Projection helpers use `Queryable.Select(...)` and generated expression-tree-safe object initializers. They are intended for database-backed query providers such as EF Core, while still avoiding runtime reflection and mapping configuration.
++
++First-version projection is intentionally conservative. It supports direct property mappings and renamed properties that can be represented as simple expression-tree member access. Nullable string-to-non-nullable string mappings use `?? string.Empty`.
++
++Runtime-only mapping features are not projected yet:
++
++- `Converter = nameof(...)`
++- built-in `ConvertTo<T>()` conversions
++- `ToString()` conversions
++- null-safe `SourcePath` flattening with nullable path segments
++
++If a target requires one of those runtime-only mappings, `ProjectTo{Target}()` throws `NotSupportedException` with the target members that blocked projection. Use `To{Target}()`, `MapTo(existingTarget)`, or collection mapping for those cases until projection support is widened.
++
++## Updating Existing Targets
++
++Use `MapTo(existingTarget)` when you want to apply mapped values to an object you already have, such as an update DTO, a view model instance, or an object with values that should be preserved when no source mapping exists.
++
++```csharp
++var existing = new UserDto
++{
++    Id = 1,
++    Name = "Old",
++};
++
++user.MapTo(existing);
++```
++
++Only mapped target properties are assigned. Target properties with no matching source mapping keep their current values. A null target argument throws `ArgumentNullException`.
++
++## Explicit Flattening
++
++Use `SourcePath` when a target property should come from a nested source property.
++
++```csharp
++public sealed class OrderDto
++{
++    public int Id { get; set; }
++    public string CustomerName { get; set; } = string.Empty;
++}
++
++[MapTo<OrderDto>]
++public partial class Order
++{
++    public int Id { get; set; }
++
++    [MapProperty("CustomerName", SourcePath = "Customer.Name")]
++    public Customer? Customer { get; set; }
++}
++```
++
++The generated mapper emits null-safe access for nullable path segments. Flattening paths are one-way: `To{Target}()` and `MapTo(existingTarget)` use them, while `From{Target}()` skips them because constructing nested source graphs would require policy choices the generator should not guess.
++
++## Custom Conversion Hooks
++
++Use `Converter = nameof(SomeMethod)` on `[MapProperty]` when convention and built-in conversions are not enough.
++
++```csharp
++public sealed class OrderDto
++{
++    public string CreatedOn { get; set; } = string.Empty;
++}
++
++[MapTo<OrderDto>]
++public partial class Order
++{
++    [MapProperty("CreatedOn", Converter = nameof(FormatDate))]
++    public DateTime CreatedAt { get; set; }
++
++    private static string FormatDate(DateTime value)
++    {
++        return value.ToString("yyyy-MM-dd");
++    }
++}
++```
++
++Converter methods must be static methods on the source type, accept exactly one parameter matching the source value type, and return the target property type. Converter mappings are one-way for now; `From{Target}()` skips them unless a future reverse-converter policy is added.
++
++## Diagnostics
++
++The generator emits mapping diagnostics when it can identify a likely configuration or generation problem.
++
++| ID | Meaning |
++| --- | --- |
++| `TXMAP001` | A target property is not mapped from the source. |
++| `TXMAP002` | A matching source and target property use an unsupported conversion. |
++| `TXMAP003` | A `[MapTo<T>]` source class is not `partial`. |
++| `TXMAP004` | A nested source class has a containing type that is not `partial`. |
++| `TXMAP005` | Multiple source properties map to the same target property. |
++| `TXMAP006` | A nullable source property maps to a non-nullable target property. |
++| `TXMAP007` | A `SourcePath` value does not resolve to public readable source properties. |
++| `TXMAP008` | A `Converter` method does not match the required static method signature. |
+ 
+ Default severity: **Warning**.
+ 
+@@ -128,6 +274,56 @@ public sealed class ContactDto
+ - Predictable generated methods
+ - Fast compilation via incremental generator pipeline
+ 
++See `MAPPING_CAPABILITY_PLAN.md` for the mapping capability roadmap.
++
++See `MAPPING_BENCHMARKS.md` for benchmark commands and current comparison results.
++
++## Migrating From AutoMapper
++
++Typical AutoMapper usage starts with runtime configuration:
++
++```csharp
++var config = new MapperConfiguration(cfg =>
++{
++    cfg.CreateMap<User, UserDto>();
++});
++
++IMapper mapper = config.CreateMapper();
++UserDto dto = mapper.Map<UserDto>(user);
++```
++
++With Transformations.Mapping, move the mapping declaration to the source type:
++
++```csharp
++[MapTo<UserDto>]
++public partial class User
++{
++    public int Id { get; set; }
++    public string Name { get; set; } = string.Empty;
++}
++
++UserDto dto = user.ToUserDto();
++```
++
++Common migration patterns:
++
++| AutoMapper need | Transformations.Mapping approach |
++| --- | --- |
++| `CreateMap<User, UserDto>()` | `[MapTo<UserDto>]` on `partial class User` |
++| `ForMember(d => d.FullName, o => o.MapFrom(s => s.Name))` | `[MapProperty("FullName")]` on `Name` |
++| `ForMember(d => d.CustomerName, o => o.MapFrom(s => s.Customer.Name))` | `[MapProperty("CustomerName", SourcePath = "Customer.Name")]` |
++| Ignore a source member | `[IgnoreMap]` |
++| Update an existing object | `source.MapTo(existingTarget)` |
++| Map a list | `users.ToUserDtoList()` |
++| Project a query | `db.Users.ProjectToUserDto()` |
++| Custom formatting/parsing | `[MapProperty("Target", Converter = nameof(ConvertValue))]` |
++
++What not to migrate blindly:
++
++- Runtime profile scanning. Transformations.Mapping intentionally has no runtime configuration phase.
++- Highly dynamic mapping rules. Prefer explicit generated methods or write manual mapping for cases where rules change at runtime.
++- Complex query-provider projections. Start with simple `ProjectTo{Target}()` mappings and keep richer conversion logic in runtime mapping.
++
+ ## Testing as Examples
+ 
+ See `Transformations.Mapping.Tests`:
+diff --git a/README.md b/README.md
+index bdc02e8..f50f8b7 100644
+--- a/README.md
++++ b/README.md
+@@ -252,15 +252,18 @@ string csv = await context.Users.Select(u => u.Name).ToCsvAsync();
+ 
+ | Attribute | Purpose |
+ |-----------|---------|
+-| **`[MapTo<TTarget>]`** | Marks a `partial class` for compile-time mapping — generates `To{Target}()` and `From{Target}()` |
++| **`[MapTo<TTarget>]`** | Marks a `partial class` for compile-time mapping |
+ | **`[IgnoreMap]`** | Excludes a property from mapping |
+ | **`[MapProperty("Name")]`** | Maps a source property to a differently-named target property |
++| **`[MapProperty("Name", SourcePath = "...")]`** | Flattens a nested source path explicitly |
++| **`[MapProperty("Name", Converter = nameof(...))]`** | Uses a compile-time-validated static converter |
+ 
+-**Zero reflection. NativeAOT safe. Compile-time validated.** Type mismatches are resolved automatically via `ConvertTo<T>`.
++**Zero reflection. NativeAOT safe. Compile-time validated.** Generated methods cover single objects, existing-target updates, collections, and simple `IQueryable` projection.
+ 
+ Generated mapper diagnostics:
+ 
+ - `TXMAP001` warns when a target member is not mapped from source.
++- `TXMAP002`-`TXMAP008` cover unsupported conversions, missing `partial`, ambiguity, nullable risks, invalid source paths, and invalid converters.
+ - Opt-in error mode:
+ 
+ ```xml
+@@ -283,9 +286,14 @@ public partial class User
+ 
+ // Generated at compile time — no reflection, no runtime cost:
+ UserDto dto = user.ToUserDto();
++user.MapTo(existingDto);
++List<UserDto> dtos = users.ToUserDtoList();
++IQueryable<UserDto> query = db.Users.ProjectToUserDto();
+ User back = User.FromUserDto(dto);
+ ```
+ 
++See [MAPPING_GUIDE.md](MAPPING_GUIDE.md) for flattening, converters, query projection, and AutoMapper migration notes. See [MAPPING_BENCHMARKS.md](MAPPING_BENCHMARKS.md) for BenchmarkDotNet comparisons against manual mapping, AutoMapper, and Mapster.
++
+ ### ASP.NET Core / Web *(Transformations.Web)*
+ 
+ | Class | Purpose | Key Methods |
+diff --git a/Transformations.Mapping.Benchmarks/Program.cs b/Transformations.Mapping.Benchmarks/Program.cs
+new file mode 100644
+index 0000000..72506dd
+--- /dev/null
++++ b/Transformations.Mapping.Benchmarks/Program.cs
+@@ -0,0 +1,275 @@
++using AutoMapper;
++using BenchmarkDotNet.Attributes;
++using BenchmarkDotNet.Configs;
++using BenchmarkDotNet.Jobs;
++using BenchmarkDotNet.Running;
++using Mapster;
++using Microsoft.Extensions.Logging.Abstractions;
++using Transformations.Mapping;
++
++BenchmarkSwitcher
++    .FromAssembly(typeof(SingleObjectMappingBenchmarks).Assembly)
++    .Run(args, DefaultConfig.Instance.AddJob(Job.ShortRun));
++
++[MemoryDiagnoser]
++public class SingleObjectMappingBenchmarks
++{
++    private static readonly IMapper AutoMapper = CreateAutoMapper();
++    private static readonly TypeAdapterConfig MapsterConfig = CreateMapsterConfig();
++    private readonly BenchmarkUser source = BenchmarkData.CreateUser(1);
++
++    [Benchmark(Baseline = true)]
++    public BenchmarkUserDto Manual()
++    {
++        return BenchmarkMapper.Manual(source);
++    }
++
++    [Benchmark]
++    public BenchmarkUserDto Transformations()
++    {
++        return source.ToBenchmarkUserDto();
++    }
++
++    [Benchmark]
++    public BenchmarkUserDto AutoMapperMap()
++    {
++        return AutoMapper.Map<BenchmarkUserDto>(source);
++    }
++
++    [Benchmark]
++    public BenchmarkUserDto MapsterAdapt()
++    {
++        return source.Adapt<BenchmarkUserDto>(MapsterConfig);
++    }
++
++    private static IMapper CreateAutoMapper()
++    {
++        var config = new MapperConfiguration(
++            cfg => cfg.CreateMap<BenchmarkUser, BenchmarkUserDto>(),
++            NullLoggerFactory.Instance);
++        return config.CreateMapper();
++    }
++
++    private static TypeAdapterConfig CreateMapsterConfig()
++    {
++        var config = new TypeAdapterConfig();
++        config.NewConfig<BenchmarkUser, BenchmarkUserDto>();
++        config.Compile();
++        return config;
++    }
++}
++
++[MemoryDiagnoser]
++public class CollectionMappingBenchmarks
++{
++    private static readonly IMapper AutoMapper = CreateAutoMapper();
++    private static readonly TypeAdapterConfig MapsterConfig = CreateMapsterConfig();
++    private readonly List<BenchmarkUser> source = BenchmarkData.CreateUsers(1_000);
++
++    [Benchmark(Baseline = true)]
++    public List<BenchmarkUserDto> ManualList()
++    {
++        var result = new List<BenchmarkUserDto>(source.Count);
++        foreach (BenchmarkUser item in source)
++        {
++            result.Add(BenchmarkMapper.Manual(item));
++        }
++
++        return result;
++    }
++
++    [Benchmark]
++    public List<BenchmarkUserDto> TransformationsList()
++    {
++        return source.ToBenchmarkUserDtoList();
++    }
++
++    [Benchmark]
++    public List<BenchmarkUserDto> AutoMapperList()
++    {
++        return AutoMapper.Map<List<BenchmarkUserDto>>(source);
++    }
++
++    [Benchmark]
++    public List<BenchmarkUserDto> MapsterList()
++    {
++        return source.Adapt<List<BenchmarkUserDto>>(MapsterConfig);
++    }
++
++    private static IMapper CreateAutoMapper()
++    {
++        var config = new MapperConfiguration(
++            cfg => cfg.CreateMap<BenchmarkUser, BenchmarkUserDto>(),
++            NullLoggerFactory.Instance);
++        return config.CreateMapper();
++    }
++
++    private static TypeAdapterConfig CreateMapsterConfig()
++    {
++        var config = new TypeAdapterConfig();
++        config.NewConfig<BenchmarkUser, BenchmarkUserDto>();
++        config.Compile();
++        return config;
++    }
++}
++
++[MemoryDiagnoser]
++public class ProjectionBenchmarks
++{
++    private static readonly IMapper AutoMapper = CreateAutoMapper();
++    private static readonly TypeAdapterConfig MapsterConfig = CreateMapsterConfig();
++    private readonly IQueryable<BenchmarkUser> source = BenchmarkData.CreateUsers(1_000).AsQueryable();
++
++    [Benchmark(Baseline = true)]
++    public List<BenchmarkUserDto> ManualSelect()
++    {
++        return source.Select(BenchmarkMapper.ManualExpression).ToList();
++    }
++
++    [Benchmark]
++    public List<BenchmarkUserDto> TransformationsProjectTo()
++    {
++        return source.ProjectToBenchmarkUserDto().ToList();
++    }
++
++    [Benchmark]
++    public List<BenchmarkUserDto> AutoMapperProjectTo()
++    {
++        return AutoMapper.ProjectTo<BenchmarkUserDto>(source).ToList();
++    }
++
++    [Benchmark]
++    public List<BenchmarkUserDto> MapsterProjectTo()
++    {
++        return source.ProjectToType<BenchmarkUserDto>(MapsterConfig).ToList();
++    }
++
++    private static IMapper CreateAutoMapper()
++    {
++        var config = new MapperConfiguration(
++            cfg => cfg.CreateMap<BenchmarkUser, BenchmarkUserDto>(),
++            NullLoggerFactory.Instance);
++        return config.CreateMapper();
++    }
++
++    private static TypeAdapterConfig CreateMapsterConfig()
++    {
++        var config = new TypeAdapterConfig();
++        config.NewConfig<BenchmarkUser, BenchmarkUserDto>();
++        config.Compile();
++        return config;
++    }
++}
++
++[MemoryDiagnoser]
++public class ConfigurationBenchmarks
++{
++    [Benchmark(Baseline = true)]
++    public object TransformationsConfiguration()
++    {
++        return typeof(BenchmarkUser);
++    }
++
++    [Benchmark]
++    public IMapper AutoMapperConfiguration()
++    {
++        var config = new MapperConfiguration(
++            cfg => cfg.CreateMap<BenchmarkUser, BenchmarkUserDto>(),
++            NullLoggerFactory.Instance);
++        return config.CreateMapper();
++    }
++
++    [Benchmark]
++    public TypeAdapterConfig MapsterConfiguration()
++    {
++        var config = new TypeAdapterConfig();
++        config.NewConfig<BenchmarkUser, BenchmarkUserDto>();
++        config.Compile();
++        return config;
++    }
++}
++
++public static class BenchmarkMapper
++{
++    public static readonly System.Linq.Expressions.Expression<Func<BenchmarkUser, BenchmarkUserDto>> ManualExpression =
++        source => new BenchmarkUserDto
++        {
++            Id = source.Id,
++            FirstName = source.FirstName,
++            LastName = source.LastName,
++            Email = source.Email,
++            Department = source.Department,
++            IsActive = source.IsActive,
++            LoginCount = source.LoginCount,
++            Score = source.Score
++        };
++
++    public static BenchmarkUserDto Manual(BenchmarkUser source)
++    {
++        return new BenchmarkUserDto
++        {
++            Id = source.Id,
++            FirstName = source.FirstName,
++            LastName = source.LastName,
++            Email = source.Email,
++            Department = source.Department,
++            IsActive = source.IsActive,
++            LoginCount = source.LoginCount,
++            Score = source.Score
++        };
++    }
++}
++
++public static class BenchmarkData
++{
++    public static List<BenchmarkUser> CreateUsers(int count)
++    {
++        var users = new List<BenchmarkUser>(count);
++        for (int i = 0; i < count; i++)
++        {
++            users.Add(CreateUser(i));
++        }
++
++        return users;
++    }
++
++    public static BenchmarkUser CreateUser(int id)
++    {
++        return new BenchmarkUser
++        {
++            Id = id,
++            FirstName = "First" + id,
++            LastName = "Last" + id,
++            Email = "user" + id + "@example.com",
++            Department = id % 2 == 0 ? "Engineering" : "Operations",
++            IsActive = id % 3 != 0,
++            LoginCount = id * 7,
++            Score = id / 10m
++        };
++    }
++}
++
++public sealed class BenchmarkUserDto
++{
++    public int Id { get; set; }
++    public string FirstName { get; set; } = string.Empty;
++    public string LastName { get; set; } = string.Empty;
++    public string Email { get; set; } = string.Empty;
++    public string Department { get; set; } = string.Empty;
++    public bool IsActive { get; set; }
++    public int LoginCount { get; set; }
++    public decimal Score { get; set; }
++}
++
++[MapTo<BenchmarkUserDto>]
++public partial class BenchmarkUser
++{
++    public int Id { get; set; }
++    public string FirstName { get; set; } = string.Empty;
++    public string LastName { get; set; } = string.Empty;
++    public string Email { get; set; } = string.Empty;
++    public string Department { get; set; } = string.Empty;
++    public bool IsActive { get; set; }
++    public int LoginCount { get; set; }
++    public decimal Score { get; set; }
++}
+diff --git a/Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj b/Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj
+new file mode 100644
+index 0000000..bb4e043
+--- /dev/null
++++ b/Transformations.Mapping.Benchmarks/Transformations.Mapping.Benchmarks.csproj
+@@ -0,0 +1,24 @@
++﻿<Project Sdk="Microsoft.NET.Sdk">
++
++  <PropertyGroup>
++    <OutputType>Exe</OutputType>
++    <TargetFramework>net10.0</TargetFramework>
++    <ImplicitUsings>enable</ImplicitUsings>
++    <Nullable>enable</Nullable>
++    <IsPackable>false</IsPackable>
++    <GenerateDocumentationFile>false</GenerateDocumentationFile>
++  </PropertyGroup>
++
++  <ItemGroup>
++    <PackageReference Include="AutoMapper" Version="16.2.0" />
++    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
++    <PackageReference Include="Mapster" Version="10.0.10" />
++  </ItemGroup>
++
++  <ItemGroup>
++    <ProjectReference Include="..\Transformations.Mapping\Transformations.Mapping.csproj" />
++    <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
++    <ProjectReference Include="..\Transformations.Mapping.Generator\Transformations.Mapping.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
++  </ItemGroup>
++
++</Project>
+diff --git a/Transformations.Mapping.Generator/MappingGenerator.cs b/Transformations.Mapping.Generator/MappingGenerator.cs
+index 799ec94..339bd64 100644
+--- a/Transformations.Mapping.Generator/MappingGenerator.cs
++++ b/Transformations.Mapping.Generator/MappingGenerator.cs
+@@ -41,6 +41,69 @@ namespace Transformations.Mapping.Generator
+             isEnabledByDefault: true,
+             description: "A target member exists but no source member was mapped to it.");
+ 
++        private static readonly DiagnosticDescriptor UnsupportedConversion = new DiagnosticDescriptor(
++            id: "TXMAP002",
++            title: "Unsupported mapping conversion",
++            messageFormat: "Target member '{0}.{1}' cannot be mapped from source member '{2}.{3}' because conversion from '{4}' to '{5}' is not supported",
++            category: "Mapping",
++            defaultSeverity: DiagnosticSeverity.Warning,
++            isEnabledByDefault: true,
++            description: "A source and target member match by name or mapping attribute, but their types cannot be safely converted by the generator.");
++
++        private static readonly DiagnosticDescriptor MissingPartialSourceType = new DiagnosticDescriptor(
++            id: "TXMAP003",
++            title: "Mapping source type must be partial",
++            messageFormat: "Source type '{0}' must be partial to generate mappings",
++            category: "Mapping",
++            defaultSeverity: DiagnosticSeverity.Warning,
++            isEnabledByDefault: true,
++            description: "The mapping generator adds members to the source type, so the source class must be declared partial.");
++
++        private static readonly DiagnosticDescriptor MissingPartialContainingType = new DiagnosticDescriptor(
++            id: "TXMAP004",
++            title: "Containing type must be partial",
++            messageFormat: "Containing type '{0}' must be partial to generate mappings for nested source type '{1}'",
++            category: "Mapping",
++            defaultSeverity: DiagnosticSeverity.Warning,
++            isEnabledByDefault: true,
++            description: "Generated members for nested source types must be emitted through partial containing types.");
++
++        private static readonly DiagnosticDescriptor AmbiguousTargetMapping = new DiagnosticDescriptor(
++            id: "TXMAP005",
++            title: "Ambiguous target mapping",
++            messageFormat: "Target member '{0}.{1}' has multiple source mappings from '{2}'",
++            category: "Mapping",
++            defaultSeverity: DiagnosticSeverity.Warning,
++            isEnabledByDefault: true,
++            description: "Multiple source members map to the same target member. Use a distinct MapProperty target or IgnoreMap one of the source members.");
++
++        private static readonly DiagnosticDescriptor NullableToNonNullableRisk = new DiagnosticDescriptor(
++            id: "TXMAP006",
++            title: "Nullable source may map to non-nullable target",
++            messageFormat: "Source member '{0}.{1}' is nullable but target member '{2}.{3}' is non-nullable",
++            category: "Mapping",
++            defaultSeverity: DiagnosticSeverity.Warning,
++            isEnabledByDefault: true,
++            description: "A nullable source member is assigned to a non-nullable target member. Ensure null cannot flow here or adjust the target nullability.");
++
++        private static readonly DiagnosticDescriptor InvalidSourcePath = new DiagnosticDescriptor(
++            id: "TXMAP007",
++            title: "Invalid mapping source path",
++            messageFormat: "Source path '{0}' for target member '{1}.{2}' is invalid on source type '{3}'",
++            category: "Mapping",
++            defaultSeverity: DiagnosticSeverity.Warning,
++            isEnabledByDefault: true,
++            description: "A MapProperty SourcePath must be a dotted path of public readable source properties.");
++
++        private static readonly DiagnosticDescriptor InvalidConverterMethod = new DiagnosticDescriptor(
++            id: "TXMAP008",
++            title: "Invalid mapping converter method",
++            messageFormat: "Converter method '{0}' for target member '{1}.{2}' must be a static method on source type '{3}' with one parameter matching the source value type and return type matching the target member type",
++            category: "Mapping",
++            defaultSeverity: DiagnosticSeverity.Warning,
++            isEnabledByDefault: true,
++            description: "A MapProperty converter must be statically resolvable so generated mapping code remains reflection-free.");
++
+         public void Initialize(IncrementalGeneratorInitializationContext context)
+         {
+             // Collect classes that have at least one [MapTo<T>] attribute.
+@@ -74,11 +137,22 @@ namespace Transformations.Mapping.Generator
+                 return null;
+             }
+ 
++            string sourceNamespace = sourceType.ContainingNamespace.IsGlobalNamespace
++                ? string.Empty
++                : sourceType.ContainingNamespace.ToDisplayString();
++
++            var diagnostics = new List<Diagnostic>();
++
+             // Check partial
+             bool isPartial = classDecl.Modifiers.Any(SyntaxKind.PartialKeyword);
+             if (!isPartial)
+             {
+-                return null;
++                diagnostics.Add(Diagnostic.Create(
++                    MissingPartialSourceType,
++                    sourceType.Locations.FirstOrDefault() ?? Location.None,
++                    sourceType.Name));
++
++                return CreateInvalidMappingModel(sourceType, sourceNamespace, diagnostics);
+             }
+ 
+             // Collect all [MapTo<T>] targets
+@@ -109,7 +183,7 @@ namespace Transformations.Mapping.Generator
+                     continue;
+                 }
+ 
+-                var propertyMappings = BuildPropertyMappings(sourceType, targetType, ct);
++                var propertyMappings = BuildPropertyMappings(sourceType, targetType, diagnostics, ct);
+                 var mappedTargetPropertyNames = new HashSet<string>(propertyMappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal);
+                 var unmappedTargetProperties = GetPublicSettableProperties(targetType)
+                     .Where(p => !mappedTargetPropertyNames.Contains(p.Name))
+@@ -128,19 +202,79 @@ namespace Transformations.Mapping.Generator
+                 return null;
+             }
+ 
+-            string sourceNamespace = sourceType.ContainingNamespace.IsGlobalNamespace
+-                ? string.Empty
+-                : sourceType.ContainingNamespace.ToDisplayString();
++            var containingTypes = GetContainingTypes(sourceType, diagnostics);
++            if (containingTypes == null)
++            {
++                return CreateInvalidMappingModel(sourceType, sourceNamespace, diagnostics);
++            }
+ 
+             return new MappingModel(
+                 sourceType.Name,
+                 GetSourceDeclarationName(sourceType),
++                GetSourceMetadataName(sourceType),
++                GetSourceTypeParameterNames(sourceType),
++                containingTypes,
+                 sourceNamespace,
+                 sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+-                Location.None,
++                sourceType.Locations.FirstOrDefault() ?? Location.None,
++                diagnostics,
+                 targets);
+         }
+ 
++        private static MappingModel CreateInvalidMappingModel(INamedTypeSymbol sourceType, string sourceNamespace, List<Diagnostic> diagnostics)
++        {
++            return new MappingModel(
++                sourceType.Name,
++                GetSourceDeclarationName(sourceType),
++                GetSourceMetadataName(sourceType),
++                GetSourceTypeParameterNames(sourceType),
++                new List<TypeDeclarationModel>(),
++                sourceNamespace,
++                sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
++                sourceType.Locations.FirstOrDefault() ?? Location.None,
++                diagnostics,
++                new List<TargetMapping>());
++        }
++
++        private static List<TypeDeclarationModel>? GetContainingTypes(INamedTypeSymbol sourceType, List<Diagnostic> diagnostics)
++        {
++            var containingTypes = new List<TypeDeclarationModel>();
++            INamedTypeSymbol? current = sourceType.ContainingType;
++            while (current != null)
++            {
++                if (!IsPartialClass(current))
++                {
++                    diagnostics.Add(Diagnostic.Create(
++                        MissingPartialContainingType,
++                        current.Locations.FirstOrDefault() ?? Location.None,
++                        current.Name,
++                        sourceType.Name));
++
++                    return null;
++                }
++
++                containingTypes.Add(new TypeDeclarationModel(GetSourceDeclarationName(current)));
++                current = current.ContainingType;
++            }
++
++            containingTypes.Reverse();
++            return containingTypes;
++        }
++
++        private static bool IsPartialClass(INamedTypeSymbol type)
++        {
++            foreach (var syntaxReference in type.DeclaringSyntaxReferences)
++            {
++                if (syntaxReference.GetSyntax() is ClassDeclarationSyntax classDecl &&
++                    classDecl.Modifiers.Any(SyntaxKind.PartialKeyword))
++                {
++                    return true;
++                }
++            }
++
++            return false;
++        }
++
+         private static string GetSourceDeclarationName(INamedTypeSymbol sourceType)
+         {
+             if (sourceType.TypeParameters.Length == 0)
+@@ -152,6 +286,41 @@ namespace Transformations.Mapping.Generator
+             return $"{sourceType.Name}<{typeParameters}>";
+         }
+ 
++        private static string GetSourceMetadataName(INamedTypeSymbol sourceType)
++        {
++            var names = new Stack<string>();
++            INamedTypeSymbol? current = sourceType;
++            while (current != null)
++            {
++                names.Push(GetSourceDeclarationName(current)
++                    .Replace("<", "_")
++                    .Replace(">", string.Empty)
++                    .Replace(", ", "_"));
++                current = current.ContainingType;
++            }
++
++            return string.Join(".", names);
++        }
++
++        private static List<string> GetSourceTypeParameterNames(INamedTypeSymbol sourceType)
++        {
++            var types = new Stack<INamedTypeSymbol>();
++            INamedTypeSymbol? current = sourceType;
++            while (current != null)
++            {
++                types.Push(current);
++                current = current.ContainingType;
++            }
++
++            var names = new List<string>();
++            foreach (var type in types)
++            {
++                names.AddRange(type.TypeParameters.Select(p => p.Name));
++            }
++
++            return names;
++        }
++
+         private static bool IsMapToAttribute(INamedTypeSymbol attrType)
+         {
+             if (!attrType.IsGenericType)
+@@ -166,13 +335,14 @@ namespace Transformations.Mapping.Generator
+         private static List<PropertyMapping> BuildPropertyMappings(
+             INamedTypeSymbol sourceType,
+             INamedTypeSymbol targetType,
++            List<Diagnostic> diagnostics,
+             CancellationToken ct)
+         {
+             var targetProps = GetPublicSettableProperties(targetType)
+                 .ToDictionary(p => p.Name, StringComparer.Ordinal);
+ 
+             var sourceProps = GetPublicReadableProperties(sourceType);
+-            var mappings = new List<PropertyMapping>();
++            var mappingsByTarget = new Dictionary<string, PropertyMapping>(StringComparer.Ordinal);
+ 
+             foreach (var sourceProp in sourceProps)
+             {
+@@ -184,48 +354,165 @@ namespace Transformations.Mapping.Generator
+                     continue;
+                 }
+ 
+-                // Determine target property name (via [MapProperty] or same name)
+-                string targetPropName = GetMappedPropertyName(sourceProp) ?? sourceProp.Name;
+-
+-                if (!targetProps.TryGetValue(targetPropName, out var targetProp))
++                var mapAttributes = GetMapPropertyAttributes(sourceProp);
++                if (mapAttributes.Count == 0)
+                 {
++                    AddPropertyMapping(
++                        sourceType,
++                        targetType,
++                        sourceProp,
++                        sourceProp.Name,
++                        null,
++                        null,
++                        targetProps,
++                        mappingsByTarget,
++                        diagnostics);
++
+                     continue;
+                 }
+ 
+-                string sourceTypeName = sourceProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+-                string targetTypeName = targetProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
++                foreach (var mapAttribute in mapAttributes)
++                {
++                    AddPropertyMapping(
++                        sourceType,
++                        targetType,
++                        sourceProp,
++                        mapAttribute.TargetPropertyName,
++                        mapAttribute.SourcePath,
++                        mapAttribute.Converter,
++                        targetProps,
++                        mappingsByTarget,
++                        diagnostics);
++                }
++            }
++
++            return mappingsByTarget.Values.ToList();
++        }
+ 
+-                bool sameType = SymbolEqualityComparer.Default.Equals(sourceProp.Type, targetProp.Type);
++        private static void AddPropertyMapping(
++            INamedTypeSymbol sourceType,
++            INamedTypeSymbol targetType,
++            IPropertySymbol sourceProp,
++            string targetPropName,
++            string? sourcePath,
++            string? converterMethodName,
++            Dictionary<string, IPropertySymbol> targetProps,
++            Dictionary<string, PropertyMapping> mappingsByTarget,
++            List<Diagnostic> diagnostics)
++        {
++            if (!targetProps.TryGetValue(targetPropName, out var targetProp))
++            {
++                return;
++            }
+ 
+-                // Check if target is string and source is not (use .ToString())
+-                bool useToString = !sameType
+-                    && targetProp.Type.SpecialType == SpecialType.System_String
+-                    && sourceProp.Type.SpecialType != SpecialType.System_String;
++            if (mappingsByTarget.TryGetValue(targetPropName, out var existingMapping))
++            {
++                diagnostics.Add(Diagnostic.Create(
++                    AmbiguousTargetMapping,
++                    sourceProp.Locations.FirstOrDefault() ?? Location.None,
++                    targetType.Name,
++                    targetProp.Name,
++                    $"{existingMapping.SourceDisplayName}, {GetSourceDisplayName(sourceProp, sourcePath)}"));
+ 
+-                // Only emit ConvertTo<T> when both sides are primitive/known-convertible types.
+-                // Enum-to-int, custom type pairs, etc. have no ConvertTo<T> overload → skip them.
+-                bool useConvertTo = !sameType && !useToString
+-                    && IsConvertibleType(sourceProp.Type) && IsConvertibleType(targetProp.Type);
++                return;
++            }
+ 
+-                // No safe automatic conversion exists; leave this property unmapped rather than
+-                // emitting an assignment that won't compile.
+-                if (!sameType && !useToString && !useConvertTo)
++            var sourceResolution = ResolveSource(sourceType, sourceProp, sourcePath);
++            if (sourceResolution == null)
++            {
++                diagnostics.Add(Diagnostic.Create(
++                    InvalidSourcePath,
++                    sourceProp.Locations.FirstOrDefault() ?? Location.None,
++                    sourcePath ?? sourceProp.Name,
++                    targetType.Name,
++                    targetProp.Name,
++                    sourceType.Name));
++
++                return;
++            }
++
++            ITypeSymbol resolvedSourceType = sourceResolution.Type;
++            string sourceTypeName = resolvedSourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
++            string targetTypeName = targetProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
++            string? converterInvocationName = null;
++
++            bool sameType = SymbolEqualityComparer.Default.Equals(resolvedSourceType, targetProp.Type);
++
++            // Check if target is string and source is not (use .ToString())
++            bool useToString = !sameType
++                && targetProp.Type.SpecialType == SpecialType.System_String
++                && resolvedSourceType.SpecialType != SpecialType.System_String;
++
++            // Only emit ConvertTo<T> when both sides are primitive/known-convertible types.
++            // Enum-to-int, custom type pairs, etc. have no ConvertTo<T> overload → skip them.
++            bool useConvertTo = !sameType && !useToString
++                && IsConvertibleType(resolvedSourceType) && IsConvertibleType(targetProp.Type);
++
++            if (!string.IsNullOrWhiteSpace(converterMethodName))
++            {
++                var converterMethod = ResolveConverterMethod(sourceType, converterMethodName!, resolvedSourceType, targetProp.Type);
++                if (converterMethod == null)
+                 {
+-                    continue;
++                    diagnostics.Add(Diagnostic.Create(
++                        InvalidConverterMethod,
++                        sourceProp.Locations.FirstOrDefault() ?? Location.None,
++                        converterMethodName,
++                        targetType.Name,
++                        targetProp.Name,
++                        sourceType.Name));
++
++                    return;
+                 }
+ 
+-                mappings.Add(new PropertyMapping(
+-                    sourceProp.Name,
+-                    targetPropName,
++                converterInvocationName = converterMethod.Name;
++                sameType = false;
++                useToString = false;
++                useConvertTo = false;
++            }
++
++            // No safe automatic conversion exists; leave this property unmapped rather than
++            // emitting an assignment that won't compile.
++            if (converterInvocationName == null && !sameType && !useToString && !useConvertTo)
++            {
++                diagnostics.Add(Diagnostic.Create(
++                    UnsupportedConversion,
++                    sourceProp.Locations.FirstOrDefault() ?? Location.None,
++                    targetType.Name,
++                    targetProp.Name,
++                    sourceType.Name,
++                    sourceResolution.DisplayName,
+                     sourceTypeName,
+-                    targetTypeName,
+-                    sameType,
+-                    useToString,
+-                    useConvertTo,
+-                    IsNullableReferenceOrValueType(sourceProp.Type)));
++                    targetTypeName));
++
++                return;
+             }
+ 
+-            return mappings;
++            bool sourceIsNullable = sourceResolution.IsNullable;
++            bool targetIsNonNullable = IsNonNullableReferenceOrValueType(targetProp.Type);
++            if (sourceIsNullable && targetIsNonNullable)
++            {
++                diagnostics.Add(Diagnostic.Create(
++                    NullableToNonNullableRisk,
++                    sourceProp.Locations.FirstOrDefault() ?? Location.None,
++                    sourceType.Name,
++                    sourceResolution.DisplayName,
++                    targetType.Name,
++                    targetProp.Name));
++            }
++
++            mappingsByTarget[targetPropName] = new PropertyMapping(
++                sourceResolution.DisplayName,
++                sourceResolution.Expression,
++                sourceResolution.CanReverse && converterInvocationName == null ? sourceProp.Name : null,
++                targetPropName,
++                sourceTypeName,
++                targetTypeName,
++                sameType,
++                useToString,
++                useConvertTo,
++                converterInvocationName,
++                sourceIsNullable,
++                targetIsNonNullable);
+         }
+ 
+         private static IEnumerable<IPropertySymbol> GetPublicReadableProperties(INamedTypeSymbol type)
+@@ -268,6 +555,44 @@ namespace Transformations.Mapping.Generator
+             }
+         }
+ 
++        private static IMethodSymbol? ResolveConverterMethod(
++            INamedTypeSymbol sourceType,
++            string converterMethodName,
++            ITypeSymbol sourceValueType,
++            ITypeSymbol targetValueType)
++        {
++            INamedTypeSymbol? current = sourceType;
++            while (current != null)
++            {
++                foreach (var method in current.GetMembers(converterMethodName).OfType<IMethodSymbol>())
++                {
++                    if (!method.IsStatic ||
++                        method.MethodKind != MethodKind.Ordinary ||
++                        method.IsGenericMethod ||
++                        method.Parameters.Length != 1)
++                    {
++                        continue;
++                    }
++
++                    if (!SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, sourceValueType))
++                    {
++                        continue;
++                    }
++
++                    if (!SymbolEqualityComparer.Default.Equals(method.ReturnType, targetValueType))
++                    {
++                        continue;
++                    }
++
++                    return method;
++                }
++
++                current = current.BaseType;
++            }
++
++            return null;
++        }
++
+         private static bool IsConvertibleType(ITypeSymbol type)
+         {
+             // Unwrap Nullable<T>
+@@ -312,8 +637,9 @@ namespace Transformations.Mapping.Generator
+             });
+         }
+ 
+-        private static string? GetMappedPropertyName(IPropertySymbol prop)
++        private static List<MapPropertyModel> GetMapPropertyAttributes(IPropertySymbol prop)
+         {
++            var mappings = new List<MapPropertyModel>();
+             foreach (var attr in prop.GetAttributes())
+             {
+                 var attrClass = attr.AttributeClass;
+@@ -322,12 +648,97 @@ namespace Transformations.Mapping.Generator
+                     if (attr.ConstructorArguments.Length == 1 &&
+                         attr.ConstructorArguments[0].Value is string name)
+                     {
+-                        return name;
++                        string? sourcePath = null;
++                        string? converter = null;
++                        foreach (var namedArgument in attr.NamedArguments)
++                        {
++                            if (namedArgument.Key == "SourcePath" &&
++                                namedArgument.Value.Value is string rawSourcePath)
++                            {
++                                sourcePath = rawSourcePath;
++                            }
++
++                            if (namedArgument.Key == "Converter" &&
++                                namedArgument.Value.Value is string rawConverter)
++                            {
++                                converter = rawConverter;
++                            }
++                        }
++
++                        mappings.Add(new MapPropertyModel(name, sourcePath, converter));
+                     }
+                 }
+             }
+ 
+-            return null;
++            return mappings;
++        }
++
++        private static SourceResolution? ResolveSource(INamedTypeSymbol sourceType, IPropertySymbol sourceProp, string? sourcePath)
++        {
++            if (string.IsNullOrWhiteSpace(sourcePath))
++            {
++                return new SourceResolution(
++                    sourceProp.Name,
++                    $"this.{sourceProp.Name}",
++                    sourceProp.Type,
++                    IsNullableReferenceOrValueType(sourceProp.Type),
++                    true);
++            }
++
++            string[] pathParts = sourcePath!.Split('.');
++            if (pathParts.Length == 0 || pathParts.Any(string.IsNullOrWhiteSpace))
++            {
++                return null;
++            }
++
++            ITypeSymbol currentType = sourceType;
++            var pathProperties = new List<IPropertySymbol>();
++            foreach (string pathPart in pathParts)
++            {
++                if (currentType is not INamedTypeSymbol namedType)
++                {
++                    return null;
++                }
++
++                IPropertySymbol? pathProperty = GetPublicReadableProperties(namedType)
++                    .FirstOrDefault(p => p.Name == pathPart);
++                if (pathProperty == null)
++                {
++                    return null;
++                }
++
++                pathProperties.Add(pathProperty);
++                currentType = pathProperty.Type;
++            }
++
++            string expression = BuildSourcePathExpression(pathProperties);
++            bool isNullable = pathProperties.Any(p => IsNullableReferenceOrValueType(p.Type));
++
++            return new SourceResolution(
++                sourcePath,
++                expression,
++                pathProperties[pathProperties.Count - 1].Type,
++                isNullable,
++                false);
++        }
++
++        private static string BuildSourcePathExpression(List<IPropertySymbol> pathProperties)
++        {
++            var expression = new StringBuilder("this");
++            for (int i = 0; i < pathProperties.Count; i++)
++            {
++                IPropertySymbol property = pathProperties[i];
++                bool useNullConditional = i > 0 && IsNullableReferenceOrValueType(pathProperties[i - 1].Type);
++                expression.Append(useNullConditional ? "?." : ".");
++                expression.Append(property.Name);
++            }
++
++            return expression.ToString();
++        }
++
++        private static string GetSourceDisplayName(IPropertySymbol sourceProp, string? sourcePath)
++        {
++            return string.IsNullOrWhiteSpace(sourcePath) ? sourceProp.Name : sourcePath!;
+         }
+ 
+         private static bool IsNullableReferenceOrValueType(ITypeSymbol type)
+@@ -346,6 +757,22 @@ namespace Transformations.Mapping.Generator
+             return false;
+         }
+ 
++        private static bool IsNonNullableReferenceOrValueType(ITypeSymbol type)
++        {
++            if (type is INamedTypeSymbol named && named.IsGenericType &&
++                named.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
++            {
++                return false;
++            }
++
++            if (type.IsValueType)
++            {
++                return true;
++            }
++
++            return type.NullableAnnotation == NullableAnnotation.NotAnnotated;
++        }
++
+         private static void GenerateCode(
+             SourceProductionContext context,
+             ImmutableArray<MappingModel> models,
+@@ -355,6 +782,16 @@ namespace Transformations.Mapping.Generator
+             {
+                 context.CancellationToken.ThrowIfCancellationRequested();
+ 
++                foreach (var diagnostic in model.Diagnostics)
++                {
++                    context.ReportDiagnostic(diagnostic);
++                }
++
++                if (model.Targets.Count == 0)
++                {
++                    continue;
++                }
++
+                 foreach (var target in model.Targets)
+                 {
+                     foreach (string unmappedMember in target.UnmappedTargetProperties)
+@@ -397,6 +834,13 @@ namespace Transformations.Mapping.Generator
+ 
+             string indent = hasNamespace ? "    " : "";
+ 
++            foreach (var containingType in model.ContainingTypes)
++            {
++                sb.AppendLine($"{indent}partial class {containingType.DeclarationName}");
++                sb.AppendLine($"{indent}{{");
++                indent += "    ";
++            }
++
+             sb.AppendLine($"{indent}partial class {model.SourceDeclarationName}");
+             sb.AppendLine($"{indent}{{");
+ 
+@@ -404,6 +848,8 @@ namespace Transformations.Mapping.Generator
+             {
+                 EmitMappingMethod(sb, target, indent + "    ");
+                 sb.AppendLine();
++                EmitMapToExistingTargetMethod(sb, target, indent + "    ");
++                sb.AppendLine();
+                 EmitStaticFactory(sb, model, target, indent + "    ");
+ 
+                 if (target != model.Targets[model.Targets.Count - 1])
+@@ -414,6 +860,15 @@ namespace Transformations.Mapping.Generator
+ 
+             sb.AppendLine($"{indent}}}");
+ 
++            for (int i = model.ContainingTypes.Count - 1; i >= 0; i--)
++            {
++                indent = indent.Substring(0, indent.Length - 4);
++                sb.AppendLine($"{indent}}}");
++            }
++
++            sb.AppendLine();
++            EmitCollectionExtensions(sb, model, hasNamespace ? "    " : "");
++
+             if (hasNamespace)
+             {
+                 sb.AppendLine("}");
+@@ -422,12 +877,137 @@ namespace Transformations.Mapping.Generator
+             return sb.ToString();
+         }
+ 
++        private static void EmitCollectionExtensions(StringBuilder sb, MappingModel model, string indent)
++        {
++            string extensionClassName = SanitizeIdentifier(model.SourceMetadataName) + "MappingExtensions";
++            sb.AppendLine($"{indent}/// <summary>");
++            sb.AppendLine($"{indent}/// Provides collection mapping helpers for {model.SourceClassName}.");
++            sb.AppendLine($"{indent}/// </summary>");
++            sb.AppendLine($"{indent}public static class {extensionClassName}");
++            sb.AppendLine($"{indent}{{");
++
++            foreach (var target in model.Targets)
++            {
++                EmitEnumerableMappingMethod(sb, model, target, indent + "    ");
++                sb.AppendLine();
++                EmitListMappingMethod(sb, model, target, indent + "    ");
++                sb.AppendLine();
++                EmitArrayMappingMethod(sb, model, target, indent + "    ");
++                sb.AppendLine();
++                EmitQueryableProjectionMethod(sb, model, target, indent + "    ");
++
++                if (target != model.Targets[model.Targets.Count - 1])
++                {
++                    sb.AppendLine();
++                }
++            }
++
++            sb.AppendLine($"{indent}}}");
++        }
++
++        private static void EmitEnumerableMappingMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
++        {
++            string methodTypeParameters = GetMethodTypeParameters(model);
++            sb.AppendLine($"{indent}/// <summary>");
++            sb.AppendLine($"{indent}/// Lazily maps a sequence of {model.SourceClassName} instances to {target.TargetClassName} instances.");
++            sb.AppendLine($"{indent}/// </summary>");
++            sb.AppendLine($"{indent}/// <param name=\"source\">The source sequence to map.</param>");
++            sb.AppendLine($"{indent}/// <returns>A sequence of mapped {target.TargetClassName} instances.</returns>");
++            sb.AppendLine($"{indent}public static global::System.Collections.Generic.IEnumerable<{target.TargetFullName}> To{target.TargetClassName}Enumerable{methodTypeParameters}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source)");
++            sb.AppendLine($"{indent}{{");
++            sb.AppendLine($"{indent}    if (source == null)");
++            sb.AppendLine($"{indent}    {{");
++            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
++            sb.AppendLine($"{indent}    }}");
++            sb.AppendLine();
++            sb.AppendLine($"{indent}    foreach (var item in source)");
++            sb.AppendLine($"{indent}    {{");
++            sb.AppendLine($"{indent}        yield return item == null ? null! : item.To{target.TargetClassName}();");
++            sb.AppendLine($"{indent}    }}");
++            sb.AppendLine($"{indent}}}");
++        }
++
++        private static void EmitListMappingMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
++        {
++            string methodTypeParameters = GetMethodTypeParameters(model);
++            sb.AppendLine($"{indent}/// <summary>");
++            sb.AppendLine($"{indent}/// Maps a sequence of {model.SourceClassName} instances to a list of {target.TargetClassName} instances.");
++            sb.AppendLine($"{indent}/// </summary>");
++            sb.AppendLine($"{indent}/// <param name=\"source\">The source sequence to map.</param>");
++            sb.AppendLine($"{indent}/// <returns>A list of mapped {target.TargetClassName} instances.</returns>");
++            sb.AppendLine($"{indent}public static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{methodTypeParameters}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source)");
++            sb.AppendLine($"{indent}{{");
++            sb.AppendLine($"{indent}    return global::System.Linq.Enumerable.ToList(source.To{target.TargetClassName}Enumerable());");
++            sb.AppendLine($"{indent}}}");
++        }
++
++        private static void EmitArrayMappingMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
++        {
++            string methodTypeParameters = GetMethodTypeParameters(model);
++            sb.AppendLine($"{indent}/// <summary>");
++            sb.AppendLine($"{indent}/// Maps a sequence of {model.SourceClassName} instances to an array of {target.TargetClassName} instances.");
++            sb.AppendLine($"{indent}/// </summary>");
++            sb.AppendLine($"{indent}/// <param name=\"source\">The source sequence to map.</param>");
++            sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
++            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{methodTypeParameters}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source)");
++            sb.AppendLine($"{indent}{{");
++            sb.AppendLine($"{indent}    return global::System.Linq.Enumerable.ToArray(source.To{target.TargetClassName}Enumerable());");
++            sb.AppendLine($"{indent}}}");
++        }
++
++        private static void EmitQueryableProjectionMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
++        {
++            string methodTypeParameters = GetMethodTypeParameters(model);
++            var projectableProperties = target.Properties.Where(CanProjectProperty).ToList();
++            var nonProjectableProperties = target.Properties.Where(prop => !CanProjectProperty(prop)).ToList();
++
++            sb.AppendLine($"{indent}/// <summary>");
++            sb.AppendLine($"{indent}/// Projects a queryable sequence of {model.SourceClassName} instances to {target.TargetClassName} instances.");
++            sb.AppendLine($"{indent}/// </summary>");
++            sb.AppendLine($"{indent}/// <param name=\"source\">The queryable source sequence to project.</param>");
++            sb.AppendLine($"{indent}/// <returns>A queryable sequence projected to {target.TargetClassName}.</returns>");
++            sb.AppendLine($"{indent}public static global::System.Linq.IQueryable<{target.TargetFullName}> ProjectTo{target.TargetClassName}{methodTypeParameters}(this global::System.Linq.IQueryable<{model.SourceFullName}> source)");
++            sb.AppendLine($"{indent}{{");
++            sb.AppendLine($"{indent}    if (source == null)");
++            sb.AppendLine($"{indent}    {{");
++            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
++            sb.AppendLine($"{indent}    }}");
++            sb.AppendLine();
++
++            if (nonProjectableProperties.Count > 0)
++            {
++                string propertyNames = string.Join(", ", nonProjectableProperties.Select(prop => prop.TargetPropertyName));
++                sb.AppendLine($"{indent}    throw new global::System.NotSupportedException(\"Projection to {target.TargetClassName} is not available because these mapped members require runtime-only mapping: {propertyNames}.\");");
++                sb.AppendLine($"{indent}}}");
++                return;
++            }
++
++            sb.AppendLine($"{indent}    return global::System.Linq.Queryable.Select(source, item => new {target.TargetFullName}()");
++            sb.AppendLine($"{indent}    {{");
++
++            foreach (var prop in projectableProperties)
++            {
++                string assignment = GetProjectionAssignmentExpression(prop);
++                sb.AppendLine($"{indent}        @{prop.TargetPropertyName} = {assignment},");
++            }
++
++            sb.AppendLine($"{indent}    }});");
++            sb.AppendLine($"{indent}}}");
++        }
++
++        private static string GetMethodTypeParameters(MappingModel model)
++        {
++            return model.SourceTypeParameterNames.Count == 0
++                ? string.Empty
++                : "<" + string.Join(", ", model.SourceTypeParameterNames) + ">";
++        }
++
+         private static void EmitMappingMethod(StringBuilder sb, TargetMapping target, string indent)
+         {
+             sb.AppendLine($"{indent}/// <summary>");
+-            sb.AppendLine($"{indent}/// Maps this instance to a new <see cref=\"{target.TargetClassName}\"/>.");
++            sb.AppendLine($"{indent}/// Maps this instance to a new {target.TargetClassName}.");
+             sb.AppendLine($"{indent}/// </summary>");
+-            sb.AppendLine($"{indent}/// <returns>A new <see cref=\"{target.TargetClassName}\"/> with mapped property values.</returns>");
++            sb.AppendLine($"{indent}/// <returns>A new {target.TargetClassName} with mapped property values.</returns>");
+             sb.AppendLine($"{indent}public {target.TargetFullName} To{target.TargetClassName}()");
+             sb.AppendLine($"{indent}{{");
+             sb.AppendLine($"{indent}    return new {target.TargetFullName}()");
+@@ -443,13 +1023,39 @@ namespace Transformations.Mapping.Generator
+             sb.AppendLine($"{indent}}}");
+         }
+ 
++        private static void EmitMapToExistingTargetMethod(StringBuilder sb, TargetMapping target, string indent)
++        {
++            sb.AppendLine($"{indent}/// <summary>");
++            sb.AppendLine($"{indent}/// Maps this instance onto an existing {target.TargetClassName}.");
++            sb.AppendLine($"{indent}/// </summary>");
++            sb.AppendLine($"{indent}/// <param name=\"target\">The target instance to update.</param>");
++            sb.AppendLine($"{indent}/// <returns>The updated {target.TargetClassName} instance.</returns>");
++            sb.AppendLine($"{indent}public {target.TargetFullName} MapTo({target.TargetFullName} target)");
++            sb.AppendLine($"{indent}{{");
++            sb.AppendLine($"{indent}    if (target == null)");
++            sb.AppendLine($"{indent}    {{");
++            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(target));");
++            sb.AppendLine($"{indent}    }}");
++            sb.AppendLine();
++
++            foreach (var prop in target.Properties)
++            {
++                string assignment = GetAssignmentExpression(prop);
++                sb.AppendLine($"{indent}    target.@{prop.TargetPropertyName} = {assignment};");
++            }
++
++            sb.AppendLine();
++            sb.AppendLine($"{indent}    return target;");
++            sb.AppendLine($"{indent}}}");
++        }
++
+         private static void EmitStaticFactory(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+         {
+             sb.AppendLine($"{indent}/// <summary>");
+-            sb.AppendLine($"{indent}/// Maps a <see cref=\"{target.TargetClassName}\"/> back to a new <see cref=\"{model.SourceClassName}\"/>.");
++            sb.AppendLine($"{indent}/// Maps a {target.TargetClassName} back to a new {model.SourceClassName}.");
+             sb.AppendLine($"{indent}/// </summary>");
+-            sb.AppendLine($"{indent}/// <param name=\"source\">The source <see cref=\"{target.TargetClassName}\"/> to map from.</param>");
+-            sb.AppendLine($"{indent}/// <returns>A new <see cref=\"{model.SourceClassName}\"/> with mapped property values.</returns>");
++            sb.AppendLine($"{indent}/// <param name=\"source\">The source {target.TargetClassName} to map from.</param>");
++            sb.AppendLine($"{indent}/// <returns>A new {model.SourceClassName} with mapped property values.</returns>");
+             sb.AppendLine($"{indent}public static {model.SourceFullName} From{target.TargetClassName}({target.TargetFullName} source)");
+             sb.AppendLine($"{indent}{{");
+             sb.AppendLine($"{indent}    return new {model.SourceFullName}()");
+@@ -457,8 +1063,13 @@ namespace Transformations.Mapping.Generator
+ 
+             foreach (var prop in target.Properties)
+             {
++                if (!prop.CanReverse)
++                {
++                    continue;
++                }
++
+                 string assignment = GetReverseAssignmentExpression(prop);
+-                sb.AppendLine($"{indent}        @{prop.SourcePropertyName} = {assignment},");
++                sb.AppendLine($"{indent}        @{prop.SourceReversePropertyName} = {assignment},");
+             }
+ 
+             sb.AppendLine($"{indent}    }};");
+@@ -467,27 +1078,72 @@ namespace Transformations.Mapping.Generator
+ 
+         private static string GetAssignmentExpression(PropertyMapping prop)
+         {
++            if (prop.ConverterMethodName != null)
++            {
++                return $"{prop.ConverterMethodName}({prop.SourceExpression})";
++            }
++
+             if (prop.SameType)
+             {
+-                return $"this.{prop.SourcePropertyName}";
++                if (prop.SourceIsNullable && prop.TargetIsNonNullable && IsStringTypeName(prop.TargetTypeName))
++                {
++                    return $"{prop.SourceExpression} ?? string.Empty";
++                }
++
++                return prop.SourceExpression;
+             }
+ 
+             if (prop.UseToString)
+             {
+                 if (prop.SourceIsNullable)
+                 {
+-                    return $"this.{prop.SourcePropertyName}?.ToString() ?? string.Empty";
++                    return $"{prop.SourceExpression}?.ToString() ?? string.Empty";
+                 }
+ 
+-                return $"this.{prop.SourcePropertyName}.ToString()";
++                return $"{prop.SourceExpression}.ToString()";
+             }
+ 
+             if (prop.UseConvertTo)
+             {
+-                return $"this.{prop.SourcePropertyName}.ConvertTo<{StripGlobalPrefix(prop.TargetTypeName)}>()";
++                return $"{prop.SourceExpression}.ConvertTo<{StripGlobalPrefix(prop.TargetTypeName)}>()";
++            }
++
++            return prop.SourceExpression;
++        }
++
++        private static bool CanProjectProperty(PropertyMapping prop)
++        {
++            if (prop.ConverterMethodName != null || prop.UseConvertTo || prop.UseToString)
++            {
++                return false;
++            }
++
++            return !prop.SourceExpression.Contains("?.");
++        }
++
++        private static string GetProjectionAssignmentExpression(PropertyMapping prop)
++        {
++            string sourceExpression = ToProjectionSourceExpression(prop.SourceExpression);
++            if (prop.SameType &&
++                prop.SourceIsNullable &&
++                prop.TargetIsNonNullable &&
++                IsStringTypeName(prop.TargetTypeName))
++            {
++                return $"{sourceExpression} ?? string.Empty";
+             }
+ 
+-            return $"this.{prop.SourcePropertyName}";
++            return sourceExpression;
++        }
++
++        private static string ToProjectionSourceExpression(string sourceExpression)
++        {
++            const string thisPrefix = "this.";
++            if (sourceExpression.StartsWith(thisPrefix, StringComparison.Ordinal))
++            {
++                return "item." + sourceExpression.Substring(thisPrefix.Length);
++            }
++
++            return sourceExpression.Replace("this.", "item.");
+         }
+ 
+         private static string GetReverseAssignmentExpression(PropertyMapping prop)
+@@ -514,6 +1170,37 @@ namespace Transformations.Mapping.Generator
+ 
+             return typeName;
+         }
++
++        private static bool IsStringTypeName(string typeName)
++        {
++            return typeName == "string" || typeName == "global::System.String" || typeName == "System.String";
++        }
++
++        private static string SanitizeIdentifier(string value)
++        {
++            var sb = new StringBuilder(value.Length);
++            foreach (char ch in value)
++            {
++                if ((ch >= 'a' && ch <= 'z') ||
++                    (ch >= 'A' && ch <= 'Z') ||
++                    (ch >= '0' && ch <= '9') ||
++                    ch == '_')
++                {
++                    sb.Append(ch);
++                }
++                else
++                {
++                    sb.Append('_');
++                }
++            }
++
++            if (sb.Length == 0 || (sb[0] >= '0' && sb[0] <= '9'))
++            {
++                sb.Insert(0, '_');
++            }
++
++            return sb.ToString();
++        }
+     }
+ 
+     // Immutable model types for the pipeline
+@@ -523,25 +1210,39 @@ namespace Transformations.Mapping.Generator
+         public string SourceClassName { get; }
+         public string SourceDeclarationName { get; }
+         public string SourceMetadataName { get; }
++        public List<string> SourceTypeParameterNames { get; }
++        public List<TypeDeclarationModel> ContainingTypes { get; }
+         public string SourceNamespace { get; }
+         public string SourceFullName { get; }
+         public Location? SourceLocation { get; }
++        public List<Diagnostic> Diagnostics { get; }
+         public List<TargetMapping> Targets { get; }
+ 
+-        public MappingModel(string sourceClassName, string sourceDeclarationName, string sourceNamespace, string sourceFullName, Location? sourceLocation, List<TargetMapping> targets)
++        public MappingModel(string sourceClassName, string sourceDeclarationName, string sourceMetadataName, List<string> sourceTypeParameterNames, List<TypeDeclarationModel> containingTypes, string sourceNamespace, string sourceFullName, Location? sourceLocation, List<Diagnostic> diagnostics, List<TargetMapping> targets)
+         {
+             SourceClassName = sourceClassName;
+             SourceDeclarationName = sourceDeclarationName;
+-            SourceMetadataName = sourceClassName == sourceDeclarationName
+-                ? sourceClassName
+-                : sourceDeclarationName.Replace("<", "_").Replace(">", string.Empty).Replace(", ", "_");
++            SourceMetadataName = sourceMetadataName;
++            SourceTypeParameterNames = sourceTypeParameterNames;
++            ContainingTypes = containingTypes;
+             SourceNamespace = sourceNamespace;
+             SourceFullName = sourceFullName;
+             SourceLocation = sourceLocation;
++            Diagnostics = diagnostics;
+             Targets = targets;
+         }
+     }
+ 
++    internal sealed class TypeDeclarationModel
++    {
++        public string DeclarationName { get; }
++
++        public TypeDeclarationModel(string declarationName)
++        {
++            DeclarationName = declarationName;
++        }
++    }
++
+     internal sealed class TargetMapping
+     {
+         public string TargetFullName { get; }
+@@ -584,33 +1285,78 @@ namespace Transformations.Mapping.Generator
+ 
+     internal sealed class PropertyMapping
+     {
+-        public string SourcePropertyName { get; }
++        public string SourceDisplayName { get; }
++        public string SourceExpression { get; }
++        public string? SourceReversePropertyName { get; }
+         public string TargetPropertyName { get; }
+         public string SourceTypeName { get; }
+         public string TargetTypeName { get; }
+         public bool SameType { get; }
+         public bool UseToString { get; }
+         public bool UseConvertTo { get; }
++        public string? ConverterMethodName { get; }
+         public bool SourceIsNullable { get; }
++        public bool TargetIsNonNullable { get; }
++        public bool CanReverse => SourceReversePropertyName != null;
+ 
+         public PropertyMapping(
+-            string sourcePropertyName,
++            string sourceDisplayName,
++            string sourceExpression,
++            string? sourceReversePropertyName,
+             string targetPropertyName,
+             string sourceTypeName,
+             string targetTypeName,
+             bool sameType,
+             bool useToString,
+             bool useConvertTo,
+-            bool sourceIsNullable)
++            string? converterMethodName,
++            bool sourceIsNullable,
++            bool targetIsNonNullable)
+         {
+-            SourcePropertyName = sourcePropertyName;
++            SourceDisplayName = sourceDisplayName;
++            SourceExpression = sourceExpression;
++            SourceReversePropertyName = sourceReversePropertyName;
+             TargetPropertyName = targetPropertyName;
+             SourceTypeName = sourceTypeName;
+             TargetTypeName = targetTypeName;
+             SameType = sameType;
+             UseToString = useToString;
+             UseConvertTo = useConvertTo;
++            ConverterMethodName = converterMethodName;
+             SourceIsNullable = sourceIsNullable;
++            TargetIsNonNullable = targetIsNonNullable;
++        }
++    }
++
++    internal sealed class MapPropertyModel
++    {
++        public string TargetPropertyName { get; }
++        public string? SourcePath { get; }
++        public string? Converter { get; }
++
++        public MapPropertyModel(string targetPropertyName, string? sourcePath, string? converter)
++        {
++            TargetPropertyName = targetPropertyName;
++            SourcePath = sourcePath;
++            Converter = converter;
++        }
++    }
++
++    internal sealed class SourceResolution
++    {
++        public string DisplayName { get; }
++        public string Expression { get; }
++        public ITypeSymbol Type { get; }
++        public bool IsNullable { get; }
++        public bool CanReverse { get; }
++
++        public SourceResolution(string displayName, string expression, ITypeSymbol type, bool isNullable, bool canReverse)
++        {
++            DisplayName = displayName;
++            Expression = expression;
++            Type = type;
++            IsNullable = isNullable;
++            CanReverse = canReverse;
+         }
+     }
+ }
+diff --git a/Transformations.Mapping.Tests/MappingGeneratorDiagnosticTests.cs b/Transformations.Mapping.Tests/MappingGeneratorDiagnosticTests.cs
+new file mode 100644
+index 0000000..855fcdb
+--- /dev/null
++++ b/Transformations.Mapping.Tests/MappingGeneratorDiagnosticTests.cs
+@@ -0,0 +1,206 @@
++using Microsoft.CodeAnalysis;
++using Microsoft.CodeAnalysis.CSharp;
++using NUnit.Framework;
++using Transformations.Mapping;
++using Transformations.Mapping.Generator;
++
++namespace Transformations.Mapping.Tests
++{
++    [TestFixture]
++    public class MappingGeneratorDiagnosticTests
++    {
++        [Test]
++        public void Generator_NonPartialSource_ReportsDiagnostic()
++        {
++            var diagnostics = RunGenerator("""
++                using Transformations.Mapping;
++
++                public class UserDto
++                {
++                    public int Id { get; set; }
++                }
++
++                [MapTo<UserDto>]
++                public class User
++                {
++                    public int Id { get; set; }
++                }
++                """);
++
++            Assert.That(diagnostics.Select(d => d.Id), Does.Contain("TXMAP003"));
++        }
++
++        [Test]
++        public void Generator_NonPartialContainingType_ReportsDiagnostic()
++        {
++            var diagnostics = RunGenerator("""
++                using Transformations.Mapping;
++
++                public class Container
++                {
++                    public class UserDto
++                    {
++                        public int Id { get; set; }
++                    }
++
++                    [MapTo<UserDto>]
++                    public partial class User
++                    {
++                        public int Id { get; set; }
++                    }
++                }
++                """);
++
++            Assert.That(diagnostics.Select(d => d.Id), Does.Contain("TXMAP004"));
++        }
++
++        [Test]
++        public void Generator_UnsupportedConversion_ReportsDiagnostic()
++        {
++            var diagnostics = RunGenerator("""
++                using Transformations.Mapping;
++
++                public class UserDto
++                {
++                    public TargetValue Value { get; set; } = new TargetValue();
++                }
++
++                public class SourceValue
++                {
++                }
++
++                public class TargetValue
++                {
++                }
++
++                [MapTo<UserDto>]
++                public partial class User
++                {
++                    public SourceValue Value { get; set; } = new SourceValue();
++                }
++                """);
++
++            Assert.That(diagnostics.Select(d => d.Id), Does.Contain("TXMAP002"));
++        }
++
++        [Test]
++        public void Generator_AmbiguousTargetMapping_ReportsDiagnostic()
++        {
++            var diagnostics = RunGenerator("""
++                using Transformations.Mapping;
++
++                public class UserDto
++                {
++                    public string Name { get; set; } = string.Empty;
++                }
++
++                [MapTo<UserDto>]
++                public partial class User
++                {
++                    public string Name { get; set; } = string.Empty;
++
++                    [MapProperty("Name")]
++                    public string DisplayName { get; set; } = string.Empty;
++                }
++                """);
++
++            Assert.That(diagnostics.Select(d => d.Id), Does.Contain("TXMAP005"));
++        }
++
++        [Test]
++        public void Generator_NullableSourceToNonNullableTarget_ReportsDiagnostic()
++        {
++            var diagnostics = RunGenerator("""
++                #nullable enable
++                using Transformations.Mapping;
++
++                public class UserDto
++                {
++                    public string Name { get; set; } = string.Empty;
++                }
++
++                [MapTo<UserDto>]
++                public partial class User
++                {
++                    public string? Name { get; set; }
++                }
++                """);
++
++            Assert.That(diagnostics.Select(d => d.Id), Does.Contain("TXMAP006"));
++        }
++
++        [Test]
++        public void Generator_InvalidSourcePath_ReportsDiagnostic()
++        {
++            var diagnostics = RunGenerator("""
++                using Transformations.Mapping;
++
++                public class UserDto
++                {
++                    public string DisplayName { get; set; } = string.Empty;
++                }
++
++                public class Profile
++                {
++                    public string Name { get; set; } = string.Empty;
++                }
++
++                [MapTo<UserDto>]
++                public partial class User
++                {
++                    [MapProperty("DisplayName", SourcePath = "Profile.Missing")]
++                    public Profile Profile { get; set; } = new Profile();
++                }
++                """);
++
++            Assert.That(diagnostics.Select(d => d.Id), Does.Contain("TXMAP007"));
++        }
++
++        [Test]
++        public void Generator_InvalidConverterMethod_ReportsDiagnostic()
++        {
++            var diagnostics = RunGenerator("""
++                using Transformations.Mapping;
++
++                public class UserDto
++                {
++                    public int Age { get; set; }
++                }
++
++                [MapTo<UserDto>]
++                public partial class User
++                {
++                    [MapProperty("Age", Converter = nameof(ConvertAge))]
++                    public string AgeText { get; set; } = string.Empty;
++
++                    private static string ConvertAge(string value) => value;
++                }
++                """);
++
++            Assert.That(diagnostics.Select(d => d.Id), Does.Contain("TXMAP008"));
++        }
++
++        private static IReadOnlyList<Diagnostic> RunGenerator(string source)
++        {
++            var syntaxTree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Preview));
++            var references = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
++                .Split(Path.PathSeparator)
++                .Select(path => MetadataReference.CreateFromFile(path))
++                .Cast<MetadataReference>()
++                .ToList();
++
++            references.Add(MetadataReference.CreateFromFile(typeof(MapToAttribute<>).Assembly.Location));
++
++            var compilation = CSharpCompilation.Create(
++                "MappingGeneratorDiagnostics",
++                new[] { syntaxTree },
++                references,
++                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
++
++            GeneratorDriver driver = CSharpGeneratorDriver.Create(new MappingGenerator());
++            driver = driver.RunGenerators(compilation);
++
++            return driver.GetRunResult().Diagnostics;
++        }
++    }
++}
+diff --git a/Transformations.Mapping.Tests/MappingGeneratorTests.cs b/Transformations.Mapping.Tests/MappingGeneratorTests.cs
+index b35208e..5a36c9f 100644
+--- a/Transformations.Mapping.Tests/MappingGeneratorTests.cs
++++ b/Transformations.Mapping.Tests/MappingGeneratorTests.cs
+@@ -251,6 +251,391 @@ namespace Transformations.Mapping.Tests
+             Assert.That(dto.Value, Is.EqualTo("42"));
+         }
+ 
++        [Test]
++        public void ToNestedDto_NestedSourceClass_GeneratesInsideContainingPartialClass()
++        {
++            var source = new MappingContainer.NestedSource { Id = 17, Name = "Nested" };
++
++            MappingContainer.NestedDto dto = source.ToNestedDto();
++
++            Assert.That(dto.Id, Is.EqualTo(17));
++            Assert.That(dto.Name, Is.EqualTo("Nested"));
++        }
++
+         #endregion Edge cases
++
++        #region Collection mapping
++
++        [Test]
++        public void ToUserDtoList_MapsAllItems()
++        {
++            var users = new List<User>
++            {
++                new() { Id = 1, Name = "Alice", Email = "alice@test.com" },
++                new() { Id = 2, Name = "Bob", Email = "bob@test.com" }
++            };
++
++            List<UserDto> dtos = users.ToUserDtoList();
++
++            Assert.That(dtos, Has.Count.EqualTo(2));
++            Assert.That(dtos[0].Name, Is.EqualTo("Alice"));
++            Assert.That(dtos[1].Email, Is.EqualTo("bob@test.com"));
++        }
++
++        [Test]
++        public void ToUserDtoArray_MapsAllItems()
++        {
++            var users = new[]
++            {
++                new User { Id = 3, Name = "Carol", Email = "carol@test.com" },
++                new User { Id = 4, Name = "Dan", Email = "dan@test.com" }
++            };
++
++            UserDto[] dtos = users.ToUserDtoArray();
++
++            Assert.That(dtos, Has.Length.EqualTo(2));
++            Assert.That(dtos[0].Id, Is.EqualTo(3));
++            Assert.That(dtos[1].Name, Is.EqualTo("Dan"));
++        }
++
++        [Test]
++        public void ToUserDtoEnumerable_MapsLazily()
++        {
++            var users = new List<User>
++            {
++                new() { Id = 5, Name = "Erin", Email = "erin@test.com" }
++            };
++
++            IEnumerable<UserDto> dtos = users.ToUserDtoEnumerable();
++
++            Assert.That(dtos.Single().Name, Is.EqualTo("Erin"));
++        }
++
++        [Test]
++        public void ToUserDtoList_EmptySequence_ReturnsEmptyList()
++        {
++            var users = Array.Empty<User>();
++
++            List<UserDto> dtos = users.ToUserDtoList();
++
++            Assert.That(dtos, Is.Empty);
++        }
++
++        [Test]
++        public void ToUserDtoList_NullSource_ThrowsArgumentNull()
++        {
++            List<User>? users = null;
++
++            Assert.Throws<ArgumentNullException>(() => users!.ToUserDtoList());
++        }
++
++        [Test]
++        public void ToUserDtoList_NullItem_PreservesNullItem()
++        {
++            var users = new List<User> { new() { Id = 6, Name = "Finn", Email = "finn@test.com" }, null! };
++
++            List<UserDto> dtos = users.ToUserDtoList();
++
++            Assert.That(dtos, Has.Count.EqualTo(2));
++            Assert.That(dtos[0].Name, Is.EqualTo("Finn"));
++            Assert.That(dtos[1], Is.Null);
++        }
++
++        [Test]
++        public void ToBriefItemList_MultipleTargets_CollectionMethodUsesRequestedTarget()
++        {
++            var items = new List<CatalogItem>
++            {
++                new() { Id = 7, Title = "Short", Description = "Long" }
++            };
++
++            List<BriefItem> briefs = items.ToBriefItemList();
++
++            Assert.That(briefs.Single().Title, Is.EqualTo("Short"));
++        }
++
++        [Test]
++        public void ToNestedDtoList_NestedSourceClass_CollectionMethodWorks()
++        {
++            var sources = new List<MappingContainer.NestedSource>
++            {
++                new() { Id = 18, Name = "Nested list" }
++            };
++
++            List<MappingContainer.NestedDto> dtos = sources.ToNestedDtoList();
++
++            Assert.That(dtos.Single().Name, Is.EqualTo("Nested list"));
++        }
++
++        [Test]
++        public void ToGenericBoxDtoList_GenericSourceClass_InfersTypeParameters()
++        {
++            var boxes = new List<GenericBox<int>>
++            {
++                new() { Value = 19 }
++            };
++
++            List<GenericBoxDto> dtos = boxes.ToGenericBoxDtoList();
++
++            Assert.That(dtos.Single().Value, Is.EqualTo("19"));
++        }
++
++        #endregion Collection mapping
++
++        #region Queryable projection
++
++        [Test]
++        public void ProjectToUserDto_Queryable_ProjectsAllItems()
++        {
++            var users = new List<User>
++            {
++                new() { Id = 41, Name = "Iris", Email = "iris@test.com" },
++                new() { Id = 42, Name = "Jon", Email = "jon@test.com" }
++            }.AsQueryable();
++
++            List<UserDto> dtos = users.ProjectToUserDto().ToList();
++
++            Assert.That(dtos, Has.Count.EqualTo(2));
++            Assert.That(dtos[0].Id, Is.EqualTo(41));
++            Assert.That(dtos[0].Name, Is.EqualTo("Iris"));
++            Assert.That(dtos[1].Email, Is.EqualTo("jon@test.com"));
++        }
++
++        [Test]
++        public void ProjectToContactCard_RenamedProperties_ProjectsTargetNames()
++        {
++            var employees = new List<Employee>
++            {
++                new() { Name = "Kai Lane", Phone = "555-0101" }
++            }.AsQueryable();
++
++            ContactCard card = employees.ProjectToContactCard().Single();
++
++            Assert.That(card.FullName, Is.EqualTo("Kai Lane"));
++            Assert.That(card.PhoneNumber, Is.EqualTo("555-0101"));
++        }
++
++        [Test]
++        public void ProjectToUserDto_NullSource_ThrowsArgumentNull()
++        {
++            IQueryable<User>? users = null;
++
++            Assert.Throws<ArgumentNullException>(() => users!.ProjectToUserDto());
++        }
++
++        [Test]
++        public void ProjectToOrderSummary_RuntimeOnlyConversions_ThrowsNotSupported()
++        {
++            var orders = new List<Order>().AsQueryable();
++
++            NotSupportedException? exception = Assert.Throws<NotSupportedException>(() => orders.ProjectToOrderSummary());
++
++            Assert.That(exception!.Message, Does.Contain("OrderId"));
++            Assert.That(exception.Message, Does.Contain("Amount"));
++            Assert.That(exception.Message, Does.Contain("CreatedAt"));
++        }
++
++        #endregion Queryable projection
++
++        #region Update existing target
++
++        [Test]
++        public void MapTo_ExistingTarget_UpdatesMappedPropertiesAndReturnsSameInstance()
++        {
++            var user = new User { Id = 21, Name = "Grace", Email = "grace@test.com" };
++            var target = new UserDto { Id = 1, Name = "Old", Email = "old@test.com" };
++
++            UserDto result = user.MapTo(target);
++
++            Assert.That(result, Is.SameAs(target));
++            Assert.That(target.Id, Is.EqualTo(21));
++            Assert.That(target.Name, Is.EqualTo("Grace"));
++            Assert.That(target.Email, Is.EqualTo("grace@test.com"));
++        }
++
++        [Test]
++        public void MapTo_NullExistingTarget_ThrowsArgumentNull()
++        {
++            var user = new User { Id = 22, Name = "Helen", Email = "helen@test.com" };
++
++            Assert.Throws<ArgumentNullException>(() => user.MapTo(null!));
++        }
++
++        [Test]
++        public void MapTo_PartialTarget_PreservesUnmappedTargetValues()
++        {
++            var source = new PartialSource { Id = 23, Name = "Visible" };
++            var target = new PartialTarget { Id = 1, Name = "Old", RequiredDisplayText = "Keep me" };
++
++            source.MapTo(target);
++
++            Assert.That(target.Id, Is.EqualTo(23));
++            Assert.That(target.Name, Is.EqualTo("Visible"));
++            Assert.That(target.RequiredDisplayText, Is.EqualTo("Keep me"));
++        }
++
++        [Test]
++        public void MapTo_DifferentTypes_AppliesConversion()
++        {
++            var order = new Order
++            {
++                OrderId = 24,
++                Amount = 15.25m,
++                CreatedAt = new DateTime(2026, 1, 2)
++            };
++            var target = new OrderSummary();
++
++            order.MapTo(target);
++
++            Assert.That(target.OrderId, Is.EqualTo("24"));
++            Assert.That(target.Amount, Is.Not.Empty);
++            Assert.That(target.CreatedAt, Is.Not.Empty);
++        }
++
++        [Test]
++        public void MapTo_NullableSourceProperty_UpdatesTargetWithNull()
++        {
++            var source = new NullableProfile { Nickname = null, DisplayName = "No nickname" };
++            var target = new NullableProfileDto { Nickname = "Existing", DisplayName = "Old" };
++
++            source.MapTo(target);
++
++            Assert.That(target.Nickname, Is.Null);
++            Assert.That(target.DisplayName, Is.EqualTo("No nickname"));
++        }
++
++        [Test]
++        public void MapTo_MultipleTargets_UpdatesRequestedTarget()
++        {
++            var item = new CatalogItem { Id = 25, Title = "Update", Description = "Preserved detail" };
++            var target = new DetailedItem();
++
++            item.MapTo(target);
++
++            Assert.That(target.Id, Is.EqualTo(25));
++            Assert.That(target.Title, Is.EqualTo("Update"));
++            Assert.That(target.Description, Is.EqualTo("Preserved detail"));
++        }
++
++        #endregion Update existing target
++
++        #region Explicit flattening
++
++        [Test]
++        public void ToCustomerOrderDto_SourcePath_MapsNestedProperties()
++        {
++            var order = new CustomerOrder
++            {
++                Id = 31,
++                Customer = new Customer
++                {
++                    Name = "Contoso",
++                    Address = new Address { City = "London" }
++                }
++            };
++
++            CustomerOrderDto dto = order.ToCustomerOrderDto();
++
++            Assert.That(dto.Id, Is.EqualTo(31));
++            Assert.That(dto.CustomerName, Is.EqualTo("Contoso"));
++            Assert.That(dto.City, Is.EqualTo("London"));
++        }
++
++        [Test]
++        public void ToCustomerOrderDto_SourcePath_NullNestedObject_UsesEmptyString()
++        {
++            var order = new CustomerOrder { Id = 32, Customer = null };
++
++            CustomerOrderDto dto = order.ToCustomerOrderDto();
++
++            Assert.That(dto.Id, Is.EqualTo(32));
++            Assert.That(dto.CustomerName, Is.EqualTo(string.Empty));
++            Assert.That(dto.City, Is.EqualTo(string.Empty));
++        }
++
++        [Test]
++        public void MapTo_SourcePath_UpdatesExistingTarget()
++        {
++            var order = new CustomerOrder
++            {
++                Id = 33,
++                Customer = new Customer
++                {
++                    Name = "Fabrikam",
++                    Address = new Address { City = "Paris" }
++                }
++            };
++            var target = new CustomerOrderDto();
++
++            order.MapTo(target);
++
++            Assert.That(target.Id, Is.EqualTo(33));
++            Assert.That(target.CustomerName, Is.EqualTo("Fabrikam"));
++            Assert.That(target.City, Is.EqualTo("Paris"));
++        }
++
++        [Test]
++        public void FromCustomerOrderDto_SourcePathMappings_AreOneWay()
++        {
++            var dto = new CustomerOrderDto { Id = 34, CustomerName = "Northwind", City = "Oslo" };
++
++            CustomerOrder order = CustomerOrder.FromCustomerOrderDto(dto);
++
++            Assert.That(order.Id, Is.EqualTo(34));
++            Assert.That(order.Customer, Is.Null);
++        }
++
++        #endregion Explicit flattening
++
++        #region Custom conversion hooks
++
++        [Test]
++        public void ToConversionDto_CustomConverters_MapFormattingParsingAndCustomObject()
++        {
++            var source = new ConversionSource
++            {
++                CreatedOn = new DateTime(2026, 7, 5),
++                QuantityText = "42",
++                CodeValue = new CodeValue { Value = "SKU-42" }
++            };
++
++            ConversionDto dto = source.ToConversionDto();
++
++            Assert.That(dto.FormattedDate, Is.EqualTo("2026-07-05"));
++            Assert.That(dto.Quantity, Is.EqualTo(42));
++            Assert.That(dto.Code, Is.EqualTo("SKU-42"));
++        }
++
++        [Test]
++        public void MapTo_CustomConverters_UpdatesExistingTarget()
++        {
++            var source = new ConversionSource
++            {
++                CreatedOn = new DateTime(2026, 8, 9),
++                QuantityText = "7",
++                CodeValue = new CodeValue { Value = "SKU-7" }
++            };
++            var target = new ConversionDto();
++
++            source.MapTo(target);
++
++            Assert.That(target.FormattedDate, Is.EqualTo("2026-08-09"));
++            Assert.That(target.Quantity, Is.EqualTo(7));
++            Assert.That(target.Code, Is.EqualTo("SKU-7"));
++        }
++
++        [Test]
++        public void FromConversionDto_CustomConverterMappings_AreOneWay()
++        {
++            var dto = new ConversionDto { FormattedDate = "2026-01-01", Quantity = 5, Code = "SKU-5" };
++
++            ConversionSource source = ConversionSource.FromConversionDto(dto);
++
++            Assert.That(source.CreatedOn, Is.EqualTo(default(DateTime)));
++            Assert.That(source.QuantityText, Is.EqualTo(string.Empty));
++            Assert.That(source.CodeValue.Value, Is.EqualTo(string.Empty));
++        }
++
++        #endregion Custom conversion hooks
+     }
+ }
+diff --git a/Transformations.Mapping.Tests/TestModels.cs b/Transformations.Mapping.Tests/TestModels.cs
+index a8abd08..daffc5b 100644
+--- a/Transformations.Mapping.Tests/TestModels.cs
++++ b/Transformations.Mapping.Tests/TestModels.cs
+@@ -158,6 +158,19 @@ namespace Transformations.Mapping.Tests
+         public string Name { get; set; } = string.Empty;
+     }
+ 
++    public class NullableProfileDto
++    {
++        public string? Nickname { get; set; }
++        public string DisplayName { get; set; } = string.Empty;
++    }
++
++    [MapTo<NullableProfileDto>]
++    public partial class NullableProfile
++    {
++        public string? Nickname { get; set; }
++        public string DisplayName { get; set; } = string.Empty;
++    }
++
+     public class GenericBoxDto
+     {
+         public string Value { get; set; } = string.Empty;
+@@ -169,4 +182,88 @@ namespace Transformations.Mapping.Tests
+         public int Value { get; set; }
+         public T? Tag { get; set; }
+     }
++
++    public partial class MappingContainer
++    {
++        public class NestedDto
++        {
++            public int Id { get; set; }
++            public string Name { get; set; } = string.Empty;
++        }
++
++        [MapTo<NestedDto>]
++        public partial class NestedSource
++        {
++            public int Id { get; set; }
++            public string Name { get; set; } = string.Empty;
++        }
++    }
++
++    public class CustomerOrderDto
++    {
++        public int Id { get; set; }
++        public string CustomerName { get; set; } = string.Empty;
++        public string City { get; set; } = string.Empty;
++    }
++
++    public class Customer
++    {
++        public string Name { get; set; } = string.Empty;
++        public Address? Address { get; set; }
++    }
++
++    public class Address
++    {
++        public string City { get; set; } = string.Empty;
++    }
++
++    [MapTo<CustomerOrderDto>]
++    public partial class CustomerOrder
++    {
++        public int Id { get; set; }
++
++        [MapProperty("CustomerName", SourcePath = "Customer.Name")]
++        [MapProperty("City", SourcePath = "Customer.Address.City")]
++        public Customer? Customer { get; set; }
++    }
++
++    public class ConversionDto
++    {
++        public string FormattedDate { get; set; } = string.Empty;
++        public int Quantity { get; set; }
++        public string Code { get; set; } = string.Empty;
++    }
++
++    public class CodeValue
++    {
++        public string Value { get; set; } = string.Empty;
++    }
++
++    [MapTo<ConversionDto>]
++    public partial class ConversionSource
++    {
++        [MapProperty("FormattedDate", Converter = nameof(FormatDate))]
++        public DateTime CreatedOn { get; set; }
++
++        [MapProperty("Quantity", Converter = nameof(ParseQuantity))]
++        public string QuantityText { get; set; } = string.Empty;
++
++        [MapProperty("Code", Converter = nameof(ConvertCode))]
++        public CodeValue CodeValue { get; set; } = new CodeValue();
++
++        private static string FormatDate(DateTime value)
++        {
++            return value.ToString("yyyy-MM-dd");
++        }
++
++        private static int ParseQuantity(string value)
++        {
++            return int.Parse(value);
++        }
++
++        private static string ConvertCode(CodeValue value)
++        {
++            return value.Value;
++        }
++    }
+ }
+diff --git a/Transformations.Mapping.Tests/Transformations.Mapping.Tests.csproj b/Transformations.Mapping.Tests/Transformations.Mapping.Tests.csproj
+index 1bb14d5..512a848 100644
+--- a/Transformations.Mapping.Tests/Transformations.Mapping.Tests.csproj
++++ b/Transformations.Mapping.Tests/Transformations.Mapping.Tests.csproj
+@@ -14,6 +14,7 @@
+       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+     </PackageReference>
+     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
++    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" PrivateAssets="all" />
+     <PackageReference Include="NUnit" Version="4.5.1" />
+     <PackageReference Include="NUnit3TestAdapter" Version="6.2.0" />
+     <PackageReference Include="NUnit.Analyzers" Version="4.12.0">
+@@ -25,7 +26,7 @@
+   <ItemGroup>
+     <ProjectReference Include="..\Transformations.Mapping\Transformations.Mapping.csproj" />
+     <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
+-    <ProjectReference Include="..\Transformations.Mapping.Generator\Transformations.Mapping.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
++    <ProjectReference Include="..\Transformations.Mapping.Generator\Transformations.Mapping.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+   </ItemGroup>
+ 
+ </Project>
+diff --git a/Transformations.Mapping/Attributes.cs b/Transformations.Mapping/Attributes.cs
+index 5834f5b..f034953 100644
+--- a/Transformations.Mapping/Attributes.cs
++++ b/Transformations.Mapping/Attributes.cs
+@@ -30,7 +30,7 @@ namespace Transformations.Mapping
+     }
+ 
+     /// <summary>
+-    /// Maps a source property to a differently-named target property.
++    /// Maps a source property or explicit source path to a target property.
+     /// </summary>
+     /// <example>
+     /// <code>
+@@ -54,5 +54,15 @@ namespace Transformations.Mapping
+         /// Gets the name of the property on the target type.
+         /// </summary>
+         public string TargetPropertyName { get; }
++
++        /// <summary>
++        /// Gets or sets an optional dotted source property path, such as <c>Customer.Name</c>.
++        /// </summary>
++        public string? SourcePath { get; set; }
++
++        /// <summary>
++        /// Gets or sets the name of a static converter method on the source type.
++        /// </summary>
++        public string? Converter { get; set; }
+     }
+ }
+diff --git a/Transformations.Tests/TextExtractorSanityTests.cs b/Transformations.Tests/TextExtractorSanityTests.cs
+index 1d588c0..d84b5f2 100644
+--- a/Transformations.Tests/TextExtractorSanityTests.cs
++++ b/Transformations.Tests/TextExtractorSanityTests.cs
+@@ -1,5 +1,6 @@
+ using DocumentFormat.OpenXml;
+ using DocumentFormat.OpenXml.Packaging;
++using DocumentFormat.OpenXml.Spreadsheet;
+ using DocumentFormat.OpenXml.Wordprocessing;
+ using MimeKit;
+ using NUnit.Framework;
+@@ -45,8 +46,8 @@ public class TextExtractorSanityTests
+         {
+             var mainPart = wordDoc.AddMainDocumentPart();
+             mainPart.Document = new DocumentFormat.OpenXml.Wordprocessing.Document(new Body(
+-                new Paragraph(new Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 1"))),
+-                new Paragraph(new Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 2")))
++                new Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 1"))),
++                new Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 2")))
+             ));
+         }
+ 
+@@ -262,36 +263,55 @@ public class TextExtractorSanityTests
+     }
+ 
+     [Test]
+-    [Ignore("Requires embedded resource test.xlsx")]
+-    public void ExcelExtractor_ProcessesMultipleSheets()
++    public void ExcelExtractor_ProcessesWorkbookThroughFacade()
+     {
+-        // Note: Creating a raw Excel byte array in code is complex. 
+-        // In a real test, you'd use a small 5KB embedded resource file.
+-        // This test verifies the logic assumes headers and sheet names correctly.
+-        var bytes = GetEmbeddedTestExcel(); // Helper to load a tiny .xlsx
++        var bytes = CreateWorkbook();
+ 
+         var result = _extractor.GetText("inventory.xlsx", bytes);
+ 
+         Assert.That(result.IsSuccess, Is.True);
+         Assert.That(result.Text, Does.Contain("[Sheet1]"));
+-        Assert.That(result.Text, Does.Contain("PartNumber:"));
++        Assert.That(result.Text, Does.Contain("PartNumber: A-100"));
++        Assert.That(result.Text, Does.Contain("Qty: 12"));
+     }
+ 
+-    private byte[] GetEmbeddedTestExcel()
++    private static byte[] CreateWorkbook()
+     {
+-        var assembly = typeof(TextExtractorSanityTests).Assembly;
+-        // Format: {Namespace}.{Folder}.{FileName}
+-        string resourceName = "OpenTail.Tests.Resources.test.xlsx";
+-
+-        using Stream? stream = assembly.GetManifestResourceStream(resourceName);
+-        if (stream == null)
+-            throw new FileNotFoundException($"Could not find embedded resource: {resourceName}");
++        using var mem = new MemoryStream();
++        using (var document = SpreadsheetDocument.Create(mem, SpreadsheetDocumentType.Workbook))
++        {
++            WorkbookPart workbookPart = document.AddWorkbookPart();
++            workbookPart.Workbook = new Workbook();
++
++            WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
++            worksheetPart.Worksheet = new Worksheet(new SheetData(
++                new Row(
++                    CreateCell("PartNumber"),
++                    CreateCell("Qty")),
++                new Row(
++                    CreateCell("A-100"),
++                    CreateCell("12"))));
++
++            Sheets sheets = workbookPart.Workbook.AppendChild(new Sheets());
++            sheets.Append(new Sheet
++            {
++                Id = workbookPart.GetIdOfPart(worksheetPart),
++                SheetId = 1,
++                Name = "Sheet1"
++            });
++
++            workbookPart.Workbook.Save();
++        }
+ 
+-        using MemoryStream ms = new MemoryStream();
+-        stream.CopyTo(ms);
+-        return ms.ToArray();
++        return mem.ToArray();
+     }
+ 
++    private static Cell CreateCell(string value) => new()
++    {
++        DataType = CellValues.String,
++        CellValue = new CellValue(value)
++    };
++
+     [Test]
+     public void MarkdownExtractor_PreservesContentAndStripsFormatting()
+     {
+@@ -597,4 +617,4 @@ public class TextExtractorSanityTests
+         Assert.That(result.Metadata["email.attachment.special.count"], Is.EqualTo("1"));
+         Assert.That(result.Metadata["email.attachment.special.names"], Does.Contain("special-context.bin"));
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Transformations.TextExtractor/Extractor.cs b/Transformations.TextExtractor/Extractor.cs
+index fb743e3..5affefa 100644
+--- a/Transformations.TextExtractor/Extractor.cs
++++ b/Transformations.TextExtractor/Extractor.cs
+@@ -30,6 +30,7 @@ public class TextExtractor
+             new HtmlExtractor(),
+             new MarkdownExtractor(),
+             new CsvExtractor(),
++            new ExcelExtractor(),
+             new EmlExtractor(),
+             new JsonExtractor(),
+             new XmlExtractor(),
+diff --git a/Transformations.TextExtractor/Transformations.Text.csproj b/Transformations.TextExtractor/Transformations.Text.csproj
+index d9ffb45..32dc0bc 100644
+--- a/Transformations.TextExtractor/Transformations.Text.csproj
++++ b/Transformations.TextExtractor/Transformations.Text.csproj
+@@ -30,7 +30,7 @@
+       <PackageReference Include="JsonSchema.Net" Version="9.2.0" />
+ 		<PackageReference Include="Markdig" Version="1.1.3" />
+ 		<PackageReference Include="MimeKit" Version="4.16.0" />
+-		<PackageReference Include="PdfPig" Version="0.1.15-alpha-20260328-e5c04" />
++		<PackageReference Include="PdfPig" Version="0.1.9" />
+ 		<PackageReference Include="YamlDotNet" Version="17.0.1" />
+ 		<None Include="README.md" Pack="true" PackagePath="\" />
+ 	</ItemGroup>
+diff --git a/Transformations.sln b/Transformations.sln
+index 1a77857..55d6a27 100644
+--- a/Transformations.sln
++++ b/Transformations.sln
+@@ -43,6 +43,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution
+ EndProject
+ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Text", "Transformations.TextExtractor\Transformations.Text.csproj", "{1B64F8EE-E961-4075-B18C-931159A0266E}"
+ EndProject
++Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Mapping.Benchmarks", "Transformations.Mapping.Benchmarks\Transformations.Mapping.Benchmarks.csproj", "{96579300-01A0-48B1-850C-00D93D5D44A4}"
++EndProject
+ Global
+ 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+ 		Debug|Any CPU = Debug|Any CPU
+@@ -233,6 +235,18 @@ Global
+ 		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|x64.Build.0 = Release|Any CPU
+ 		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|x86.ActiveCfg = Release|Any CPU
+ 		{1B64F8EE-E961-4075-B18C-931159A0266E}.Release|x86.Build.0 = Release|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Debug|x64.ActiveCfg = Debug|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Debug|x64.Build.0 = Debug|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Debug|x86.ActiveCfg = Debug|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Debug|x86.Build.0 = Debug|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Release|Any CPU.Build.0 = Release|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Release|x64.ActiveCfg = Release|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Release|x64.Build.0 = Release|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Release|x86.ActiveCfg = Release|Any CPU
++		{96579300-01A0-48B1-850C-00D93D5D44A4}.Release|x86.Build.0 = Release|Any CPU
+ 	EndGlobalSection
+ 	GlobalSection(SolutionProperties) = preSolution
+ 		HideSolutionNode = FALSE

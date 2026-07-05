@@ -892,7 +892,11 @@ namespace Transformations.Mapping.Generator
                 sb.AppendLine();
                 EmitListMappingMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
+                EmitListFastPathMethod(sb, model, target, indent + "    ");
+                sb.AppendLine();
                 EmitArrayMappingMethod(sb, model, target, indent + "    ");
+                sb.AppendLine();
+                EmitArrayFastPathMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
                 EmitQueryableProjectionMethod(sb, model, target, indent + "    ");
 
@@ -957,6 +961,31 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}}}");
         }
 
+        private static void EmitListFastPathMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+        {
+            string methodTypeParameters = GetMethodTypeParameters(model);
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Maps a list of {model.SourceClassName} instances to a list of {target.TargetClassName} instances using high-performance span allocation.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source list to map.</param>");
+            sb.AppendLine($"{indent}/// <returns>A list of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}public static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{methodTypeParameters}(this global::System.Collections.Generic.List<{model.SourceFullName}> source)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    var list = new global::System.Collections.Generic.List<{target.TargetFullName}>(source.Count);");
+            sb.AppendLine($"{indent}    foreach (var item in global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(source))");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        list.Add(item == null ? null! : item.To{target.TargetClassName}());");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    return list;");
+            sb.AppendLine($"{indent}}}");
+        }
+
         private static void EmitArrayMappingMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
         {
             string methodTypeParameters = GetMethodTypeParameters(model);
@@ -985,6 +1014,32 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}    }}");
             sb.AppendLine();
             sb.AppendLine($"{indent}    return global::System.Linq.Enumerable.ToArray(source.To{target.TargetClassName}Enumerable());");
+            sb.AppendLine($"{indent}}}");
+        }
+
+        private static void EmitArrayFastPathMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+        {
+            string methodTypeParameters = GetMethodTypeParameters(model);
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Maps an array of {model.SourceClassName} instances to an array of {target.TargetClassName} instances using high-performance array elision bounds.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source array to map.</param>");
+            sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{methodTypeParameters}(this {model.SourceFullName}[] source)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    var array = new {target.TargetFullName}[source.Length];");
+            sb.AppendLine($"{indent}    for (int i = 0; i < source.Length; i++)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        var item = source[i];");
+            sb.AppendLine($"{indent}        array[i] = item == null ? null! : item.To{target.TargetClassName}();");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    return array;");
             sb.AppendLine($"{indent}}}");
         }
 
