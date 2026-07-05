@@ -937,6 +937,22 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <returns>A list of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}public static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{methodTypeParameters}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source)");
             sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    if (source is global::System.Collections.Generic.ICollection<{model.SourceFullName}> collection)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        var list = new global::System.Collections.Generic.List<{target.TargetFullName}>(collection.Count);");
+            sb.AppendLine($"{indent}        foreach (var item in source)");
+            sb.AppendLine($"{indent}        {{");
+            sb.AppendLine($"{indent}            list.Add(item == null ? null! : item.To{target.TargetClassName}());");
+            sb.AppendLine($"{indent}        }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}        return list;");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
             sb.AppendLine($"{indent}    return global::System.Linq.Enumerable.ToList(source.To{target.TargetClassName}Enumerable());");
             sb.AppendLine($"{indent}}}");
         }
@@ -951,6 +967,23 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{methodTypeParameters}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source)");
             sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    if (source is global::System.Collections.Generic.ICollection<{model.SourceFullName}> collection)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        var array = new {target.TargetFullName}[collection.Count];");
+            sb.AppendLine($"{indent}        int i = 0;");
+            sb.AppendLine($"{indent}        foreach (var item in source)");
+            sb.AppendLine($"{indent}        {{");
+            sb.AppendLine($"{indent}            array[i++] = item == null ? null! : item.To{target.TargetClassName}();");
+            sb.AppendLine($"{indent}        }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}        return array;");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
             sb.AppendLine($"{indent}    return global::System.Linq.Enumerable.ToArray(source.To{target.TargetClassName}Enumerable());");
             sb.AppendLine($"{indent}}}");
         }
