@@ -31,7 +31,7 @@ public static class RangeSemanticsHelper
     public static bool BetweenExclusive<T>(this T value, T minValue, T maxValue)
         where T : IComparable<T>
     {
-        return value.Between(minValue, maxValue);
+        return value.CompareTo(minValue) >= 0 && value.CompareTo(maxValue) < 0;
     }
 
     /// <summary>

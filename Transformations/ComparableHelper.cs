@@ -1,4 +1,4 @@
-﻿/// <summary>
+/// <summary>
 /// The Comparable helper.
 /// </summary>
 public static class ComparableHelper
@@ -14,14 +14,13 @@ public static class ComparableHelper
     /// <returns>The result.</returns>
     public static int BetweenOrFirst<T>(this int actual, IEnumerable<T> valueList)
     {
-        if (actual < 0 || actual >= valueList.Count())
+        int count = valueList.Count();
+        if (actual < 0 || actual >= count)
         {
             return 0;
         }
-        else
-        {
-            return actual;
-        }
+
+        return actual;
     }
 
     /// <summary>
@@ -33,14 +32,13 @@ public static class ComparableHelper
     /// <returns>The result.</returns>
     public static int BetweenOrLast<T>(this int actual, IEnumerable<T> valueList)
     {
-        if (actual < 0 || actual >= valueList.Count<T>())
+        int count = valueList.Count<T>();
+        if (actual < 0 || actual >= count)
         {
-            return valueList.Count<T>() - 1;
+            return count - 1;
         }
-        else
-        {
-            return actual;
-        }
+
+        return actual;
     }
 
     /// <summary>

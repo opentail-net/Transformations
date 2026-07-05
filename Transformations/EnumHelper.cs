@@ -40,11 +40,6 @@ namespace Transformations
                 }
             }
 
-            if (name == null)
-            {
-                return string.Empty;
-            }
-
             var field = type.GetField(name);
 
             if (field == null)

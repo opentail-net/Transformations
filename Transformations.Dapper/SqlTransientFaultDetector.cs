@@ -49,7 +49,7 @@ namespace Transformations.Dapper
         private static readonly HashSet<int> TransientErrorNumbers = new()
         {
             -2, 64, 233, 921,
-            1205, 1221,
+            1205, 1221, 1807,
             8628, 8645,
             10053, 10054, 10060,
             10928, 10929, 10936,

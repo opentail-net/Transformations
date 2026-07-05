@@ -39,8 +39,8 @@ Coverage / API-surface guard scripts (also useful in CI):
 
 The solution is split into layered packages with a strict dependency direction (each depends only on those to its left):
 
-- **`Transformations.Core`** — foundation. Strings, collections, conversion (`BasicTypeConverter`, `BitConvertor`), dates/holidays, files, diagnostics (`.Trace()`), batching, resilience (`Resilience.Retry`). Only external dep is `Microsoft.Data.SqlClient`. **Keep Core free of ASP.NET Core** — that separation is the whole point of the package split.
-- **`Transformations.Data`** — `DataRow`/`DataReader`/`DataTable`, SQL parameters, CSV export. Depends on Core.
+- **`Transformations.Core`** — foundation. Strings, collections, conversion (`BasicTypeConverter`, `BitConvertor`), dates/holidays, files, diagnostics (`.Trace()`), batching, resilience (`Resilience.Retry`). Has no external dependencies. **Keep Core free of ASP.NET Core** — that separation is the whole point of the package split.
+- **`Transformations.Data`** — `DataRow`/`DataReader`/`DataTable`, SQL parameters, CSV export. Depends on Core. Only external dep is `Microsoft.Data.SqlClient`.
 - **`Transformations.Web`** — HTTP, session, cookies, query strings, `SelectList` helpers. Adds the ASP.NET Core dependency.
 - **`Transformations.Dapper`** / **`Transformations.EntityFramework`** — resilient query / `SaveChanges` wrappers with transient SQL-fault detection.
 - **`Transformations`** — the all-in-one meta package that rolls up the above.

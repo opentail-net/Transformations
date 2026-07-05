@@ -96,7 +96,7 @@ public static class CollectionHelper
     /// </returns>
     public static bool ContainsIgnoreCase(this IEnumerable<string> collection, string searchValue)
     {
-        if (collection == null || !collection.Any() || searchValue == null)
+        if (collection == null || searchValue == null)
         {
             return false;
         }
@@ -121,6 +121,9 @@ public static class CollectionHelper
     /// </remarks>
     public static void ForEach<T>(this IEnumerable<T> collection, Action<T> action)
     {
+        if (collection == null) throw new ArgumentNullException(nameof(collection));
+        if (action == null) throw new ArgumentNullException(nameof(action));
+
         foreach (var value in collection)
         {
             action(value);
@@ -294,6 +297,7 @@ public static class CollectionHelper
     /// <typeparam name="T">The type to use.</typeparam>
     /// <param name="listToClone">The list to clone.</param>
     /// <returns>The copy of the list.</returns>
+    [Obsolete("Use CloneList<T>() instead. Planned removal in 2.2.0.")]
     public static List<T> CloneList2<T>(this List<T> listToClone)
     {
         return listToClone.GetRange(0, listToClone.Count);

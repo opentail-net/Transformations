@@ -22,7 +22,7 @@ namespace Transformations
             new (new Regex("(?i)foot$"), "feet"),
             new (new Regex("(?i)tooth$"), "teeth"),
             new (new Regex("(?i)goose$"), "geese"),
-            new (new Regex("(?i)([m|l])ouse$"), "$1ice"),
+            new (new Regex("(?i)([ml])ouse$"), "$1ice"),
 
             // Suffix-based rules
             // Words that end in f/fe but do NOT change to -ves (must precede the f/fe→ves rule)

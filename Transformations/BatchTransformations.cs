@@ -95,8 +95,7 @@ namespace Transformations
             }
             finally
             {
-                Array.Clear(buffer, 0, source.Length);
-                ArrayPool<string>.Shared.Return(buffer, clearArray: false);
+                ArrayPool<string>.Shared.Return(buffer, clearArray: true);
             }
         }
 

@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
@@ -134,6 +134,8 @@ public static class CsvHelper
         if (field.Length > 0)
         {
             char first = field[0];
+            // Neutralise spreadsheet formula injection: = + - @ are Excel/Sheets formula prefixes;
+            // \t and \r are also used as injection vectors in some parsers.
             if (first is '=' or '+' or '-' or '@' or '\t' or '\r')
             {
                 field = "'" + field;

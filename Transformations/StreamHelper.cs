@@ -30,6 +30,42 @@ public static class StreamHelper
     */
 
     /// <summary>
+    /// Copies one stream into another one.
+    /// </summary>
+    /// <param name="stream">The source stream.</param>
+    /// <param name="targetStream">The target stream.</param>
+    /// <param name="bufferSize">The buffer size used to read / write.</param>
+    /// <returns>The result.</returns>
+    [Obsolete("Use the built-in Stream.CopyTo(Stream) or Stream.CopyTo(Stream, int) from the BCL instead. Planned removal in 2.2.0.")]
+    public static Stream CopyTo(this Stream stream, Stream targetStream, int bufferSize)
+    {
+        if (bufferSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bufferSize), "Buffer size must be greater than zero.");
+        }
+
+        if (stream.CanRead == false)
+        {
+            throw new InvalidOperationException("Source stream does not support reading.");
+        }
+
+        if (targetStream.CanWrite == false)
+        {
+            throw new InvalidOperationException("Target stream does not support writing.");
+        }
+
+        var buffer = new byte[bufferSize];
+        int bytesRead;
+
+        while ((bytesRead = stream.Read(buffer, 0, bufferSize)) > 0)
+        {
+            targetStream.Write(buffer, 0, bytesRead);
+        }
+
+        return stream;
+    }
+
+    /// <summary>
     /// Copies any stream into a local MemoryStream.
     /// </summary>
     /// <param name = "stream">The source stream.</param>
