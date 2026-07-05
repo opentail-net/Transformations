@@ -241,6 +241,16 @@ namespace Transformations.Mapping.Tests
             Assert.That(dto.Name, Is.EqualTo(string.Empty));
         }
 
+        [Test]
+        public void ToGenericBoxDto_GenericSourceClass_GeneratesValidPartialClass()
+        {
+            var box = new GenericBox<int> { Value = 42 };
+
+            GenericBoxDto dto = box.ToGenericBoxDto();
+
+            Assert.That(dto.Value, Is.EqualTo("42"));
+        }
+
         #endregion Edge cases
     }
 }

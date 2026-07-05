@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 namespace Transformations.Tests
 {
@@ -10,7 +10,7 @@ namespace Transformations.Tests
     /// The basic type converter tests.
     /// </summary>
     [TestFixture]
-    public partial class BasicTypeConverterTests
+    public class BasicTypeConverterTests_ToString
     {
         [Test]
         public void ConvertTostring_ValidBoolInput_ReturnsValueAsCorrectType()

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -12,9 +12,15 @@
 	<PackageTags>transformations;extensions;data;sql;datatable;datareader;csv</PackageTags>
 	<PackageReadmeFile>README.md</PackageReadmeFile> 
   </PropertyGroup>
-<ItemGroup>
-  <ProjectReference Include="..\Transformations\Transformations.csproj" />
-</ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Transformations\CollectionConvertor.cs" Link="CollectionConvertor.cs" />
+    <Compile Include="..\Transformations\CsvHelper.cs" Link="CsvHelper.cs" />
+    <Compile Include="..\Transformations\DataReaderHelper.cs" Link="DataReaderHelper.cs" />
+    <Compile Include="..\Transformations\DataRowConverter.cs" Link="DataRowConverter.cs" />
+    <Compile Include="..\Transformations\SqlHelper.cs" Link="SqlHelper.cs" />
+    <Compile Include="..\Transformations\StringHelper.SqlClient.cs" Link="StringHelper.SqlClient.cs" />
+    <Compile Include="..\Transformations\TransformationsHelper.SqlClient.cs" Link="TransformationsHelper.SqlClient.cs" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
   </ItemGroup>

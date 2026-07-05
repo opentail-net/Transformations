@@ -262,11 +262,11 @@ namespace Transformations.Tests
         #region RetryAsync
 
         [Test]
-        public async Task RetryAsync_Action_SucceedsAfterRetries()
+        public void RetryAsync_Action_SucceedsAfterRetries()
         {
             int attempts = 0;
 
-            await Resilience.RetryAsync(
+            Resilience.RetryAsync(
                 operation: () =>
                 {
                     attempts++;
@@ -280,17 +280,17 @@ namespace Transformations.Tests
                 retryCount: 3,
                 initialDelay: TimeSpan.Zero,
                 retryOnExceptions: new[] { typeof(InvalidOperationException) },
-                failFastExceptions: null);
+                failFastExceptions: null).GetAwaiter().GetResult();
 
             Assert.That(attempts, Is.EqualTo(3));
         }
 
         [Test]
-        public async Task RetryAsync_Func_ReturnsValueAfterRetry()
+        public void RetryAsync_Func_ReturnsValueAfterRetry()
         {
             int attempts = 0;
 
-            int result = await Resilience.RetryAsync(
+            int result = Resilience.RetryAsync(
                 operation: () =>
                 {
                     attempts++;
@@ -304,7 +304,7 @@ namespace Transformations.Tests
                 retryCount: 2,
                 initialDelay: TimeSpan.Zero,
                 retryOnExceptions: new[] { typeof(InvalidOperationException) },
-                failFastExceptions: null);
+                failFastExceptions: null).GetAwaiter().GetResult();
 
             Assert.That(result, Is.EqualTo(42));
             Assert.That(attempts, Is.EqualTo(2));
@@ -398,11 +398,11 @@ namespace Transformations.Tests
         }
 
         [Test]
-        public async Task RetryAsync_DefaultOverload_RetriesWithoutExplicitFilter()
+        public void RetryAsync_DefaultOverload_RetriesWithoutExplicitFilter()
         {
             int attempts = 0;
 
-            await Resilience.RetryAsync(
+            Resilience.RetryAsync(
                 operation: () =>
                 {
                     attempts++;
@@ -414,17 +414,17 @@ namespace Transformations.Tests
                     return Task.CompletedTask;
                 },
                 retryCount: 2,
-                initialDelay: TimeSpan.Zero);
+                initialDelay: TimeSpan.Zero).GetAwaiter().GetResult();
 
             Assert.That(attempts, Is.EqualTo(2));
         }
 
         [Test]
-        public async Task RetryAsync_JitterOverload_RetriesWithoutExplicitFilter()
+        public void RetryAsync_JitterOverload_RetriesWithoutExplicitFilter()
         {
             int attempts = 0;
 
-            await Resilience.RetryAsync(
+            Resilience.RetryAsync(
                 operation: () =>
                 {
                     attempts++;
@@ -437,7 +437,7 @@ namespace Transformations.Tests
                 },
                 retryCount: 2,
                 initialDelay: TimeSpan.Zero,
-                jitterFactor: 0.25d);
+                jitterFactor: 0.25d).GetAwaiter().GetResult();
 
             Assert.That(attempts, Is.EqualTo(2));
         }

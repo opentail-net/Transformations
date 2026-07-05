@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -21,6 +21,7 @@
     <Compile Include="..\Transformations\BitConvertor.cs" Link="BitConvertor.cs" />
     <Compile Include="..\Transformations\CollectionHelper.cs" Link="CollectionHelper.cs" />
     <Compile Include="..\Transformations\ComparableHelper.cs" Link="ComparableHelper.cs" />
+    <Compile Include="..\Transformations\ConverterOld.cs" Link="ConverterOld.cs" />
     <Compile Include="..\Transformations\DateHelper.cs" Link="DateHelper.cs" />
     <Compile Include="..\Transformations\DirectoryInfoHelper.cs" Link="DirectoryInfoHelper.cs" />
     <Compile Include="..\Transformations\DiagnosticExtensions.cs" Link="DiagnosticExtensions.cs" />

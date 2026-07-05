@@ -134,10 +134,22 @@ namespace Transformations.Mapping.Generator
 
             return new MappingModel(
                 sourceType.Name,
+                GetSourceDeclarationName(sourceType),
                 sourceNamespace,
                 sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 Location.None,
                 targets);
+        }
+
+        private static string GetSourceDeclarationName(INamedTypeSymbol sourceType)
+        {
+            if (sourceType.TypeParameters.Length == 0)
+            {
+                return sourceType.Name;
+            }
+
+            string typeParameters = string.Join(", ", sourceType.TypeParameters.Select(p => p.Name));
+            return $"{sourceType.Name}<{typeParameters}>";
         }
 
         private static bool IsMapToAttribute(INamedTypeSymbol attrType)
@@ -361,9 +373,10 @@ namespace Transformations.Mapping.Generator
                 }
 
                 string source = EmitSource(model);
+                string hintBaseName = model.SourceMetadataName.Replace('`', '_');
                 string hintName = string.IsNullOrEmpty(model.SourceNamespace)
-                    ? $"{model.SourceClassName}.Mappings.g.cs"
-                    : $"{model.SourceNamespace}.{model.SourceClassName}.Mappings.g.cs";
+                    ? $"{hintBaseName}.Mappings.g.cs"
+                    : $"{model.SourceNamespace}.{hintBaseName}.Mappings.g.cs";
                 context.AddSource(hintName, source);
             }
         }
@@ -384,7 +397,7 @@ namespace Transformations.Mapping.Generator
 
             string indent = hasNamespace ? "    " : "";
 
-            sb.AppendLine($"{indent}partial class {model.SourceClassName}");
+            sb.AppendLine($"{indent}partial class {model.SourceDeclarationName}");
             sb.AppendLine($"{indent}{{");
 
             foreach (var target in model.Targets)
@@ -508,14 +521,20 @@ namespace Transformations.Mapping.Generator
     internal sealed class MappingModel
     {
         public string SourceClassName { get; }
+        public string SourceDeclarationName { get; }
+        public string SourceMetadataName { get; }
         public string SourceNamespace { get; }
         public string SourceFullName { get; }
         public Location? SourceLocation { get; }
         public List<TargetMapping> Targets { get; }
 
-        public MappingModel(string sourceClassName, string sourceNamespace, string sourceFullName, Location? sourceLocation, List<TargetMapping> targets)
+        public MappingModel(string sourceClassName, string sourceDeclarationName, string sourceNamespace, string sourceFullName, Location? sourceLocation, List<TargetMapping> targets)
         {
             SourceClassName = sourceClassName;
+            SourceDeclarationName = sourceDeclarationName;
+            SourceMetadataName = sourceClassName == sourceDeclarationName
+                ? sourceClassName
+                : sourceDeclarationName.Replace("<", "_").Replace(">", string.Empty).Replace(", ", "_");
             SourceNamespace = sourceNamespace;
             SourceFullName = sourceFullName;
             SourceLocation = sourceLocation;

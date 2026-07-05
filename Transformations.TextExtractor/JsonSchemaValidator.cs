@@ -64,6 +64,9 @@ public static class JsonSchemaValidator
         if (results.IsValid)
             return errors;
 
+        if (results.Details is null)
+            return errors;
+
         foreach (var detail in results.Details)
         {
             if (detail.Errors is null || detail.Errors.Count == 0)

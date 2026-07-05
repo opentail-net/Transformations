@@ -30,13 +30,13 @@ public class TextExtractor
             new HtmlExtractor(),
             new MarkdownExtractor(),
             new CsvExtractor(),
-            new TxtExtractor(),
             new EmlExtractor(),
             new JsonExtractor(),
             new XmlExtractor(),
             new YamlExtractor(),
             new LogExtractor(),
-            new CodeExtractor()
+            new CodeExtractor(),
+            new TxtExtractor()
         };
     }
 
@@ -155,7 +155,7 @@ public class TextExtractor
 
         if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
         {
-            var json = JsonSchemaValidator.NormalizeJson(normalizedText);
+            var json = JsonSchemaValidator.NormalizeJson(sourceText);
             try
             {
                 using var document = JsonDocument.Parse(json);

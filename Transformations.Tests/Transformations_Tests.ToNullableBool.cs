@@ -1,4 +1,4 @@
-﻿namespace Transformations.Tests
+namespace Transformations.Tests
 {
     using System;
 
@@ -10,7 +10,7 @@
     /// The basic type converter tests.
     /// </summary>
     [TestFixture]
-    public partial class BasicTypeConverterTests
+    public class BasicTypeConverterTests_ToNullableBool
     {
         #region Methods
 

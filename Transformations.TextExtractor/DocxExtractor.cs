@@ -44,7 +44,7 @@ public class DocxExtractor : ITextExtractor
             // the source stream, adhering to the "Low-Magic" principle.
             using var wordDoc = WordprocessingDocument.Open(stream, false);
 
-            var body = wordDoc.MainDocumentPart?.Document.Body;
+            var body = wordDoc.MainDocumentPart?.Document?.Body;
 
             // Guard against empty or corrupted document parts.
             if (body == null) return string.Empty;

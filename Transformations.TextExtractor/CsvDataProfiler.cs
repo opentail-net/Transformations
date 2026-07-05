@@ -364,13 +364,28 @@ public static class CsvDataProfiler
 /// </summary>
 public enum CsvColumnType
 {
+    /// <summary>No non-empty values were found.</summary>
     Empty,
+
+    /// <summary>Values are consistently boolean-like.</summary>
     Boolean,
+
+    /// <summary>Values are consistently whole numbers.</summary>
     Integer,
+
+    /// <summary>Values are consistently decimal numbers.</summary>
     Decimal,
+
+    /// <summary>Values are consistently date/time values.</summary>
     DateTime,
+
+    /// <summary>Values are consistently GUID values.</summary>
     Guid,
+
+    /// <summary>Values are best treated as text.</summary>
     String,
+
+    /// <summary>Values contain incompatible inferred types.</summary>
     Mixed
 }
 

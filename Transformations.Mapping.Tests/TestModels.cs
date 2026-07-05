@@ -157,4 +157,16 @@ namespace Transformations.Mapping.Tests
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
     }
+
+    public class GenericBoxDto
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+
+    [MapTo<GenericBoxDto>]
+    public partial class GenericBox<T>
+    {
+        public int Value { get; set; }
+        public T? Tag { get; set; }
+    }
 }

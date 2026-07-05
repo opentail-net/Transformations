@@ -24,10 +24,10 @@
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
-  <!-- Pack the generator DLL into the NuGet package so consumers get it automatically -->
-  <Target Name="PackGenerator" BeforeTargets="GenerateNuspec" Condition="'$(IsPackable)' == 'true'">
+  <!-- Pack the generator DLL into the NuGet package so consumers get it automatically. -->
+  <Target Name="PackGenerator" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">
     <ItemGroup>
-      <None Include="..\Transformations.Mapping.Generator\bin\$(Configuration)\netstandard2.0\Transformations.Mapping.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+      <_PackageFiles Include="..\Transformations.Mapping.Generator\bin\$(Configuration)\netstandard2.0\Transformations.Mapping.Generator.dll" PackagePath="analyzers/dotnet/cs/Transformations.Mapping.Generator.dll" />
     </ItemGroup>
   </Target>
 </Project>

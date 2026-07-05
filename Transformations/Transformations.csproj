@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -11,6 +11,7 @@
 	<Description>Modern .NET transformation helpers for conversion, strings, collections, data, web, diagnostics, batching, and resilience.</Description>
 	<PackageTags>transformations;extensions;utilities;dotnet;batching;sanitization;diagnostics;resilience</PackageTags>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
+	<DisableTransitiveProjectReferences>true</DisableTransitiveProjectReferences>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -20,6 +21,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Transformations.Analyzers\Transformations.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Transformations.Dapper\Transformations.Dapper.csproj" Aliases="TransformationsDapper" />
+    <ProjectReference Include="..\Transformations.EntityFramework\Transformations.EntityFramework.csproj" Aliases="TransformationsEntityFramework" />
+    <ProjectReference Include="..\Transformations.Mapping\Transformations.Mapping.csproj" Aliases="TransformationsMapping" />
+    <ProjectReference Include="..\Transformations.TextExtractor\Transformations.Text.csproj" Aliases="TransformationsText" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Transformations.Web\SelectListExtensions.cs" Link="SelectListExtensions.cs" />
@@ -28,10 +33,11 @@
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
     <None Include="..\COOKBOOK.md" Pack="true" PackagePath="\" Visible="true" />
   </ItemGroup>
-  <!-- Pack the analyzer DLL into the NuGet package so consumers get it automatically -->
-  <Target Name="PackAnalyzer" BeforeTargets="GenerateNuspec" Condition="'$(IsPackable)' == 'true'">
+  <!-- Pack analyzers/generators into the NuGet package so consumers get them automatically. -->
+  <Target Name="PackAnalyzer" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">
     <ItemGroup>
-      <None Include="..\Transformations.Analyzers\bin\$(Configuration)\netstandard2.0\Transformations.Analyzers.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+      <_PackageFiles Include="..\Transformations.Analyzers\bin\$(Configuration)\netstandard2.0\Transformations.Analyzers.dll" PackagePath="analyzers/dotnet/cs/Transformations.Analyzers.dll" />
+      <_PackageFiles Include="..\Transformations.Mapping.Generator\bin\$(Configuration)\netstandard2.0\Transformations.Mapping.Generator.dll" PackagePath="analyzers/dotnet/cs/Transformations.Mapping.Generator.dll" />
     </ItemGroup>
   </Target>
 </Project>

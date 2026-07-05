@@ -1,4 +1,4 @@
-﻿namespace Transformations.Tests
+namespace Transformations.Tests
 {
     using System;
     using NUnit.Framework;
@@ -8,7 +8,7 @@
     /// The basic type converter tests.
     /// </summary>
     [TestFixture]
-    public partial class BasicTypeConverterTests
+    public class BasicTypeConverterTests_ToNullableChar
     {
         [Test]
         public void ConvertToNullablechar_ValidBoolInput_ReturnsValueAsCorrectType()
