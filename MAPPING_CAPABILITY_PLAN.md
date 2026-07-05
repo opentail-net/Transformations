@@ -82,27 +82,27 @@
 
 ## Phase 8: Benchmarks
 
-- [ ] Create benchmark project
-- [ ] Compare against manual mapping
-- [ ] Compare against AutoMapper
-- [ ] Compare against Mapster
-- [ ] Measure startup/configuration cost
-- [ ] Measure throughput
-- [ ] Measure allocations
-- [ ] Include NativeAOT/trimming notes where possible
-- [ ] Publish benchmark results in docs
+- [x] Create benchmark project
+- [x] Compare against manual mapping
+- [x] Compare against AutoMapper
+- [x] Compare against Mapster
+- [x] Measure startup/configuration cost
+- [x] Measure throughput
+- [x] Measure allocations
+- [x] Include NativeAOT/trimming notes where possible
+- [x] Publish benchmark results in docs
 
 ## Phase 9: Documentation Polish
 
-- [ ] Rewrite mapping quick start
-- [ ] Add DTO mapping examples
-- [ ] Add list mapping examples
-- [ ] Add rename/ignore examples
-- [ ] Add flattening examples
-- [ ] Add update-existing-object examples
-- [ ] Add diagnostics guide
-- [ ] Add EF projection guide
-- [ ] Add "Migrating from AutoMapper" guide
+- [x] Rewrite mapping quick start
+- [x] Add DTO mapping examples
+- [x] Add list mapping examples
+- [x] Add rename/ignore examples
+- [x] Add flattening examples
+- [x] Add update-existing-object examples
+- [x] Add diagnostics guide
+- [x] Add EF projection guide
+- [x] Add "Migrating from AutoMapper" guide
 
 ## Suggested Implementation Order
 
@@ -112,4 +112,4 @@
 - [x] 4. Explicit flattening
 - [x] 5. Custom conversion hooks
 - [x] 6. IQueryable projection
-- [ ] 7. Benchmarks and documentation polish
+- [x] 7. Benchmarks and documentation polish

@@ -7,17 +7,9 @@ using Mapster;
 using Microsoft.Extensions.Logging.Abstractions;
 using Transformations.Mapping;
 
-BenchmarkRunner.Run<SingleObjectMappingBenchmarks>(
-    DefaultConfig.Instance.AddJob(Job.ShortRun));
-
-BenchmarkRunner.Run<CollectionMappingBenchmarks>(
-    DefaultConfig.Instance.AddJob(Job.ShortRun));
-
-BenchmarkRunner.Run<ProjectionBenchmarks>(
-    DefaultConfig.Instance.AddJob(Job.ShortRun));
-
-BenchmarkRunner.Run<ConfigurationBenchmarks>(
-    DefaultConfig.Instance.AddJob(Job.ShortRun));
+BenchmarkSwitcher
+    .FromAssembly(typeof(SingleObjectMappingBenchmarks).Assembly)
+    .Run(args, DefaultConfig.Instance.AddJob(Job.ShortRun));
 
 [MemoryDiagnoser]
 public class SingleObjectMappingBenchmarks

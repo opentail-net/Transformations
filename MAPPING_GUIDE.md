@@ -36,6 +36,8 @@ Generated methods:
 - `users.ToUserDtoArray()`
 - `db.Users.ProjectToUserDto()`
 
+There is no runtime profile, startup registration, or reflection scan. If the source type is `partial`, the generator emits normal C# methods during compilation.
+
 ## Requirements
 
 1. Source type must be `partial`.
@@ -273,6 +275,54 @@ public sealed class ContactDto
 - Fast compilation via incremental generator pipeline
 
 See `MAPPING_CAPABILITY_PLAN.md` for the mapping capability roadmap.
+
+See `MAPPING_BENCHMARKS.md` for benchmark commands and current comparison results.
+
+## Migrating From AutoMapper
+
+Typical AutoMapper usage starts with runtime configuration:
+
+```csharp
+var config = new MapperConfiguration(cfg =>
+{
+    cfg.CreateMap<User, UserDto>();
+});
+
+IMapper mapper = config.CreateMapper();
+UserDto dto = mapper.Map<UserDto>(user);
+```
+
+With Transformations.Mapping, move the mapping declaration to the source type:
+
+```csharp
+[MapTo<UserDto>]
+public partial class User
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+UserDto dto = user.ToUserDto();
+```
+
+Common migration patterns:
+
+| AutoMapper need | Transformations.Mapping approach |
+| --- | --- |
+| `CreateMap<User, UserDto>()` | `[MapTo<UserDto>]` on `partial class User` |
+| `ForMember(d => d.FullName, o => o.MapFrom(s => s.Name))` | `[MapProperty("FullName")]` on `Name` |
+| `ForMember(d => d.CustomerName, o => o.MapFrom(s => s.Customer.Name))` | `[MapProperty("CustomerName", SourcePath = "Customer.Name")]` |
+| Ignore a source member | `[IgnoreMap]` |
+| Update an existing object | `source.MapTo(existingTarget)` |
+| Map a list | `users.ToUserDtoList()` |
+| Project a query | `db.Users.ProjectToUserDto()` |
+| Custom formatting/parsing | `[MapProperty("Target", Converter = nameof(ConvertValue))]` |
+
+What not to migrate blindly:
+
+- Runtime profile scanning. Transformations.Mapping intentionally has no runtime configuration phase.
+- Highly dynamic mapping rules. Prefer explicit generated methods or write manual mapping for cases where rules change at runtime.
+- Complex query-provider projections. Start with simple `ProjectTo{Target}()` mappings and keep richer conversion logic in runtime mapping.
 
 ## Testing as Examples
 

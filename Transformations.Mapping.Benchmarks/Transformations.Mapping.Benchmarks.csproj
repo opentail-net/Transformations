@@ -5,6 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Transformations.Mapping\Transformations.Mapping.csproj" />
     <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
-    <ProjectReference Include="..\Transformations.Mapping.Generator\Transformations.Mapping.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\Transformations.Mapping.Generator\Transformations.Mapping.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

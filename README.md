@@ -252,15 +252,18 @@ string csv = await context.Users.Select(u => u.Name).ToCsvAsync();
 
 | Attribute | Purpose |
 |-----------|---------|
-| **`[MapTo<TTarget>]`** | Marks a `partial class` for compile-time mapping — generates `To{Target}()` and `From{Target}()` |
+| **`[MapTo<TTarget>]`** | Marks a `partial class` for compile-time mapping |
 | **`[IgnoreMap]`** | Excludes a property from mapping |
 | **`[MapProperty("Name")]`** | Maps a source property to a differently-named target property |
+| **`[MapProperty("Name", SourcePath = "...")]`** | Flattens a nested source path explicitly |
+| **`[MapProperty("Name", Converter = nameof(...))]`** | Uses a compile-time-validated static converter |
 
-**Zero reflection. NativeAOT safe. Compile-time validated.** Type mismatches are resolved automatically via `ConvertTo<T>`.
+**Zero reflection. NativeAOT safe. Compile-time validated.** Generated methods cover single objects, existing-target updates, collections, and simple `IQueryable` projection.
 
 Generated mapper diagnostics:
 
 - `TXMAP001` warns when a target member is not mapped from source.
+- `TXMAP002`-`TXMAP008` cover unsupported conversions, missing `partial`, ambiguity, nullable risks, invalid source paths, and invalid converters.
 - Opt-in error mode:
 
 ```xml
@@ -283,8 +286,13 @@ public partial class User
 
 // Generated at compile time — no reflection, no runtime cost:
 UserDto dto = user.ToUserDto();
+user.MapTo(existingDto);
+List<UserDto> dtos = users.ToUserDtoList();
+IQueryable<UserDto> query = db.Users.ProjectToUserDto();
 User back = User.FromUserDto(dto);
 ```
+
+See [MAPPING_GUIDE.md](MAPPING_GUIDE.md) for flattening, converters, query projection, and AutoMapper migration notes. See [MAPPING_BENCHMARKS.md](MAPPING_BENCHMARKS.md) for BenchmarkDotNet comparisons against manual mapping, AutoMapper, and Mapster.
 
 ### ASP.NET Core / Web *(Transformations.Web)*
 
