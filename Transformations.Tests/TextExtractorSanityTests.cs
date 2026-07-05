@@ -1,5 +1,6 @@
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Wordprocessing;
 using MimeKit;
 using NUnit.Framework;
@@ -45,8 +46,8 @@ public class TextExtractorSanityTests
         {
             var mainPart = wordDoc.AddMainDocumentPart();
             mainPart.Document = new DocumentFormat.OpenXml.Wordprocessing.Document(new Body(
-                new Paragraph(new Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 1"))),
-                new Paragraph(new Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 2")))
+                new Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 1"))),
+                new Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Para 2")))
             ));
         }
 
@@ -262,35 +263,54 @@ public class TextExtractorSanityTests
     }
 
     [Test]
-    [Ignore("Requires embedded resource test.xlsx")]
-    public void ExcelExtractor_ProcessesMultipleSheets()
+    public void ExcelExtractor_ProcessesWorkbookThroughFacade()
     {
-        // Note: Creating a raw Excel byte array in code is complex. 
-        // In a real test, you'd use a small 5KB embedded resource file.
-        // This test verifies the logic assumes headers and sheet names correctly.
-        var bytes = GetEmbeddedTestExcel(); // Helper to load a tiny .xlsx
+        var bytes = CreateWorkbook();
 
         var result = _extractor.GetText("inventory.xlsx", bytes);
 
         Assert.That(result.IsSuccess, Is.True);
         Assert.That(result.Text, Does.Contain("[Sheet1]"));
-        Assert.That(result.Text, Does.Contain("PartNumber:"));
+        Assert.That(result.Text, Does.Contain("PartNumber: A-100"));
+        Assert.That(result.Text, Does.Contain("Qty: 12"));
     }
 
-    private byte[] GetEmbeddedTestExcel()
+    private static byte[] CreateWorkbook()
     {
-        var assembly = typeof(TextExtractorSanityTests).Assembly;
-        // Format: {Namespace}.{Folder}.{FileName}
-        string resourceName = "OpenTail.Tests.Resources.test.xlsx";
+        using var mem = new MemoryStream();
+        using (var document = SpreadsheetDocument.Create(mem, SpreadsheetDocumentType.Workbook))
+        {
+            WorkbookPart workbookPart = document.AddWorkbookPart();
+            workbookPart.Workbook = new Workbook();
 
-        using Stream? stream = assembly.GetManifestResourceStream(resourceName);
-        if (stream == null)
-            throw new FileNotFoundException($"Could not find embedded resource: {resourceName}");
+            WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
+            worksheetPart.Worksheet = new Worksheet(new SheetData(
+                new Row(
+                    CreateCell("PartNumber"),
+                    CreateCell("Qty")),
+                new Row(
+                    CreateCell("A-100"),
+                    CreateCell("12"))));
 
-        using MemoryStream ms = new MemoryStream();
-        stream.CopyTo(ms);
-        return ms.ToArray();
+            Sheets sheets = workbookPart.Workbook.AppendChild(new Sheets());
+            sheets.Append(new Sheet
+            {
+                Id = workbookPart.GetIdOfPart(worksheetPart),
+                SheetId = 1,
+                Name = "Sheet1"
+            });
+
+            workbookPart.Workbook.Save();
+        }
+
+        return mem.ToArray();
     }
+
+    private static Cell CreateCell(string value) => new()
+    {
+        DataType = CellValues.String,
+        CellValue = new CellValue(value)
+    };
 
     [Test]
     public void MarkdownExtractor_PreservesContentAndStripsFormatting()

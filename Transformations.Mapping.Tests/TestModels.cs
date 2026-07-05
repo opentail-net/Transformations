@@ -158,6 +158,19 @@ namespace Transformations.Mapping.Tests
         public string Name { get; set; } = string.Empty;
     }
 
+    public class NullableProfileDto
+    {
+        public string? Nickname { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+    }
+
+    [MapTo<NullableProfileDto>]
+    public partial class NullableProfile
+    {
+        public string? Nickname { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+    }
+
     public class GenericBoxDto
     {
         public string Value { get; set; } = string.Empty;
@@ -168,5 +181,89 @@ namespace Transformations.Mapping.Tests
     {
         public int Value { get; set; }
         public T? Tag { get; set; }
+    }
+
+    public partial class MappingContainer
+    {
+        public class NestedDto
+        {
+            public int Id { get; set; }
+            public string Name { get; set; } = string.Empty;
+        }
+
+        [MapTo<NestedDto>]
+        public partial class NestedSource
+        {
+            public int Id { get; set; }
+            public string Name { get; set; } = string.Empty;
+        }
+    }
+
+    public class CustomerOrderDto
+    {
+        public int Id { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string City { get; set; } = string.Empty;
+    }
+
+    public class Customer
+    {
+        public string Name { get; set; } = string.Empty;
+        public Address? Address { get; set; }
+    }
+
+    public class Address
+    {
+        public string City { get; set; } = string.Empty;
+    }
+
+    [MapTo<CustomerOrderDto>]
+    public partial class CustomerOrder
+    {
+        public int Id { get; set; }
+
+        [MapProperty("CustomerName", SourcePath = "Customer.Name")]
+        [MapProperty("City", SourcePath = "Customer.Address.City")]
+        public Customer? Customer { get; set; }
+    }
+
+    public class ConversionDto
+    {
+        public string FormattedDate { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public string Code { get; set; } = string.Empty;
+    }
+
+    public class CodeValue
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+
+    [MapTo<ConversionDto>]
+    public partial class ConversionSource
+    {
+        [MapProperty("FormattedDate", Converter = nameof(FormatDate))]
+        public DateTime CreatedOn { get; set; }
+
+        [MapProperty("Quantity", Converter = nameof(ParseQuantity))]
+        public string QuantityText { get; set; } = string.Empty;
+
+        [MapProperty("Code", Converter = nameof(ConvertCode))]
+        public CodeValue CodeValue { get; set; } = new CodeValue();
+
+        private static string FormatDate(DateTime value)
+        {
+            return value.ToString("yyyy-MM-dd");
+        }
+
+        private static int ParseQuantity(string value)
+        {
+            return int.Parse(value);
+        }
+
+        private static string ConvertCode(CodeValue value)
+        {
+            return value.Value;
+        }
     }
 }

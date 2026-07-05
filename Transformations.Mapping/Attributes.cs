@@ -30,7 +30,7 @@ namespace Transformations.Mapping
     }
 
     /// <summary>
-    /// Maps a source property to a differently-named target property.
+    /// Maps a source property or explicit source path to a target property.
     /// </summary>
     /// <example>
     /// <code>
@@ -54,5 +54,15 @@ namespace Transformations.Mapping
         /// Gets the name of the property on the target type.
         /// </summary>
         public string TargetPropertyName { get; }
+
+        /// <summary>
+        /// Gets or sets an optional dotted source property path, such as <c>Customer.Name</c>.
+        /// </summary>
+        public string? SourcePath { get; set; }
+
+        /// <summary>
+        /// Gets or sets the name of a static converter method on the source type.
+        /// </summary>
+        public string? Converter { get; set; }
     }
 }

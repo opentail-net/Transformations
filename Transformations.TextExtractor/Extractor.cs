@@ -30,6 +30,7 @@ public class TextExtractor
             new HtmlExtractor(),
             new MarkdownExtractor(),
             new CsvExtractor(),
+            new ExcelExtractor(),
             new EmlExtractor(),
             new JsonExtractor(),
             new XmlExtractor(),
