@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.3.11527.330
@@ -39,6 +39,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 		repack-nuget.ps1 = repack-nuget.ps1
 		TRANSFORMATIONS_README_TEMPLATE.md = TRANSFORMATIONS_README_TEMPLATE.md
+		MAPPING_VS_AUTOMAPPER.md = MAPPING_VS_AUTOMAPPER.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Text", "Transformations.TextExtractor\Transformations.Text.csproj", "{1B64F8EE-E961-4075-B18C-931159A0266E}"

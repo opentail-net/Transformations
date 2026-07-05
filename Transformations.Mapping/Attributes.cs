@@ -22,6 +22,18 @@ namespace Transformations.Mapping
     }
 
     /// <summary>
+    /// Marks a partial class for compile-time mapping from <typeparamref name="TSource"/>.
+    /// The source generator will emit a <c>To{TargetName}()</c> method on the source type, 
+    /// but compiling into the assembly where the target type is defined.
+    /// </summary>
+    /// <typeparam name="TSource">The source type to map from.</typeparam>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+    public sealed class MapFromAttribute<TSource> : Attribute
+        where TSource : class
+    {
+    }
+
+    /// <summary>
     /// Marks a property to be excluded from generated mapping code.
     /// </summary>
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]

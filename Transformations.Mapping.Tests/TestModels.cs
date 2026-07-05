@@ -18,6 +18,20 @@ namespace Transformations.Mapping.Tests
         public string Email { get; set; } = string.Empty;
     }
 
+    // Simple MapFrom mapping
+    public class Product
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+    }
+
+    [MapFrom<Product>]
+    public partial class ProductDto
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+    }
+
     // Type conversion mapping (int → string, DateTime → string)
     public class OrderSummary
     {
@@ -251,17 +265,17 @@ namespace Transformations.Mapping.Tests
         [MapProperty("Code", Converter = nameof(ConvertCode))]
         public CodeValue CodeValue { get; set; } = new CodeValue();
 
-        private static string FormatDate(DateTime value)
+        internal static string FormatDate(DateTime value)
         {
             return value.ToString("yyyy-MM-dd");
         }
 
-        private static int ParseQuantity(string value)
+        internal static int ParseQuantity(string value)
         {
             return int.Parse(value);
         }
 
-        private static string ConvertCode(CodeValue value)
+        internal static string ConvertCode(CodeValue value)
         {
             return value.Value;
         }

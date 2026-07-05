@@ -24,7 +24,7 @@ namespace Transformations.Mapping.Tests
         {
             var dto = new UserDto { Id = 2, Name = "Bob", Email = "bob@test.com" };
 
-            User user = User.FromUserDto(dto);
+            User user = dto.ToUser();
 
             Assert.That(user.Id, Is.EqualTo(2));
             Assert.That(user.Name, Is.EqualTo("Bob"));
@@ -32,6 +32,21 @@ namespace Transformations.Mapping.Tests
         }
 
         #endregion Same-type mapping
+
+        #region MapFrom mapping
+
+        [Test]
+        public void ToProductDto_MapFrom_MapsCorrectly()
+        {
+            var product = new Product { Id = 10, Title = "Laptop" };
+
+            ProductDto dto = product.ToProductDto();
+
+            Assert.That(dto.Id, Is.EqualTo(10));
+            Assert.That(dto.Title, Is.EqualTo("Laptop"));
+        }
+
+        #endregion MapFrom mapping
 
         #region Type conversion mapping
 
@@ -62,7 +77,7 @@ namespace Transformations.Mapping.Tests
                 CreatedAt = "2025-01-20"
             };
 
-            Order order = Order.FromOrderSummary(summary);
+            Order order = summary.ToOrder();
 
             Assert.That(order.OrderId, Is.EqualTo(77));
             Assert.That(order.Amount, Is.EqualTo(123.45m));
@@ -109,7 +124,7 @@ namespace Transformations.Mapping.Tests
         {
             var card = new ContactCard { FullName = "Bob Jones", PhoneNumber = "555-5678" };
 
-            Employee employee = Employee.FromContactCard(card);
+            Employee employee = card.ToEmployee();
 
             Assert.That(employee.Name, Is.EqualTo("Bob Jones"));
             Assert.That(employee.Phone, Is.EqualTo("555-5678"));
@@ -147,7 +162,7 @@ namespace Transformations.Mapping.Tests
         {
             var brief = new BriefItem { Id = 11, Title = "Compact" };
 
-            CatalogItem item = CatalogItem.FromBriefItem(brief);
+            CatalogItem item = brief.ToCatalogItem();
 
             Assert.That(item.Id, Is.EqualTo(11));
             Assert.That(item.Title, Is.EqualTo("Compact"));
@@ -158,7 +173,7 @@ namespace Transformations.Mapping.Tests
         {
             var detailed = new DetailedItem { Id = 12, Title = "Full", Description = "Complete description" };
 
-            CatalogItem item = CatalogItem.FromDetailedItem(detailed);
+            CatalogItem item = detailed.ToCatalogItem();
 
             Assert.That(item.Id, Is.EqualTo(12));
             Assert.That(item.Title, Is.EqualTo("Full"));
@@ -579,7 +594,7 @@ namespace Transformations.Mapping.Tests
         {
             var dto = new CustomerOrderDto { Id = 34, CustomerName = "Northwind", City = "Oslo" };
 
-            CustomerOrder order = CustomerOrder.FromCustomerOrderDto(dto);
+            CustomerOrder order = dto.ToCustomerOrder();
 
             Assert.That(order.Id, Is.EqualTo(34));
             Assert.That(order.Customer, Is.Null);
@@ -629,7 +644,7 @@ namespace Transformations.Mapping.Tests
         {
             var dto = new ConversionDto { FormattedDate = "2026-01-01", Quantity = 5, Code = "SKU-5" };
 
-            ConversionSource source = ConversionSource.FromConversionDto(dto);
+            ConversionSource source = dto.ToConversionSource();
 
             Assert.That(source.CreatedOn, Is.EqualTo(default(DateTime)));
             Assert.That(source.QuantityText, Is.EqualTo(string.Empty));
