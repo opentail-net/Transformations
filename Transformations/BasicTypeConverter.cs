@@ -14438,35 +14438,15 @@ public static class BasicTypeConverter
     public static bool TryToGuid(this string inputText, out Guid result, Guid? defaultValue = null)
     {
         bool conversionSuccess = false;
-        if (string.IsNullOrEmpty(inputText) || inputText.Length < 36)
+        if (string.IsNullOrEmpty(inputText))
         {
-            if (defaultValue == null)
-            {
-                result = Guid.Empty;
-            }
-            else
-            {
-                result = (Guid)defaultValue;
-            }
-
+            result = defaultValue ?? Guid.Empty;
             return false;
-        }
-
-        if (inputText.Length > 36)
-        {
-            inputText = inputText.Substring(0, 36);
         }
 
         if (!Guid.TryParse(inputText, out result))
         {
-            if (defaultValue == null)
-            {
-                result = Guid.Empty;
-            }
-            else
-            {
-                result = (Guid)defaultValue;
-            }
+            result = defaultValue ?? Guid.Empty;
         }
         else
         {

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 
 /// <summary>
 /// Extension methods any kind of streams
@@ -28,41 +28,6 @@ public static class StreamHelper
         }
     }
     */
-
-    /// <summary>
-    /// Copies one stream into a another one.
-    /// </summary>
-    /// <param name = "stream">The source stream.</param>
-    /// <param name = "targetStream">The target stream.</param>
-    /// <param name = "bufferSize">The buffer size used to read / write.</param>
-    /// <returns>The result.</returns>
-    public static Stream CopyTo(this Stream stream, Stream targetStream, int bufferSize)
-    {
-        if (bufferSize <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(bufferSize), "Buffer size must be greater than zero.");
-        }
-
-        if (stream.CanRead == false)
-        {
-            throw new InvalidOperationException("Source stream does not support reading.");
-        }
-
-        if (targetStream.CanWrite == false)
-        {
-            throw new InvalidOperationException("Target stream does not support writing.");
-        }
-
-        var buffer = new byte[bufferSize];
-        int bytesRead;
-
-        while ((bytesRead = stream.Read(buffer, 0, bufferSize)) > 0)
-        {
-            targetStream.Write(buffer, 0, bytesRead);
-        }
-
-        return stream;
-    }
 
     /// <summary>
     /// Copies any stream into a local MemoryStream.
@@ -170,7 +135,10 @@ public static class StreamHelper
             cnt = stream.Read(buf, offset, bufsize - offset);
             if (cnt == 0)
             {
-                return null;
+                if (offset == 0) return null;
+                var shortBuf = new byte[offset];
+                Array.Copy(buf, 0, shortBuf, 0, offset);
+                return shortBuf;
             }
 
             offset += cnt;

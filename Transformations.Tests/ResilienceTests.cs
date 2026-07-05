@@ -475,5 +475,74 @@ namespace Transformations.Tests
         }
 
         #endregion RetryAsync
+
+        #region RetryAsync predicate
+
+        [Test]
+        public void RetryAsync_Predicate_RejectsException_FailsFastWithoutRetrying()
+        {
+            int attempts = 0;
+
+            var ex = Assert.ThrowsAsync<InvalidOperationException>(() =>
+                Resilience.RetryAsync<int>(
+                    operation: () =>
+                    {
+                        attempts++;
+                        throw new InvalidOperationException("permanent");
+                    },
+                    retryCount: 5,
+                    initialDelay: TimeSpan.Zero,
+                    shouldRetry: _ => false));
+
+            Assert.That(attempts, Is.EqualTo(1)); // no retries
+            Assert.That(ex!.Message, Is.EqualTo("permanent")); // original exception preserved
+        }
+
+        [Test]
+        public void RetryAsync_Predicate_AcceptsException_RetriesUpToLimit()
+        {
+            int attempts = 0;
+
+            Assert.ThrowsAsync<InvalidOperationException>(() =>
+                Resilience.RetryAsync<int>(
+                    operation: () =>
+                    {
+                        attempts++;
+                        throw new InvalidOperationException("transient");
+                    },
+                    retryCount: 3,
+                    initialDelay: TimeSpan.Zero,
+                    shouldRetry: _ => true));
+
+            Assert.That(attempts, Is.EqualTo(4)); // initial + 3 retries
+        }
+
+        [Test]
+        public void RetryAsync_Predicate_RetriesOnlyMatchingExceptions()
+        {
+            int attempts = 0;
+
+            // Retry only TimeoutException; a subsequent InvalidOperationException must fail fast.
+            var ex = Assert.ThrowsAsync<InvalidOperationException>(() =>
+                Resilience.RetryAsync<int>(
+                    operation: () =>
+                    {
+                        attempts++;
+                        if (attempts == 1)
+                        {
+                            throw new TimeoutException("transient");
+                        }
+
+                        throw new InvalidOperationException("permanent");
+                    },
+                    retryCount: 5,
+                    initialDelay: TimeSpan.Zero,
+                    shouldRetry: e => e is TimeoutException));
+
+            Assert.That(attempts, Is.EqualTo(2)); // first (timeout, retried) then permanent (fail fast)
+            Assert.That(ex!.Message, Is.EqualTo("permanent"));
+        }
+
+        #endregion RetryAsync predicate
     }
 }

@@ -22,6 +22,8 @@ namespace Transformations.Tests
             ValueThree = 3
         }
 
+        private enum ByteBackedEnum : byte { Small = 1, Large = 2 }
+
         #endregion Test Enum
 
         #region ToByte
@@ -264,6 +266,18 @@ namespace Transformations.Tests
 
             //// Assert
             Assert.That(actual, Is.Null);
+        }
+
+        [Test]
+        public void EnumToDictionary_ByteBackedEnum_DoesNotThrow()
+        {
+            // Before fix: (int)foo unboxing throws InvalidCastException for non-int-backed enums.
+            // byte-backed enums must go through Convert.ToInt32 instead.
+            var result = typeof(ByteBackedEnum).EnumToDictionary();
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result![1], Is.EqualTo("Small"));
+            Assert.That(result[2], Is.EqualTo("Large"));
         }
 
         #endregion EnumToDictionary

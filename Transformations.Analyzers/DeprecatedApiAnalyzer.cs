@@ -64,7 +64,7 @@ namespace Transformations.Analyzers
             var invocation = (IInvocationOperation)context.Operation;
             IMethodSymbol method = invocation.TargetMethod;
 
-            string? containingType = method.ContainingType?.Name;
+            string? containingType = method.ContainingType?.ToDisplayString();
             if (containingType == null)
             {
                 return;

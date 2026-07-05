@@ -117,9 +117,8 @@ public static class DataRowConverter
                 return false;
             }
 
-            double doublefoo;
-            long longfoo;
-            if (double.TryParse((string)value, out doublefoo) || long.TryParse((string)value, out longfoo))
+            string str = value.ToString() ?? string.Empty;
+            if (double.TryParse(str, out _) || long.TryParse(str, out _))
             {
                 return true;
             }
@@ -148,9 +147,8 @@ public static class DataRowConverter
                 return false;
             }
 
-            double doublefoo;
-            long longfoo;
-            if (double.TryParse((string)value, out doublefoo) || long.TryParse((string)value, out longfoo))
+            string str = value.ToString() ?? string.Empty;
+            if (double.TryParse(str, out _) || long.TryParse(str, out _))
             {
                 return true;
             }

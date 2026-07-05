@@ -371,6 +371,16 @@ namespace Transformations.Tests
             Assert.That(actual, Is.EqualTo(expected));
         }
 
+        [TestCase("<b>Hello</b>", "Hello")]
+        [TestCase("<div>World</div>", "World")]
+        [TestCase("<a href=\"x\">link</a>", "link")]
+        [TestCase("a<br/>b", "ab")]
+        [TestCase("<p>one</p><p>two</p>", "onetwo")]
+        public void StripHtml_RemovesTags(string input, string expected)
+        {
+            Assert.That(input.StripHtml(), Is.EqualTo(expected));
+        }
+
         #endregion StripHtml
 
         #region ToBase64String / FromBase64String

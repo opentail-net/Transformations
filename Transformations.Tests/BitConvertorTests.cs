@@ -239,5 +239,36 @@ namespace Transformations.Tests
         }
 
         #endregion GetBytes round-trip
+
+        #region Non-mutation and startIndex
+
+        [Test]
+        public void ConvertBitsToInt_WithReverse_DoesNotMutateInputArray()
+        {
+            //// Setup
+            byte[] bytes = { 0, 0, 0, 42 };
+            byte[] original = (byte[])bytes.Clone();
+
+            //// Act
+            bytes.ConvertBitsToInt(); // reverseLittleEndianIfApplicable defaults to true
+
+            //// Assert
+            Assert.That(bytes, Is.EqualTo(original));
+        }
+
+        [Test]
+        public void ConvertBitsToInt_WithReverseAndStartIndex_ReadsCorrectSlice()
+        {
+            //// Setup — big-endian 42 (0,0,0,42) located at offset 2 in a larger buffer
+            byte[] bytes = { 0xFF, 0xFF, 0, 0, 0, 42, 0xFF };
+
+            //// Act
+            int actual = bytes.ConvertBitsToInt(startIndex: 2, reverseLittleEndianIfApplicable: true);
+
+            //// Assert
+            Assert.That(actual, Is.EqualTo(42));
+        }
+
+        #endregion Non-mutation and startIndex
     }
 }

@@ -139,10 +139,19 @@ namespace Transformations.Tests
             Assert.That(actual, Is.EqualTo("car"));
         }
 
+        [Test]
+        public void ToPlural_SingleCharY_DoesNotThrow()
+        {
+            // Before fix: Substring(Length-2, 1) on a single-char string used index -1 → ArgumentOutOfRangeException
+            Assert.That("y".ToPlural(), Is.EqualTo("ies"));
+        }
+
         #endregion ToPlural
 
         #region Pluralize
 
+        [TestCase("cafe", 2, "cafes")]    // f/fe blanket rule was incorrectly converting this to "caves"
+        [TestCase("roof", 2, "roofs")]    // blanket rule was producing "rooves"
         [TestCase("User", 0, "Users")]
         [TestCase("User", 2, "Users")]
         [TestCase("User", 1, "User")]
@@ -263,6 +272,42 @@ namespace Transformations.Tests
             Assert.That(actual, Does.Not.Contain("onmouseover"));
             Assert.That(actual, Does.Not.Contain("javascript:"));
             Assert.That(actual, Does.Contain("<a href=\"https://example.com\">Good</a>"));
+        }
+
+        [TestCase("<a href=\"&#106;avascript:alert(1)\">x</a>")]      // entity-encoded javascript:
+        [TestCase("<a href=\"java&#9;script:alert(1)\">x</a>")]        // embedded tab entity
+        [TestCase("<a href=\"data:text/html,<script>alert(1)</script>\">x</a>")] // data:
+        [TestCase("<a href=\"vbscript:msgbox(1)\">x</a>")]              // vbscript:
+        [TestCase("<a href=\"JAVASCRIPT:alert(1)\">x</a>")]            // case variation
+        public void SanitizeHtml_PermitLinks_BlocksDangerousSchemes(string input)
+        {
+            string actual = input.SanitizeHtml(HtmlSanitizationPolicy.PermitLinks);
+
+            Assert.That(actual, Does.Not.Contain("javascript").IgnoreCase);
+            Assert.That(actual, Does.Not.Contain("vbscript").IgnoreCase);
+            Assert.That(actual, Does.Not.Contain("data:").IgnoreCase);
+            Assert.That(actual, Does.Not.Contain("href")); // dangerous href dropped, bare <a> emitted
+        }
+
+        [Test]
+        public void SanitizeHtml_PermitLinks_EncodesHrefValuePreventingAttributeBreakout()
+        {
+            //// Setup — a quote in the href must not break out of the attribute
+            string input = "<a href=\"https://x/&quot;onmouseover=alert(1)\">x</a>";
+
+            //// Act
+            string actual = input.SanitizeHtml(HtmlSanitizationPolicy.PermitLinks);
+
+            //// Assert — the emitted attribute value is encoded, so no raw breakout quote precedes an event handler
+            Assert.That(actual, Does.Not.Contain("\"onmouseover"));
+        }
+
+        [Test]
+        public void SanitizeHtml_PermitLinks_PreservesSafeAbsoluteAndRelativeLinks()
+        {
+            Assert.That("<a href=\"https://example.com\">g</a>".SanitizeHtml(HtmlSanitizationPolicy.PermitLinks), Does.Contain("<a href=\"https://example.com\">"));
+            Assert.That("<a href=\"/about\">g</a>".SanitizeHtml(HtmlSanitizationPolicy.PermitLinks), Does.Contain("<a href=\"/about\">"));
+            Assert.That("<a href=\"mailto:a@b.com\">g</a>".SanitizeHtml(HtmlSanitizationPolicy.PermitLinks), Does.Contain("mailto:a@b.com"));
         }
 
         [Test]

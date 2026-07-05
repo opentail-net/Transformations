@@ -52,8 +52,7 @@ namespace Transformations.Dapper
                 },
                 retryCount: retryCount,
                 initialDelay: initialDelay ?? DefaultInitialDelay,
-                retryOnExceptions: null,
-                failFastExceptions: null,
+                shouldRetry: SqlTransientFaultDetector.IsTransient,
                 cancellationToken: cancellationToken);
         }
 
@@ -90,8 +89,7 @@ namespace Transformations.Dapper
                 },
                 retryCount: retryCount,
                 initialDelay: initialDelay ?? DefaultInitialDelay,
-                retryOnExceptions: null,
-                failFastExceptions: null,
+                shouldRetry: SqlTransientFaultDetector.IsTransient,
                 cancellationToken: cancellationToken);
         }
 
@@ -127,8 +125,7 @@ namespace Transformations.Dapper
                 },
                 retryCount: retryCount,
                 initialDelay: initialDelay ?? DefaultInitialDelay,
-                retryOnExceptions: null,
-                failFastExceptions: null,
+                shouldRetry: SqlTransientFaultDetector.IsTransient,
                 cancellationToken: cancellationToken);
         }
 
@@ -165,8 +162,7 @@ namespace Transformations.Dapper
                 },
                 retryCount: retryCount,
                 initialDelay: initialDelay ?? DefaultInitialDelay,
-                retryOnExceptions: null,
-                failFastExceptions: null,
+                shouldRetry: SqlTransientFaultDetector.IsTransient,
                 cancellationToken: cancellationToken);
         }
     }

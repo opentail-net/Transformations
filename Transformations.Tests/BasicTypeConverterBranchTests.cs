@@ -63,8 +63,8 @@ namespace Transformations.Tests
 
             Assert.That(shortInput, Is.False);
             Assert.That(g1, Is.EqualTo(Guid.Parse("11111111-1111-1111-1111-111111111111")));
-            Assert.That(longInput, Is.True);
-            Assert.That(g2, Is.EqualTo(Guid.Parse("11111111-1111-1111-1111-111111111111")));
+            Assert.That(longInput, Is.False); // extra chars → Guid.TryParse rejects non-standard format
+            Assert.That(g2, Is.EqualTo(Guid.Empty));
             Assert.That(invalid36, Is.False);
             Assert.That(g3, Is.EqualTo(Guid.Parse("22222222-2222-2222-2222-222222222222")));
         }

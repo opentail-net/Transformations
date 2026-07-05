@@ -648,5 +648,33 @@ namespace Transformations.Tests
         }
 
         #endregion WithDefault
+
+        #region IsHex
+
+        [TestCase("a1b2c3", true)]
+        [TestCase("#abc", true)]
+        [TestCase("FFF", true)]
+        [TestCase("xyz", false)]
+        [TestCase("a1b2", false)]
+        public void Is_IsHex_MatchesHexColours(string valueInput, bool expected)
+        {
+            Assert.That(valueInput.Is(Inspect.InspectedString.IsHex), Is.EqualTo(expected));
+        }
+
+        #endregion IsHex
+
+        #region IsLettersOrPunctuation
+
+        [TestCase("Hello", true)]
+        [TestCase("Hello!", true)]
+        [TestCase("well-known", true)]
+        [TestCase("abc123", false)]
+        [TestCase("a b", false)]
+        public void Is_IsLettersOrPunctuation_AllowsLettersAndPunctuation(string valueInput, bool expected)
+        {
+            Assert.That(valueInput.Is(Inspect.InspectedString.IsLettersOrPunctuation), Is.EqualTo(expected));
+        }
+
+        #endregion IsLettersOrPunctuation
     }
 }

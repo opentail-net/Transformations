@@ -89,6 +89,14 @@ namespace Transformations.Tests
             Assert.That(actual, Is.EqualTo("World"));
         }
 
+        [TestCase("abc", 3, "abc")] // count equals length
+        [TestCase("abc", 5, "abc")] // count exceeds length
+        [TestCase("abc", 1, "c")]
+        public void Right_CountAtOrBeyondLength_ReturnsWholeString(string input, int count, string expected)
+        {
+            Assert.That(input.Right(count), Is.EqualTo(expected));
+        }
+
         [Test]
         public void Right_NullInput_ReturnsNull()
         {

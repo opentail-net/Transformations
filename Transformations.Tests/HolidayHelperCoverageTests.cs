@@ -14,7 +14,8 @@ namespace Transformations.Tests
         [TestCase(1977, 6, 4)]
         [TestCase(2002, 6, 4)]
         [TestCase(2012, 6, 4)]
-        [TestCase(2024, 5, 31)]
+        [TestCase(2024, 5, 27)] // last Monday in May 2024
+        [TestCase(2023, 5, 29)] // last Monday in May 2023
         public void GetSpringBankHoliday_CoversSpecialAndDefaultBranches(int year, int expectedMonth, int expectedDay)
         {
             DateTime result = HolidayHelper.GetSpringBankHoliday(year);
@@ -22,10 +23,15 @@ namespace Transformations.Tests
             Assert.That(result.Year, Is.EqualTo(year));
             Assert.That(result.Month, Is.EqualTo(expectedMonth));
             Assert.That(result.Day, Is.EqualTo(expectedDay));
+            if (year >= 2024 || year == 2023)
+            {
+                Assert.That(result.DayOfWeek, Is.EqualTo(DayOfWeek.Monday));
+            }
         }
 
         [TestCase(1963, 8, 5, DayOfWeek.Monday)]
-        [TestCase(2024, 8, 30, DayOfWeek.Friday)]
+        [TestCase(2024, 8, 26, DayOfWeek.Monday)] // last Monday in August 2024
+        [TestCase(2023, 8, 28, DayOfWeek.Monday)] // last Monday in August 2023
         public void GetLateSummerBankHoliday_CoversYearBoundaryBranches(int year, int expectedMonth, int expectedDay, DayOfWeek expectedDayOfWeek)
         {
             DateTime result = HolidayHelper.GetLateSummerBankHoliday(year);

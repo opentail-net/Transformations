@@ -1,4 +1,4 @@
-﻿namespace Transformations
+namespace Transformations
 {
     using System;
     using System.Collections.Generic;
@@ -35,35 +35,6 @@
         }
 
         /// <summary>
-        /// Gets the Martin Luther King holiday (third Monday in January).
-        /// </summary>
-        /// <param name="year">The year.</param>
-        /// <returns>The result.</returns>
-        public static DateTime GetMartinLutherKingHoliday(int year)
-        {
-            DateTime day = new DateTime(year, 01, 01);
-
-            int countMondays = 0;
-            bool done = false;
-            while (!done)
-            {
-                if (day.DayOfWeek == DayOfWeek.Monday)
-                {
-                    countMondays++;
-                    if (countMondays == 3)
-                    {
-                        done = true;
-                        break;
-                    }
-                }
-
-                day = day.AddDays(1);
-            }
-
-            return day;
-        }
-
-        /// <summary>
         /// Gets the inauguration day list.
         /// </summary>
         /// <returns>The inauguration day list.</returns>
@@ -86,9 +57,24 @@
         /// Gets the Martin Luther King holiday (third Monday in January).
         /// </summary>
         /// <returns>The result.</returns>
-        public static List<DateTime> GetMartinLutherKingHoliday()
+        public static DateTime GetMartinLutherKingHoliday()
         {
-            return GetEnglishBankHolidays(DateTime.Now.Year);
+            return GetMartinLutherKingHoliday(DateTime.Now.Year);
+        }
+
+        /// <summary>
+        /// Gets the Martin Luther King holiday (third Monday in January).
+        /// </summary>
+        /// <param name="year">The year.</param>
+        /// <returns>The result.</returns>
+        public static DateTime GetMartinLutherKingHoliday(int year)
+        {
+            DateTime day = new DateTime(year, 1, 1);
+            while (day.DayOfWeek != DayOfWeek.Monday)
+            {
+                day = day.AddDays(1);
+            }
+            return day.AddDays(14);
         }
 
         /// <summary>
@@ -487,7 +473,7 @@
             }
 
             DateTime springBankHoliday = new DateTime(year, 05, 31);
-            while (springBankHoliday.DayOfWeek != DayOfWeek.Friday)
+            while (springBankHoliday.DayOfWeek != DayOfWeek.Monday)
             {
                 springBankHoliday = springBankHoliday.AddDays(-1);
             }
@@ -514,7 +500,7 @@
             if (year >= 1964)
             {
                 DateTime summerBankHoliday = new DateTime(year, 08, 31);
-                while (summerBankHoliday.DayOfWeek != DayOfWeek.Friday)
+                while (summerBankHoliday.DayOfWeek != DayOfWeek.Monday)
                 {
                     summerBankHoliday = summerBankHoliday.AddDays(-1);
                 }
@@ -674,11 +660,8 @@
         private static DateTime GetBoxingDayBankHoliday(int year)
         {
             DateTime boxingDayBankHoliday = new DateTime(year, 12, 26);
-            while (boxingDayBankHoliday.DayOfWeek == DayOfWeek.Saturday || boxingDayBankHoliday.DayOfWeek == DayOfWeek.Sunday)
-            {
-                boxingDayBankHoliday = boxingDayBankHoliday.AddDays(1);
-            }
-
+            if (boxingDayBankHoliday.DayOfWeek == DayOfWeek.Saturday) return new DateTime(year, 12, 28);
+            if (boxingDayBankHoliday.DayOfWeek == DayOfWeek.Sunday) return new DateTime(year, 12, 28);
             return boxingDayBankHoliday;
         }
 
@@ -699,16 +682,8 @@
         private static DateTime GetXmasDayBankHoliday(int year)
         {
             DateTime xmasDayBankHoliday = new DateTime(year, 12, 25);
-            while (xmasDayBankHoliday.DayOfWeek == DayOfWeek.Saturday || xmasDayBankHoliday.DayOfWeek == DayOfWeek.Sunday)
-            {
-                xmasDayBankHoliday = xmasDayBankHoliday.AddDays(1);
-            }
-
-            if (xmasDayBankHoliday == GetBoxingDayBankHoliday(year))
-            {
-                xmasDayBankHoliday = xmasDayBankHoliday.AddDays(1);
-            }
-
+            if (xmasDayBankHoliday.DayOfWeek == DayOfWeek.Saturday) return new DateTime(year, 12, 27);
+            if (xmasDayBankHoliday.DayOfWeek == DayOfWeek.Sunday) return new DateTime(year, 12, 27);
             return xmasDayBankHoliday;
         }
 
@@ -751,7 +726,7 @@
                     bankHolidays.Add(new DateTime(1977, 06, 07)); // Silver Jubilee of Queen Elizabeth II bank holiday.
                     break;
                 case 1981:
-                    bankHolidays.Add(new DateTime(1977, 07, 29)); // Diana + Prince Charles Royal Wedding
+                    bankHolidays.Add(new DateTime(1981, 07, 29)); // Diana + Prince Charles Royal Wedding
                     break;
                 case 1999:
                     bankHolidays.Add(new DateTime(1999, 12, 31)); // Millenium

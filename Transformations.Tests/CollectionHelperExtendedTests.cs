@@ -11,30 +11,30 @@ namespace Transformations.Tests
         #region AddUnique
 
         [Test]
-        public void AddUnique_NewItem_AddsAndReturnsFalse()
+        public void AddUnique_NewItem_AddsAndReturnsTrue()
         {
             //// Setup
             var list = new List<int> { 1, 2, 3 };
 
             //// Act
-            bool alreadyHad = list.AddUnique(4);
+            bool added = list.AddUnique(4);
 
             //// Assert
-            Assert.That(alreadyHad, Is.False);
+            Assert.That(added, Is.True);
             Assert.That(list, Does.Contain(4));
         }
 
         [Test]
-        public void AddUnique_DuplicateItem_DoesNotAddAndReturnsTrue()
+        public void AddUnique_DuplicateItem_DoesNotAddAndReturnsFalse()
         {
             //// Setup
             var list = new List<int> { 1, 2, 3 };
 
             //// Act
-            bool alreadyHad = list.AddUnique(2);
+            bool added = list.AddUnique(2);
 
             //// Assert
-            Assert.That(alreadyHad, Is.True);
+            Assert.That(added, Is.False);
             Assert.That(list.Count, Is.EqualTo(3));
         }
 
@@ -43,21 +43,38 @@ namespace Transformations.Tests
         #region AddRangeUnique
 
         [Test]
-        public void AddRangeUnique_MixedValues_ReturnsCountOfDuplicatesFound()
+        public void AddRangeUnique_MixedValues_ReturnsCountOfValuesAdded()
         {
             //// Setup
             var list = new List<int> { 1, 2, 3 };
 
             //// Act
-            int duplicateCount = list.AddRangeUnique(new[] { 2, 3, 4, 5 });
+            int addedCount = list.AddRangeUnique(new[] { 2, 3, 4, 5 });
 
             //// Assert
-            Assert.That(duplicateCount, Is.EqualTo(2));
+            Assert.That(addedCount, Is.EqualTo(2)); // 4 and 5 were added; 2 and 3 already present
             Assert.That(list, Does.Contain(4));
             Assert.That(list, Does.Contain(5));
         }
 
         #endregion AddRangeUnique
+
+        #region AddRange
+
+        [Test]
+        public void AddRange_MultipleCollections_FlattensAllValues()
+        {
+            //// Setup
+            var list = new List<int> { 1 };
+
+            //// Act
+            list.AddRange(new[] { 2, 3 }, new[] { 4, 5 });
+
+            //// Assert
+            Assert.That(list, Is.EqualTo(new[] { 1, 2, 3, 4, 5 }));
+        }
+
+        #endregion AddRange
 
         #region HasItems
 

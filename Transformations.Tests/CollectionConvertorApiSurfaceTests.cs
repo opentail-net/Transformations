@@ -36,23 +36,23 @@ namespace Transformations.Tests
         }
 
         [Test]
-        public void ConvertToString_IEnumerable_SkipsNullAndEmptyItems()
+        public void ConvertToString_IEnumerable_SkipsNullItems_PreservesEmpty()
         {
             IEnumerable<string?> items = new string?[] { "A", null, string.Empty, "B" };
 
             string result = items.ConvertToString("|");
 
-            Assert.That(result, Is.EqualTo("A|B"));
+            Assert.That(result, Is.EqualTo("A||B")); // empty preserved for positional alignment
         }
 
         [Test]
-        public void ConvertToString_ObjectArray_SkipsNullAndEmptyItems()
+        public void ConvertToString_ObjectArray_SkipsNullItems_PreservesEmpty()
         {
             object?[] items = { "A", null, string.Empty, 2 };
 
             string result = items.ConvertToString(";");
 
-            Assert.That(result, Is.EqualTo("A;2"));
+            Assert.That(result, Is.EqualTo("A;;2")); // empty preserved for positional alignment
         }
 
         [Test]
@@ -64,7 +64,7 @@ namespace Transformations.Tests
             string? listResult = list.ConvertToString(",");
             string dictResult = dict.ConvertToString("|");
 
-            Assert.That(listResult, Is.EqualTo("A,B"));
+            Assert.That(listResult, Is.EqualTo("A,,B")); // empty preserved for positional alignment
             Assert.That(dictResult, Does.Contain("K1"));
             Assert.That(dictResult, Does.Contain("K2"));
         }

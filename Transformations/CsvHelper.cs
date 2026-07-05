@@ -110,22 +110,51 @@ public static class CsvHelper
 
         for (var i = 0; i < colCount; i++)
         {
-            colNames[i] = columns[i].ColumnName.Qualify(qualifier);
+            colNames[i] = columns[i].ColumnName.Qualify(qualifier, delimiter);
         }
 
         return string.Join(delimiter, colNames);
     }
 
     /// <summary>
-    /// Qualifies the specified target - i.e. surround with same character string from each side.
+    /// Escapes a single CSV field per RFC 4180 and neutralises spreadsheet formula injection.
+    /// A field is quoted when a qualifier is supplied, or when it contains the delimiter, a quote
+    /// character, or a line break; embedded quotes are doubled. Fields beginning with a formula
+    /// trigger (<c>= + - @</c>, tab or CR) are prefixed with an apostrophe so spreadsheet
+    /// applications treat them as text rather than executable formulas.
     /// </summary>
     /// <param name="target">The target.</param>
-    /// <param name="qualifier">The qualifier.</param>
+    /// <param name="qualifier">The qualifier (quote character); when empty, quoting is applied only where required.</param>
+    /// <param name="delimiter">The field delimiter, needed to decide when quoting is required.</param>
     /// <returns>The result.</returns>
-    internal static string Qualify(this object target, string? qualifier)
+    internal static string Qualify(this object target, string? qualifier, string delimiter)
     {
-        qualifier ??= string.Empty;
-        return qualifier + target + qualifier;
+        string field = target?.ToString() ?? string.Empty;
+
+        if (field.Length > 0)
+        {
+            char first = field[0];
+            if (first is '=' or '+' or '-' or '@' or '\t' or '\r')
+            {
+                field = "'" + field;
+            }
+        }
+
+        string quote = string.IsNullOrEmpty(qualifier) ? "\"" : qualifier!;
+
+        bool mustQuote = !string.IsNullOrEmpty(qualifier)
+            || (!string.IsNullOrEmpty(delimiter) && field.Contains(delimiter, StringComparison.Ordinal))
+            || field.Contains(quote, StringComparison.Ordinal)
+            || field.Contains('\n')
+            || field.Contains('\r');
+
+        if (!mustQuote)
+        {
+            return field;
+        }
+
+        field = field.Replace(quote, quote + quote);
+        return quote + field + quote;
     }
 
     // *****************************
@@ -186,7 +215,7 @@ public static class CsvHelper
 
         for (var i = 0; i < colCount; i++)
         {
-            rowValues[i] = dataRow[i].Qualify(qualifier);
+            rowValues[i] = dataRow[i].Qualify(qualifier, delimiter);
         }
 
         return string.Join(delimiter, rowValues);

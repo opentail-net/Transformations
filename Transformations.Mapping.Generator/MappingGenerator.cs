@@ -136,7 +136,7 @@ namespace Transformations.Mapping.Generator
                 sourceType.Name,
                 sourceNamespace,
                 sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                classDecl.Identifier.GetLocation(),
+                Location.None,
                 targets);
         }
 
@@ -184,15 +184,23 @@ namespace Transformations.Mapping.Generator
                 string targetTypeName = targetProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
                 bool sameType = SymbolEqualityComparer.Default.Equals(sourceProp.Type, targetProp.Type);
-                bool needsConversion = !sameType;
 
                 // Check if target is string and source is not (use .ToString())
                 bool useToString = !sameType
                     && targetProp.Type.SpecialType == SpecialType.System_String
                     && sourceProp.Type.SpecialType != SpecialType.System_String;
 
-                // Check if both are value types (use ConvertTo<T>)
-                bool useConvertTo = !sameType && !useToString;
+                // Only emit ConvertTo<T> when both sides are primitive/known-convertible types.
+                // Enum-to-int, custom type pairs, etc. have no ConvertTo<T> overload → skip them.
+                bool useConvertTo = !sameType && !useToString
+                    && IsConvertibleType(sourceProp.Type) && IsConvertibleType(targetProp.Type);
+
+                // No safe automatic conversion exists; leave this property unmapped rather than
+                // emitting an assignment that won't compile.
+                if (!sameType && !useToString && !useConvertTo)
+                {
+                    continue;
+                }
 
                 mappings.Add(new PropertyMapping(
                     sourceProp.Name,
@@ -210,23 +218,77 @@ namespace Transformations.Mapping.Generator
 
         private static IEnumerable<IPropertySymbol> GetPublicReadableProperties(INamedTypeSymbol type)
         {
-            return type.GetMembers()
-                .OfType<IPropertySymbol>()
-                .Where(p => p.DeclaredAccessibility == Accessibility.Public
-                    && !p.IsStatic
-                    && !p.IsIndexer
-                    && p.GetMethod != null);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            INamedTypeSymbol? current = type;
+            while (current != null)
+            {
+                foreach (var prop in current.GetMembers().OfType<IPropertySymbol>()
+                    .Where(p => p.DeclaredAccessibility == Accessibility.Public
+                        && !p.IsStatic && !p.IsIndexer && p.GetMethod != null))
+                {
+                    if (seen.Add(prop.Name))
+                    {
+                        yield return prop;
+                    }
+                }
+                current = current.BaseType;
+            }
         }
 
         private static IEnumerable<IPropertySymbol> GetPublicSettableProperties(INamedTypeSymbol type)
         {
-            return type.GetMembers()
-                .OfType<IPropertySymbol>()
-                .Where(p => p.DeclaredAccessibility == Accessibility.Public
-                    && !p.IsStatic
-                    && !p.IsIndexer
-                    && p.SetMethod != null
-                    && p.SetMethod.DeclaredAccessibility == Accessibility.Public);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            INamedTypeSymbol? current = type;
+            while (current != null)
+            {
+                foreach (var prop in current.GetMembers().OfType<IPropertySymbol>()
+                    .Where(p => p.DeclaredAccessibility == Accessibility.Public
+                        && !p.IsStatic && !p.IsIndexer
+                        && p.SetMethod != null
+                        && p.SetMethod.DeclaredAccessibility == Accessibility.Public))
+                {
+                    if (seen.Add(prop.Name))
+                    {
+                        yield return prop;
+                    }
+                }
+                current = current.BaseType;
+            }
+        }
+
+        private static bool IsConvertibleType(ITypeSymbol type)
+        {
+            // Unwrap Nullable<T>
+            if (type is INamedTypeSymbol named && named.IsGenericType &&
+                named.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
+            {
+                type = named.TypeArguments[0];
+            }
+
+            if (type.SpecialType is
+                SpecialType.System_Boolean or
+                SpecialType.System_Byte or
+                SpecialType.System_SByte or
+                SpecialType.System_Int16 or
+                SpecialType.System_UInt16 or
+                SpecialType.System_Int32 or
+                SpecialType.System_UInt32 or
+                SpecialType.System_Int64 or
+                SpecialType.System_UInt64 or
+                SpecialType.System_Single or
+                SpecialType.System_Double or
+                SpecialType.System_Decimal or
+                SpecialType.System_Char or
+                SpecialType.System_String)
+            {
+                return true;
+            }
+
+            string fullName = type.ToDisplayString();
+            return fullName == "System.DateTime"
+                || fullName == "System.DateTimeOffset"
+                || fullName == "System.TimeSpan"
+                || fullName == "System.Guid";
         }
 
         private static bool HasAttribute(IPropertySymbol prop, string fullName)
@@ -299,7 +361,9 @@ namespace Transformations.Mapping.Generator
                 }
 
                 string source = EmitSource(model);
-                string hintName = $"{model.SourceClassName}.Mappings.g.cs";
+                string hintName = string.IsNullOrEmpty(model.SourceNamespace)
+                    ? $"{model.SourceClassName}.Mappings.g.cs"
+                    : $"{model.SourceNamespace}.{model.SourceClassName}.Mappings.g.cs";
                 context.AddSource(hintName, source);
             }
         }
@@ -353,13 +417,13 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <returns>A new <see cref=\"{target.TargetClassName}\"/> with mapped property values.</returns>");
             sb.AppendLine($"{indent}public {target.TargetFullName} To{target.TargetClassName}()");
             sb.AppendLine($"{indent}{{");
-            sb.AppendLine($"{indent}    return new {target.TargetFullName}");
+            sb.AppendLine($"{indent}    return new {target.TargetFullName}()");
             sb.AppendLine($"{indent}    {{");
 
             foreach (var prop in target.Properties)
             {
                 string assignment = GetAssignmentExpression(prop);
-                sb.AppendLine($"{indent}        {prop.TargetPropertyName} = {assignment},");
+                sb.AppendLine($"{indent}        @{prop.TargetPropertyName} = {assignment},");
             }
 
             sb.AppendLine($"{indent}    }};");
@@ -375,13 +439,13 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <returns>A new <see cref=\"{model.SourceClassName}\"/> with mapped property values.</returns>");
             sb.AppendLine($"{indent}public static {model.SourceFullName} From{target.TargetClassName}({target.TargetFullName} source)");
             sb.AppendLine($"{indent}{{");
-            sb.AppendLine($"{indent}    return new {model.SourceFullName}");
+            sb.AppendLine($"{indent}    return new {model.SourceFullName}()");
             sb.AppendLine($"{indent}    {{");
 
             foreach (var prop in target.Properties)
             {
                 string assignment = GetReverseAssignmentExpression(prop);
-                sb.AppendLine($"{indent}        {prop.SourcePropertyName} = {assignment},");
+                sb.AppendLine($"{indent}        @{prop.SourcePropertyName} = {assignment},");
             }
 
             sb.AppendLine($"{indent}    }};");

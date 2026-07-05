@@ -1,4 +1,4 @@
-﻿namespace Transformations
+namespace Transformations
 {
     using System;
     using System.Collections.Generic;
@@ -33,7 +33,7 @@
             string name = string.Empty;
             foreach (var f in names)
             {
-                if (string.Equals(f, enumValue.ToString(CultureInfo.InvariantCulture), StringComparison.CurrentCultureIgnoreCase))
+                if (string.Equals(f, enumValue.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase))
                 {
                     name = f;
                     break;

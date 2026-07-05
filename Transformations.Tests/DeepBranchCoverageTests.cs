@@ -244,6 +244,10 @@ namespace Transformations.Tests
             // float: valid + overflow
             Assert.That(5f.ToInt(), Is.EqualTo(5));
             Assert.That(float.MaxValue.ToInt(99), Is.EqualTo(99));
+            // 2147483647f rounds up to 2147483648f (float imprecision); without (double) cast
+            // in the guard, the float-vs-int comparison sees equal values and falls through to
+            // an overflowing cast. With the fix the guard catches it.
+            Assert.That(2147483647f.ToInt(99), Is.EqualTo(99));
 
             // decimal: valid + overflow
             Assert.That(5.9m.ToInt(), Is.EqualTo(5));

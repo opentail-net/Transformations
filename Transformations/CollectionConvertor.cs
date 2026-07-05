@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.ComponentModel;
 using System.Data;
 using System.Globalization;
@@ -1082,8 +1082,6 @@ public static class CollectionConvertor
         {
             if (item == null)
                 continue;
-            else if (item.ToString() == string.Empty)
-                continue;
 
             if (result.Length > 0)
                 result += stringSplitter;
@@ -1113,8 +1111,6 @@ public static class CollectionConvertor
         foreach (var item in valueList)
         {
             if (item == null)
-                continue;
-            else if (item.ToString() == string.Empty)
                 continue;
 
             if (result.Length > 0)
@@ -1187,8 +1183,6 @@ public static class CollectionConvertor
             {
                 if (item == null)
                     continue;
-                else if (item.ToString() == string.Empty)
-                    continue;
 
                 if (result.Length > 0)
                     result += stringSplitter;
@@ -1220,8 +1214,6 @@ public static class CollectionConvertor
             foreach (var item in itemCollection)
             {
                 if (item == null)
-                    continue;
-                else if (item.ToString() == string.Empty)
                     continue;
 
                 if (result.Length > 0)

@@ -2021,7 +2021,7 @@ public static class StringHelper
             return value;
         }
 
-        return characterCount < value.Length ? value.SubstringNullSafe(value.Length - characterCount) : string.Empty;
+        return characterCount >= value.Length ? value : value.SubstringNullSafe(value.Length - characterCount);
     }
 
     /// <summary>

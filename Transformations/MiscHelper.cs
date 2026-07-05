@@ -439,7 +439,7 @@ public static class MiscHelper
 
         foreach (var foo in Enum.GetValues(enumType))
         {
-            returnDictionary.Add((int)foo, foo.ToString() ?? string.Empty);
+            returnDictionary.Add(Convert.ToInt32(foo), foo.ToString() ?? string.Empty);
         }
 
         return returnDictionary;

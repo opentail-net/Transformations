@@ -1362,7 +1362,9 @@
         public static int ToInt(this float inputValue, int? defaultValue = null)
         {
             int result;
-            if (inputValue > int.MaxValue || inputValue < int.MinValue)
+            // Cast to double for comparison — float cannot represent int.MaxValue exactly
+            // (it rounds up to 2147483648.0f), so a float-vs-int comparison misses the boundary.
+            if ((double)inputValue > int.MaxValue || (double)inputValue < int.MinValue)
             {
                 if (defaultValue == null)
                 {

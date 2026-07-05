@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 
 /// <summary>
@@ -26,23 +26,21 @@ public static class CollectionHelper
     /// </remarks>
     public static bool Contains<T>(this IEnumerable<T> input, Inspect.InspectedComparison checkType, params T[] values)
     {
-        if (input == null || input.Count<T>() == 0)
+        if (input == null)
         {
-            if (checkType == Inspect.InspectedComparison.ContainsNoneOf)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            return checkType == Inspect.InspectedComparison.ContainsNoneOf;
+        }
+
+        T[] list = input as T[] ?? input.ToArray();
+        if (list.Length == 0)
+        {
+            return checkType == Inspect.InspectedComparison.ContainsNoneOf;
         }
 
         switch (checkType)
         {
             case Inspect.InspectedComparison.ContainsAllOf:
                 {
-                    T[] list = input.ToArray();
                     foreach (T value in values)
                     {
                         if (!list.Contains(value))
@@ -56,7 +54,6 @@ public static class CollectionHelper
 
             case Inspect.InspectedComparison.ContainsAnyOf:
                 {
-                    T[] list = input.ToArray();
                     foreach (T value in values)
                     {
                         if (list.Contains(value))
@@ -70,7 +67,6 @@ public static class CollectionHelper
 
             case Inspect.InspectedComparison.ContainsNoneOf:
                 {
-                    T[] list = input.ToArray();
                     foreach (T value in values)
                     {
                         if (list.Contains(value))
@@ -156,7 +152,7 @@ public static class CollectionHelper
             collection.Add(value);
         }
 
-        return alreadyHas;
+        return !alreadyHas;
     }
 
     /// <summary>
@@ -228,9 +224,12 @@ public static class CollectionHelper
     /// <typeparam name="T">Refers the type in the Collection.</typeparam>
     public static void AddRange<T>(this ICollection<T> collection, params IEnumerable<T>[] collections)
     {
-        foreach (T childCollection in collections)
+        foreach (IEnumerable<T> childCollection in collections)
         {
-            collection.Add(childCollection);
+            foreach (T value in childCollection)
+            {
+                collection.Add(value);
+            }
         }
     }
 

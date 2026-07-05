@@ -6,6 +6,26 @@ public static class BitConvertor
     #region Methods
 
     /// <summary>
+    /// Produces the buffer/offset to read from. When reversal applies, a reversed copy of the
+    /// <paramref name="size"/>-byte slice at <paramref name="startIndex"/> is returned (offset 0),
+    /// so the caller's array is never mutated and only the target field is reversed. Otherwise the
+    /// original array and index are used unchanged.
+    /// </summary>
+    private static byte[] PrepareForRead(byte[] bytes, ref int startIndex, int size, bool reverse)
+    {
+        if (!(reverse && BitConverter.IsLittleEndian))
+        {
+            return bytes;
+        }
+
+        var slice = new byte[size];
+        Array.Copy(bytes, startIndex, slice, 0, size);
+        Array.Reverse(slice);
+        startIndex = 0;
+        return slice;
+    }
+
+    /// <summary>
     /// Converts to boolean.
     /// </summary>
     /// <param name="bytes">The bytes.</param>
@@ -24,12 +44,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToBoolean(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(bool), reverseLittleEndianIfApplicable);
+            return BitConverter.ToBoolean(buffer, startIndex);
         }
         catch
         {
@@ -56,12 +72,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToChar(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(char), reverseLittleEndianIfApplicable);
+            return BitConverter.ToChar(buffer, startIndex);
         }
         catch
         {
@@ -88,12 +100,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToDouble(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(double), reverseLittleEndianIfApplicable);
+            return BitConverter.ToDouble(buffer, startIndex);
         }
         catch
         {
@@ -120,12 +128,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToSingle(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(float), reverseLittleEndianIfApplicable);
+            return BitConverter.ToSingle(buffer, startIndex);
         }
         catch
         {
@@ -152,12 +156,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToInt32(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(int), reverseLittleEndianIfApplicable);
+            return BitConverter.ToInt32(buffer, startIndex);
         }
         catch
         {
@@ -184,12 +184,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToInt64(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(long), reverseLittleEndianIfApplicable);
+            return BitConverter.ToInt64(buffer, startIndex);
         }
         catch
         {
@@ -216,12 +212,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToInt16(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(short), reverseLittleEndianIfApplicable);
+            return BitConverter.ToInt16(buffer, startIndex);
         }
         catch
         {
@@ -248,12 +240,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToString(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, bytes.Length - startIndex, reverseLittleEndianIfApplicable);
+            return BitConverter.ToString(buffer, startIndex);
         }
         catch
         {
@@ -280,12 +268,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToUInt32(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(uint), reverseLittleEndianIfApplicable);
+            return BitConverter.ToUInt32(buffer, startIndex);
         }
         catch
         {
@@ -312,12 +296,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToUInt64(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(ulong), reverseLittleEndianIfApplicable);
+            return BitConverter.ToUInt64(buffer, startIndex);
         }
         catch
         {
@@ -344,12 +324,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            return BitConverter.ToUInt16(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(ushort), reverseLittleEndianIfApplicable);
+            return BitConverter.ToUInt16(buffer, startIndex);
         }
         catch
         {
@@ -468,12 +444,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToBoolean(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(bool), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToBoolean(buffer, startIndex);
             return true;
         }
         catch
@@ -504,12 +476,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToChar(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(char), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToChar(buffer, startIndex);
             return true;
         }
         catch
@@ -540,12 +508,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToDouble(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(double), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToDouble(buffer, startIndex);
             return true;
         }
         catch
@@ -576,12 +540,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToSingle(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(float), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToSingle(buffer, startIndex);
             return true;
         }
         catch
@@ -612,12 +572,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToInt32(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(int), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToInt32(buffer, startIndex);
             return true;
         }
         catch
@@ -648,12 +604,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToInt64(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(long), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToInt64(buffer, startIndex);
             return true;
         }
         catch
@@ -684,12 +636,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToInt16(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(short), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToInt16(buffer, startIndex);
             return true;
         }
         catch
@@ -720,12 +668,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToString(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, bytes.Length - startIndex, reverseLittleEndianIfApplicable);
+            result = BitConverter.ToString(buffer, startIndex);
             return true;
         }
         catch
@@ -756,12 +700,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToUInt32(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(uint), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToUInt32(buffer, startIndex);
             return true;
         }
         catch
@@ -792,12 +732,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToUInt64(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(ulong), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToUInt64(buffer, startIndex);
             return true;
         }
         catch
@@ -828,12 +764,8 @@ public static class BitConvertor
         {
             // If the system architecture is little-endian (that is, little end first),
             // reverse the byte array.
-            if (reverseLittleEndianIfApplicable && BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(bytes);
-            }
-
-            result = BitConverter.ToUInt16(bytes, startIndex);
+            byte[] buffer = PrepareForRead(bytes, ref startIndex, sizeof(ushort), reverseLittleEndianIfApplicable);
+            result = BitConverter.ToUInt16(buffer, startIndex);
             return true;
         }
         catch

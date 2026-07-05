@@ -363,6 +363,8 @@ namespace Transformations
 
                     if (delay > TimeSpan.Zero)
                     {
+                        var maxDelay = TimeSpan.FromMilliseconds(int.MaxValue - 1);
+                        if (effectiveDelay > maxDelay) effectiveDelay = maxDelay;
                         Thread.Sleep(effectiveDelay);
                     }
 
@@ -630,6 +632,47 @@ namespace Transformations
             return ExecuteWithRetryAsync(operation, retryCount, initialDelay, retryOnExceptions, failFastExceptions, jitterFactor, onRetryAsync, cancellationToken);
         }
 
+        /// <summary>
+        /// Executes an async function with retry support and exponential backoff, retrying only when
+        /// the supplied predicate classifies the exception as retry-eligible. Exceptions the predicate
+        /// rejects are rethrown immediately (fail fast), preserving the original exception.
+        /// </summary>
+        /// <typeparam name="T">Return type.</typeparam>
+        /// <param name="operation">Async operation to execute.</param>
+        /// <param name="retryCount">Number of retries after the initial attempt.</param>
+        /// <param name="initialDelay">Initial delay before first retry.</param>
+        /// <param name="shouldRetry">Predicate deciding whether a thrown exception is retry-eligible.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Function result.</returns>
+        public static Task<T> RetryAsync<T>(
+            Func<Task<T>> operation,
+            int retryCount,
+            TimeSpan initialDelay,
+            Func<Exception, bool> shouldRetry,
+            CancellationToken cancellationToken = default)
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            if (shouldRetry == null)
+            {
+                throw new ArgumentNullException(nameof(shouldRetry));
+            }
+
+            return ExecuteWithRetryAsync(
+                operation,
+                retryCount,
+                initialDelay,
+                retryOnExceptions: null,
+                failFastExceptions: null,
+                jitterFactor: 0d,
+                onRetryAsync: null,
+                cancellationToken,
+                shouldRetry);
+        }
+
         private static async Task<T> ExecuteWithRetryAsync<T>(
             Func<Task<T>> operation,
             int retryCount,
@@ -638,7 +681,8 @@ namespace Transformations
             IEnumerable<Type>? failFastExceptions,
             double jitterFactor,
             Func<RetryAttemptContext, Task>? onRetryAsync,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Func<Exception, bool>? shouldRetry = null)
         {
             if (retryCount < 0)
             {
@@ -678,7 +722,8 @@ namespace Transformations
                     }
 
                     bool canRetryType = retryOn.Length == 0 || Matches(ex, retryOn);
-                    if (!canRetryType || attempt >= retryCount)
+                    bool predicateAllowsRetry = shouldRetry == null || shouldRetry(ex);
+                    if (!canRetryType || !predicateAllowsRetry || attempt >= retryCount)
                     {
                         throw;
                     }
@@ -698,6 +743,8 @@ namespace Transformations
 
                     if (delay > TimeSpan.Zero)
                     {
+                        var maxDelay = TimeSpan.FromMilliseconds(int.MaxValue - 1);
+                        if (effectiveDelay > maxDelay) effectiveDelay = maxDelay;
                         await Task.Delay(effectiveDelay, cancellationToken).ConfigureAwait(false);
                     }
 

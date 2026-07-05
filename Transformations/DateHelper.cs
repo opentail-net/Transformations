@@ -184,14 +184,15 @@ using System.Globalization;
         [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "Reviewed. Suppression is OK here.")]
         public static DateTime AddSafely(this DateTime date, TimeSpan time)
         {
-            if (date.Ticks + time.Ticks < DateTime.MinValue.Ticks)
-            {
-                return DateTime.MinValue;
-            }
-
-            if (date.Ticks + time.Ticks > DateTime.MaxValue.Ticks)
+            // Guard against long overflow before adding — check headroom instead.
+            if (time.Ticks > 0 && time.Ticks > DateTime.MaxValue.Ticks - date.Ticks)
             {
                 return DateTime.MaxValue;
+            }
+
+            if (time.Ticks < 0 && time.Ticks < DateTime.MinValue.Ticks - date.Ticks)
+            {
+                return DateTime.MinValue;
             }
 
             return date.Add(time);
@@ -800,7 +801,10 @@ using System.Globalization;
         /// <example><code>new DateTime().FirstDateOfTheWeek()</code></example>
         public static DateTime FirstDateOfTheWeek(this DateTime date)
         {
-            return date.AddDays(-((date.DayOfWeek - System.Threading.Thread.CurrentThread.CurrentCulture.DateTimeFormat.FirstDayOfWeek)));
+            int firstDay = (int)System.Threading.Thread.CurrentThread.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int dayOfWeek = (int)date.DayOfWeek;
+            int daysBack = (dayOfWeek - firstDay + 7) % 7;
+            return date.AddDays(-daysBack);
         }
 
         /// <summary>

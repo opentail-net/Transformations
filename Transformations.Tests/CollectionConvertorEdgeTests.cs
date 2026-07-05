@@ -111,8 +111,8 @@ namespace Transformations.Tests
             string fromEnumerable = ((IEnumerable<string?>)new string?[] { "A", "", null, "B" }).ConvertToString("|");
             string fromObjects = new object?[] { "X", "", null, 7 }.ConvertToString("|");
 
-            Assert.That(fromEnumerable, Is.EqualTo("A|B"));
-            Assert.That(fromObjects, Is.EqualTo("X|7"));
+            Assert.That(fromEnumerable, Is.EqualTo("A||B")); // empty preserved for positional alignment
+            Assert.That(fromObjects, Is.EqualTo("X||7")); // empty preserved, null skipped
         }
     }
 }

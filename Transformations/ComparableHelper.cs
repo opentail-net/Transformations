@@ -52,14 +52,18 @@ public static class ComparableHelper
     /// <returns>The result.</returns>
     public static int BetweenOrNext<T>(this int actual, IEnumerable<T> valueList)
     {
-        if (actual < 0 || actual >= valueList.Count<T>())
+        int count = valueList.Count<T>();
+        if (actual < 0)
         {
-            return valueList.Count<T>();
+            return 0;
         }
-        else
+
+        if (actual >= count)
         {
-            return actual;
+            return count; // "next" insertion position past the end
         }
+
+        return actual;
     }
 
     /// <summary>

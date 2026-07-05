@@ -51,6 +51,24 @@ namespace Transformations.Tests
             Assert.That(actual, Is.EqualTo(DateTime.MinValue));
         }
 
+        [Test]
+        public void AddSafely_MaxValuePlusOneTick_DoesNotOverflow_ReturnsMaxValue()
+        {
+            // Before fix: DateTime.MaxValue.Ticks + TimeSpan.MaxValue.Ticks overflows long,
+            // wrapping to a negative value that compares as less than MinValue.Ticks → returned MinValue.
+            DateTime actual = DateTime.MaxValue.AddSafely(TimeSpan.FromTicks(1));
+
+            Assert.That(actual, Is.EqualTo(DateTime.MaxValue));
+        }
+
+        [Test]
+        public void AddSafely_MinValueMinusOneTick_DoesNotOverflow_ReturnsMinValue()
+        {
+            DateTime actual = DateTime.MinValue.AddSafely(TimeSpan.FromTicks(-1));
+
+            Assert.That(actual, Is.EqualTo(DateTime.MinValue));
+        }
+
         #endregion AddSafely
 
         #region AddDaysSafely
@@ -212,6 +230,29 @@ namespace Transformations.Tests
             //// Assert
             Assert.That(actual.DayOfWeek, Is.EqualTo(DayOfWeek.Sunday));
             Assert.That(actual, Is.EqualTo(new DateTime(2024, 06, 23)));
+        }
+
+        [Test]
+        public void FirstDateOfTheWeek_Sunday_ReturnsPreviousMonday_NotNextMonday()
+        {
+            // Bug: without modulo, Sunday (DayOfWeek=0) with Monday first-day gives AddDays(+1),
+            // jumping a week forward instead of going back 6 days.
+            // 2024-06-23 is a Sunday; the week should start on 2024-06-17 (Monday).
+            System.Globalization.CultureInfo savedCulture = System.Threading.Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-GB");
+                DateTime sunday = new DateTime(2024, 06, 23);
+
+                DateTime actual = sunday.FirstDateOfTheWeek();
+
+                Assert.That(actual, Is.EqualTo(new DateTime(2024, 06, 17)));
+                Assert.That(actual.DayOfWeek, Is.EqualTo(DayOfWeek.Monday));
+            }
+            finally
+            {
+                System.Threading.Thread.CurrentThread.CurrentCulture = savedCulture;
+            }
         }
 
         #endregion FirstDateOfTheWeek / LastDateOfTheWeek

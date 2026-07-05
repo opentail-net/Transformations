@@ -214,6 +214,48 @@ namespace Transformations.Tests
 
         #endregion IsNumericType
 
+        #region IsNumericValue
+
+        [Test]
+        public void IsNumericValue_NativeIntColumn_ReturnsTrue()
+        {
+            // Before fix: (string)value cast on a typed int column threw InvalidCastException,
+            // was silently caught, and incorrectly returned false.
+            var row = BuildRow("Alice", 42, 3.14);
+
+            Assert.That(row.IsNumericValue("Age"), Is.True);
+            Assert.That(row.IsNumericValue(1), Is.True);
+        }
+
+        [Test]
+        public void IsNumericValue_NativeDoubleColumn_ReturnsTrue()
+        {
+            var row = BuildRow("Alice", 42, 3.14);
+
+            Assert.That(row.IsNumericValue("Score"), Is.True);
+            Assert.That(row.IsNumericValue(2), Is.True);
+        }
+
+        [Test]
+        public void IsNumericValue_StringColumnWithNonNumeric_ReturnsFalse()
+        {
+            var row = BuildRow("Alice", 42, 3.14);
+
+            Assert.That(row.IsNumericValue("Name"), Is.False);
+        }
+
+        [Test]
+        public void IsNumericValue_StringColumnWithNumericContent_ReturnsTrue()
+        {
+            var table = new DataTable();
+            table.Columns.Add("Val", typeof(string));
+            table.Rows.Add("123");
+
+            Assert.That(table.Rows[0].IsNumericValue("Val"), Is.True);
+        }
+
+        #endregion IsNumericValue
+
         #region Exists
 
         [Test]

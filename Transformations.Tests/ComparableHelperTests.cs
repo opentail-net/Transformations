@@ -276,18 +276,15 @@ namespace Transformations.Tests
             Assert.That(result, Is.EqualTo(expected));
         }
 
-        [Test]
-        public void BetweenOrNext_OutOfRange_ReturnsCount()
+        [TestCase(99, 3)]  // past end → Count (next insertion position)
+        [TestCase(-1, 0)]  // negative → first valid index
+        [TestCase(1, 1)]   // in range → unchanged
+        public void BetweenOrNext_ReturnsValidIndex(int index, int expected)
         {
-            //// Setup
             var list = new List<string> { "a", "b", "c" };
-            int index = 99;
-            int expected = 3;
 
-            //// Act
             int result = index.BetweenOrNext(list);
 
-            //// Assert
             Assert.That(result, Is.EqualTo(expected));
         }
 

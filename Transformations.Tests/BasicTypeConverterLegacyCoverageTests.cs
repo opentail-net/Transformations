@@ -83,7 +83,9 @@ namespace Transformations.Tests
         }
 
         [TestCase("7f5f9f8a-9ebf-4a0d-9bbd-0a6be6f8fd77", true)]
-        [TestCase("7f5f9f8a-9ebf-4a0d-9bbd-0a6be6f8fd77xxxxx", true)]
+        [TestCase("7f5f9f8a9ebf4a0d9bbd0a6be6f8fd77", true)]     // N format (32) — previously rejected by length gate
+        [TestCase("{7f5f9f8a-9ebf-4a0d-9bbd-0a6be6f8fd77}", true)] // B format (38)
+        [TestCase("(7f5f9f8a-9ebf-4a0d-9bbd-0a6be6f8fd77)", true)] // P format (38)
         [TestCase("short", false)]
         [TestCase("", false)]
         public void TryToGuid_CoversLengthAndParseBranches(string input, bool expectedSuccess)

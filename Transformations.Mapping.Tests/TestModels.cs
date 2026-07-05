@@ -107,6 +107,42 @@ namespace Transformations.Mapping.Tests
         public DateTime CreatedOn { get; set; }
     }
 
+    // Enum-to-int mismatch: generator must skip the enum property rather than emit ConvertTo<T>
+    public enum RecordStatus { Active, Inactive, Pending }
+
+    public class StatusDto
+    {
+        public int Status { get; set; }   // same name, but int vs enum — no safe auto-conversion
+        public string Name { get; set; } = string.Empty;
+    }
+
+    [MapTo<StatusDto>]
+    public partial class StatusRecord
+    {
+        public RecordStatus Status { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    // Inherited properties: base-class props must be included in the generated mapping
+    public class EntityBase
+    {
+        public int Id { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class PersonDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string CreatedAt { get; set; } = string.Empty;
+    }
+
+    [MapTo<PersonDto>]
+    public partial class Person : EntityBase
+    {
+        public string Name { get; set; } = string.Empty;
+    }
+
     // Intentionally partial mapping to demonstrate unmapped target-member diagnostics (TXMAP001)
     public class PartialTarget
     {

@@ -1,4 +1,4 @@
-﻿namespace Transformations
+namespace Transformations
 {
     using System;
     using System.Collections.Generic;
@@ -25,7 +25,10 @@
             new (new Regex("(?i)([m|l])ouse$"), "$1ice"),
 
             // Suffix-based rules
-            new (new Regex("(?i)(.*)fe?$"), "$1ves"), // leaf -> leaves, wife -> wives
+            // Words that end in f/fe but do NOT change to -ves (must precede the f/fe→ves rule)
+            new (new Regex("(?i)(roof|chef|belief|cliff|cafe|proof|grief|reef|brief|chief)$"), "$1s"),
+            // Words ending in -eaf or -oaf (leaf, loaf) → -eaves/-oaves
+            new (new Regex("(?i)([eo])af$"), "$1aves"),
             new (new Regex("(?i)(ax|test)is$"), "$1es"), // axis -> axes
             new (new Regex("(?i)(octop|vir)us$"), "$1i"),
             new (new Regex("(?i)(alias|status)$"), "$1es"),
@@ -432,6 +435,10 @@
                     {
                         output.Length = entityStartOutputLength;
                     }
+                    else if (char.IsHighSurrogate(ch) && i + 1 < inputText.Length && char.IsLowSurrogate(inputText[i + 1]))
+                    {
+                        output.Append(inputText[i + 1]);
+                    }
                     else if (lastWordBreakOutputLength > 0)
                     {
                         output.Length = lastWordBreakOutputLength;
@@ -481,7 +488,7 @@
                 return inputText;
             }
 
-            return Regex.Replace(inputText, "]*>|", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            return Regex.Replace(inputText, "<[^>]*>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.Compiled);
         }
 
         /// <summary>
@@ -563,9 +570,9 @@
                                 {
                                     string hrefToken = hrefMatch.Value;
                                     string hrefValue = hrefToken.Substring(hrefToken.IndexOf('=') + 1).Trim().Trim('\'', '"');
-                                    if (!hrefValue.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
+                                    if (IsSafeHref(hrefValue))
                                     {
-                                        sb.Append("<a href=\"").Append(hrefValue).Append("\">");
+                                        sb.Append("<a href=\"").Append(WebUtility.HtmlEncode(hrefValue)).Append("\">");
                                     }
                                     else
                                     {
@@ -608,6 +615,47 @@
         public static string StripHtmlScripts(this string inputText)
         {
             return inputText.SanitizeHtml(HtmlSanitizationPolicy.StripAll);
+        }
+
+        /// <summary>
+        /// Determines whether an anchor href is safe to emit. Rejects dangerous URI schemes
+        /// (javascript:, data:, vbscript:, etc.) after HTML-decoding entities and stripping
+        /// whitespace/control characters that browsers ignore inside a scheme. Relative URLs
+        /// (no scheme, fragment, query, or path-relative links) are permitted.
+        /// </summary>
+        private static bool IsSafeHref(string href)
+        {
+            if (string.IsNullOrWhiteSpace(href))
+            {
+                return false;
+            }
+
+            string decoded = WebUtility.HtmlDecode(href);
+            var builder = new StringBuilder(decoded.Length);
+            foreach (char c in decoded)
+            {
+                if (!char.IsWhiteSpace(c) && !char.IsControl(c))
+                {
+                    builder.Append(c);
+                }
+            }
+
+            string normalized = builder.ToString();
+
+            int colonIndex = normalized.IndexOf(':');
+            int slashIndex = normalized.IndexOf('/');
+
+            // No scheme, or the first '/' precedes the first ':' (path-relative like "a/b:c") => relative, safe.
+            if (colonIndex < 0 || (slashIndex >= 0 && slashIndex < colonIndex))
+            {
+                return true;
+            }
+
+            string scheme = normalized.Substring(0, colonIndex);
+            return scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
+                || scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+                || scheme.Equals("mailto", StringComparison.OrdinalIgnoreCase)
+                || scheme.Equals("tel", StringComparison.OrdinalIgnoreCase);
         }
 
         private static readonly HashSet<string> VoidTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -737,7 +785,7 @@
 
             // Ends in 'y' but not 'ay', 'ey', etc. (e.g., City -> Cities)
             if (value.EndsWith("y", StringComparison.OrdinalIgnoreCase) &&
-                !FormattableString.Invariant($"aeiou").Contains(value.Substring(value.Length - 2, 1).ToLower()))
+                (value.Length < 2 || !FormattableString.Invariant($"aeiou").Contains(value[value.Length - 2].ToString().ToLowerInvariant())))
             {
                 return value.Remove(value.Length - 1) + "ies";
             }

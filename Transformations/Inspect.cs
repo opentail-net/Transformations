@@ -602,7 +602,7 @@ public static class Inspect
                         return false;
                     }
 
-                    Regex rx = new Regex(@"/^#?([a-f0-9]{6}|[a-f0-9]{3})$/", RegexOptions.IgnoreCase);
+                    Regex rx = new Regex(@"^#?([a-f0-9]{6}|[a-f0-9]{3})$", RegexOptions.IgnoreCase);
                     return rx.IsMatch(inputValue);
                 }
 
@@ -636,7 +636,7 @@ public static class Inspect
                     bool result = true;
                     foreach (char c in inputValue)
                     {
-                        if (!c.IsLetter() || !char.IsPunctuation(c))
+                        if (!c.IsLetter() && !char.IsPunctuation(c))
                         {
                             result = false;
                             break;

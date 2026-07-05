@@ -35,12 +35,14 @@ namespace Transformations.EntityFramework
             TimeSpan? initialDelay = null,
             CancellationToken cancellationToken = default)
         {
+            // DbUpdateConcurrencyException is never transient — retrying re-issues the same conflicting
+            // write and fails identically, so fail fast on it by default.
             return SaveChangesWithRetryAsync(
                 context,
                 retryCount,
                 initialDelay,
                 retryOnExceptions: null,
-                failFastExceptions: null,
+                failFastExceptions: new[] { typeof(DbUpdateConcurrencyException) },
                 cancellationToken);
         }
 
