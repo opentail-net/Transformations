@@ -1,16 +1,19 @@
-﻿# Transformations.Dapper.Tests
+# Transformations.Dapper.Tests
 
-*Resiliency contract verifications.*
+NUnit test suite for `Transformations.Dapper`.
 
 ## 📖 Overview
-Testing project evaluating SQL transient fault detection scenarios specifically over the `Dapper` integrations.
+
+NUnit test suite for `Transformations.Dapper` — retry semantics, transient fault classification, and `SqlParameterBridge` correctness.
 
 ## 🚀 Why this project?
-Ensures that deadlocks and timeouts act securely and jittered retry spans execute across simulated ADO.NET constraints.
 
-## 💡 Key Features & Coverage
-* Mocked transient Sql exceptions triggering retry sweeps.
-* Dapper `DynamicParameters` translation equality checks.
+Retry logic is easy to get subtly wrong: off-by-one retry counts, backoff that doesn't actually wait, or transient detection that catches too much (masking real bugs) or too little (not retrying when it should). This suite verifies the contract precisely with mocked `SqlException` instances, controlled timing, and exact parameter translation assertions.
 
----
-*Part of the Transformations ecosystem. Designed for modern .NET 8+.*
+## 💡 Coverage
+
+- `SqlTransientFaultDetector` — classifies deadlocks, timeouts, Azure throttling codes, and transport errors as transient; non-transient codes are rejected
+- `DapperResilienceExtensions` — retry executes the correct number of times; exponential backoff delays are within expected bounds; non-transient exceptions propagate immediately
+- `SqlParameterBridge.ToSqlParameters` — anonymous object properties become `@`-prefixed `SqlParameter` instances with correct values and types; explicit `SqlDbType` mappings are applied; `null` values become `DBNull.Value`
+
+*Part of the Transformations ecosystem.*

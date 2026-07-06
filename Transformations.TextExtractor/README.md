@@ -1,65 +1,29 @@
 # Transformations.Text
 
-A comprehensive text extraction and transformation library for .NET that supports multiple document and structured data formats.
-
-## Overview
-
-`Transformations.Text` provides unified text extraction capabilities across various file formats including Office documents, structured data formats, and more. Extract and normalize text from diverse sources with a simple, consistent API.
-
-## What's New in 2.0.3
-
-- Added `GetTextWithMetadata` for text plus metadata extraction.
-- Added `MarkdownStructureExtractor` for heading maps and section extraction.
-- Added `DocumentContent` common normalize/compare façade.
-- Added `JsonSchemaValidator` schema-based JSON validation helpers.
+A comprehensive, first-class text extraction and transformation library for .NET — purpose-built for RAG pipelines, vector-store ingestion, and AI data workflows.
 
 ## Features
 
-- **Multi-Format Text Extraction**: Extract text from multiple document types with a single unified interface
-- **Text Normalization**: Automatically normalizes line endings and whitespace across all formats
-- **Structured Data Support**: Parse and transform XML, YAML, JSON, and CSV data
-- **JSON Schema Utilities**: Validate JSON, list schema errors, normalize AI-emitted JSON, and compare JSON payloads
-- **Markdown Structure Utilities**: Normalize Markdown, build heading maps, extract sections, and compare normalized Markdown
-- **Common Document Utilities**: Format-aware normalize/compare for plain text, Markdown, and JSON via a unified API
-- **Extraction Metadata API**: Extract normalized text plus cross-format metadata for indexing, diagnostics, and RAG prep
-- **Office Document Support**: Extract text from Word documents (.docx), Excel files, and more
-- **Email Support**: Extract text from email messages (.eml, .msg)
-- **PDF Support**: Extract text from PDF documents
-- **HTML Support**: Parse and extract text from HTML documents
-- **Markdown Support**: Handle Markdown formatted content
-- **Consistent Results**: Returns structured results with success status and extracted content
-
-## Supported Formats
-
-### Document Formats
-- **Word** (.docx) - Extract text while preserving paragraph separation
-- **Excel** (.xlsx, .xls) - Extract text from cells and worksheets
-- **PDF** - Extract text content from PDF files
-- **HTML** - Parse HTML and extract text content
-- **Markdown** - Process Markdown formatted text
-
-### Structured Data Formats
-- **XML** - Parse and extract data from XML documents
-- **YAML** - Parse YAML configuration and data files
-- **JSON** - Extract and transform JSON data
-- **CSV** - Parse and extract CSV data
-
-### Email Formats
-- **Email Messages** (.eml, .msg) - Extract text from MIME/MimeKit formats
-
-### Plain Text
-- **Text Files** (.txt) - Normalize and process plain text
+- **18 built-in extractors** — PDF, DOCX, PPTX, Excel, HTML, Markdown, CSV, EML, MSG, ODT/ODP, RTF, EPUB, JSON, XML, YAML, log files, source code, and ZIP archives
+- **DI-ready** — `IDocumentTextExtractor` facade interface; register with one call via `AddTextExtractor()`; fluent `TextExtractorBuilder` for fine-grained pipeline control
+- **Async & streaming** — `GetTextAsync` / `GetTextWithMetadataAsync` accept `Stream` directly; `GetTextBatchAsync` parallelises multi-document pipelines
+- **Extraction options** — per-call `ExtractionOptions`: `MaxCharacters`, `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers`, `TableMode`, `MaxDecompressedBytes`
+- **Table rendering modes** — `TableMode.KeyValue` (default), `Markdown` (pipe tables), `Csv`, or `Omit`; applies to DOCX, HTML, Excel, and ODT tables
+- **Content-type sniffing** — magic-byte fallback when the extension is wrong or missing; detects PDF, DOCX/XLSX/PPTX, MSG, HTML, RTF, EML, EPUB, and ZIP families
+- **RAG chunking** — `TextChunker` splits text by characters (word-boundary-aware), sentences, paragraphs, Markdown sections, or token count with configurable overlap; chunks carry `PageNumber?` and `HeadingPath?` provenance metadata
+- **Extensible** — implement `ITextExtractor` and plug in a custom format; or use `TextExtractorBuilder` to add, replace, or disable built-in extractors
+- **Encoding-aware** — all extractors honour BOM and detect encoding from stream headers
+- **ILogger integration** — structured log events (extractor used, char count, duration, failures) via `ILogger<TextExtractor>`; zero-config when logging is wired via DI
+- **Rich result metadata** — `ExtractionResult.ExtractorName` and `.Duration` on every call; format-specific document properties (PDF title/author/page count, DOCX title/author/revision, MSG subject/sender/date, and more)
+- **Zero new dependencies for RTF and EPUB** — both formats parsed with BCL only (self-contained RTF state machine; EPUB via `System.IO.Compression` + built-in HTML extractor)
+- **JSON Schema utilities** — validate, list errors, normalize AI-emitted JSON (strips code fences), compare payloads
+- **Markdown structure** — build heading maps, extract sections, normalize, compare
+- **CSV data profiling** — `CsvDataProfiler` infers column types, builds distributions, and detects data issues
 
 ## Installation
 
 ```
 dotnet add package Transformations.Text
-```
-
-Or via NuGet Package Manager:
-
-```
-Install-Package Transformations.Text
 ```
 
 ## Supported .NET Versions
@@ -68,221 +32,405 @@ Install-Package Transformations.Text
 - .NET 9.0
 - .NET 8.0
 
+---
+
 ## Quick Start
 
-```
+```csharp
 using Transformations.Text;
 
-// Create an instance of TextExtractor
 var extractor = new TextExtractor();
 
-// Extract text from a file
-byte[] fileBytes = File.ReadAllBytes("document.docx");
-var result = extractor.GetText("document.docx", fileBytes);
+byte[] bytes = File.ReadAllBytes("report.docx");
+var result = extractor.GetText("report.docx", bytes);
 
 if (result.IsSuccess)
-{
-    Console.WriteLine("Extracted Text:");
     Console.WriteLine(result.Text);
-}
 else
+    Console.WriteLine(result.ErrorMessage);
+```
+
+### With extraction options
+
+```csharp
+var options = new ExtractionOptions
 {
-    Console.WriteLine($"Extraction failed: {result.ErrorMessage}");
-}
+    MaxPages          = 10,           // first 10 pages / slides / chapters
+    TableMode         = TableMode.Markdown,  // emit tables as pipe tables
+    IncludePageMarkers = true,        // insert [Page N] / [Slide N] markers
+};
+
+var result = extractor.GetText("slides.pptx", bytes, options);
 ```
 
-## Usage Examples
+### Format detection (no file name available)
 
-### Extract from Word Document
+```csharp
+string? extension = TextExtractor.DetectFormat(unknownBytes);
+// ".pdf", ".docx", ".rtf", ".epub", ... or null
 ```
-var extractor = new TextExtractor();
-byte[] docxBytes = File.ReadAllBytes("report.docx");
-var result = extractor.GetText("report.docx", docxBytes);
-
-if (result.IsSuccess)
-{
-    var paragraphs = result.Text.Split(Environment.NewLine);
-    // Process paragraphs...
-}
-```
-
-### Extract and Normalize Plain Text
-```
-var extractor = new TextExtractor();
-byte[] txtBytes = File.ReadAllBytes("notes.txt");
-var result = extractor.GetText("notes.txt", txtBytes);
-
-// Automatically normalizes line endings and whitespace
-var normalizedText = result.Text;
-```
-
-### Parse Structured Data
-```
-var extractor = new TextExtractor();
-
-// Extract from XML
-byte[] xmlBytes = File.ReadAllBytes("data.xml");
-var xmlResult = extractor.GetText("data.xml", xmlBytes);
-
-// Extract from YAML
-byte[] yamlBytes = File.ReadAllBytes("config.yaml");
-var yamlResult = extractor.GetText("config.yaml", yamlBytes);
-
-// Extract from JSON
-byte[] jsonBytes = File.ReadAllBytes("data.json");
-var jsonResult = extractor.GetText("data.json", jsonBytes);
-```
-
-### Validate JSON with JsonSchema.Net
-```
-using Transformations.Text;
-
-string rawJson = "```json\n{\"name\":\"OpenTail\"}\n```";
-string schemaJson = """
-{
-  "type": "object",
-  "properties": {
-    "name": { "type": "string", "minLength": 1 }
-  },
-  "required": ["name"]
-}
-""";
-
-bool isValid = JsonSchemaValidator.ValidateJson(rawJson, schemaJson);
-List<string> errors = JsonSchemaValidator.ListSchemaErrors(rawJson, schemaJson);
-string normalized = JsonSchemaValidator.NormalizeJson(rawJson);
-bool hasChanged = JsonSchemaValidator.CompareJson("{\"a\":1}", "{\"a\":2}");
-```
-
-### Extract Text with Metadata
-```
-using Transformations.Text;
-
-var extractor = new TextExtractor();
-byte[] emlBytes = File.ReadAllBytes("mail.eml");
-
-var result = extractor.GetTextWithMetadata("mail.eml", emlBytes);
-
-if (result.IsSuccess)
-{
-    Console.WriteLine(result.Text);
-    Console.WriteLine($"Attachment count: {result.Metadata[\"email.attachment.count\"]}");
-    Console.WriteLine($"Special attachments: {result.Metadata[\"email.attachment.special.names\"]}");
-}
-```
-
-### Markdown Structure for Docs and RAG
-```
-using Transformations.Text;
-
-string markdown = File.ReadAllText("README.md");
-
-var headings = MarkdownStructureExtractor.BuildHeadingMap(markdown);
-var sections = MarkdownStructureExtractor.ExtractSections(markdown);
-string normalized = MarkdownStructureExtractor.NormalizeMarkdown(markdown);
-bool changed = MarkdownStructureExtractor.CompareMarkdown(markdown, normalized);
-```
-
-### Common Document Pattern
-```
-using Transformations.Text;
-
-string normalized = DocumentContent.Normalize(rawContent, DocumentFormat.Markdown);
-bool changed = DocumentContent.Compare(oldContent, newContent, DocumentFormat.Json);
-```
-
-## API Reference
-
-### TextExtractor.GetText(fileName, fileBytes)
-
-Extracts text from the provided file content based on the file extension.
-
-**Parameters:**
-- `fileName` (string): Name of the file including extension (used to determine format)
-- `fileBytes` (byte[]): Raw file content as bytes
-
-**Returns:** `ExtractionResult`
-- `IsSuccess` (bool): Indicates whether extraction was successful
-- `Text` (string): Extracted and normalized text content
-- `ErrorMessage` (string): Error details if extraction failed
-
-### TextExtractor.GetTextWithMetadata(fileName, fileBytes)
-
-Extracts normalized text and returns metadata for supported formats.
-
-**Returns:** `ExtractionMetadataResult`
-- `IsSuccess` (bool)
-- `Text` (string)
-- `Metadata` (`Dictionary<string,string>`)
-- `ErrorMessage` (string)
-
-Common metadata keys:
-- `file.name`, `file.extension`, `file.bytes`
-- `text.length`, `text.lineCount`, `text.wordCount`
-
-Format metadata examples:
-- Markdown: `markdown.headingCount`, `markdown.sectionCount`, `markdown.headings`
-- JSON: `json.rootKind`, `json.topLevelPropertyCount`, `json.topLevelProperties`, `json.topLevelArrayLength`
-- EML: `email.subject`, `email.fromCount`, `email.toCount`, `email.date`, `email.attachment.count`, `email.attachment.names`, `email.attachment.special.count`, `email.attachment.special.names`
-
-### JsonSchemaValidator
-
-Utility methods for schema-driven JSON workflows:
-
-- `ValidateJson(rawJson, schemaJson)` -> `bool`
-- `ListSchemaErrors(rawJson, schemaJson)` -> `List<string>`
-- `NormalizeJson(input)` -> `string`
-- `CompareJson(leftJson, rightJson)` -> `bool` (returns `true` when payloads differ)
-
-### MarkdownStructureExtractor
-
-Utility methods for Markdown structure-aware processing:
-
-- `NormalizeMarkdown(markdown)` -> `string`
-- `BuildHeadingMap(markdown)` -> `List<MarkdownHeading>`
-- `ExtractSections(markdown)` -> `List<MarkdownSection>`
-- `CompareMarkdown(leftMarkdown, rightMarkdown)` -> `bool` (returns `true` when payloads differ)
-
-### DocumentContent
-
-Unified normalize/compare façade:
-
-- `Normalize(content, format)` -> `string`
-- `Compare(left, right, format)` -> `bool`
-
-Supported `DocumentFormat` values:
-- `PlainText`
-- `Markdown`
-- `Json`
-
-## Features & Behavior
-
-- **Automatic Normalization**: Line endings are normalized to the current environment's standard (Environment.NewLine)
-- **Whitespace Handling**: Leading and trailing whitespace is trimmed; internal spacing is preserved
-- **Paragraph Preservation**: Multi-line spacing and paragraph structure is maintained where applicable
-- **Error Handling**: Graceful error handling with detailed error messages
-
-## Dependencies
-
-- **CsvHelper** - CSV data parsing
-- **DocumentFormat.OpenXml** - Office Open XML support (.docx, .xlsx)
-- **ExcelDataReader** - Excel file reading
-- **HtmlAgilityPack** - HTML parsing
-- **Markdig** - Markdown processing
-- **MimeKit** - Email message handling
-- **PdfPig** - PDF text extraction
-- **YamlDotNet** - YAML parsing
-- **System.Text.Json** - JSON handling
-- **JsonSchema.Net** - JSON schema validation and diagnostics
-
-## License
-
-This project is part of the Transformations suite. See the main repository for licensing information.
-
-## Contributing
-
-Contributions are welcome! Please ensure your changes include appropriate tests and follow the project's coding standards.
 
 ---
 
-For more information, visit the [GitHub repository](https://github.com/dreche4k/Transformations).
+## Dependency Injection
+
+```csharp
+// Minimal registration — all built-in extractors
+services.AddTextExtractor();
+
+// Fluent builder — add, replace, or disable extractors
+services.AddTextExtractor(b => b
+    .Replace<PdfExtractor, MyPdfExtractor>()
+    .Add<MyCustomExtractor>()
+    .Disable<LogExtractor>());
+
+// Legacy lambda — mutate the list directly (still supported)
+services.AddTextExtractor(list =>
+{
+    list.Add(new MyCustomExtractor());
+    list.RemoveAll(e => e is CsvExtractor);
+});
+```
+
+Inject `IDocumentTextExtractor` wherever you need it:
+
+```csharp
+public class DocumentProcessor(IDocumentTextExtractor extractor)
+{
+    public async Task ProcessAsync(string name, Stream stream, CancellationToken ct)
+    {
+        var result = await extractor.GetTextAsync(name, stream, ct);
+        if (result.IsSuccess) ...
+    }
+}
+```
+
+---
+
+## API Reference
+
+### `IDocumentTextExtractor` / `TextExtractor`
+
+| Method | Description |
+|--------|-------------|
+| `GetText(fileName, byte[])` | Extract from byte array |
+| `GetText(fileName, byte[], options)` | Extract with per-call options |
+| `GetText(fileName, Stream)` | Extract from stream |
+| `GetText(fileName, Stream, options)` | Stream variant with options |
+| `GetTextAsync(fileName, Stream, ct)` | Async stream extraction |
+| `GetTextAsync(fileName, Stream, options, ct)` | Async with options |
+| `GetTextWithMetadata(fileName, byte[])` | Extract + rich metadata |
+| `GetTextWithMetadata(fileName, byte[], options)` | Metadata variant with options |
+| `GetTextWithMetadata(fileName, Stream)` | Stream variant |
+| `GetTextWithMetadataAsync(fileName, Stream, ct)` | Async variant |
+| `GetTextBatchAsync(docs, options?, maxDegreeOfParallelism?, ct)` | Async multi-document batch |
+| `GetSupportedExtensions()` | All extensions the current pipeline handles |
+| `IsSupported(fileName)` | Quick check for a specific file name |
+| `static DetectFormat(byte[])` | Sniff format from magic bytes; returns extension or `null` |
+| `static CreateDefaultExtractors()` | Build the default extractor pipeline |
+
+**`ExtractionResult`** — `bool IsSuccess`, `string Text`, `ExtractionErrorKind ErrorKind`, `string? ErrorMessage`, `string? ExtractorName`, `TimeSpan Duration`  
+**`ExtractionMetadataResult`** — adds `Dictionary<string, string> Metadata`, `string? ExtractorName`, `TimeSpan Duration`
+
+Common metadata keys: `file.name`, `file.extension`, `file.bytes`, `text.length`, `text.lineCount`, `text.wordCount`, `extraction.extractor`, `extraction.durationMs`
+
+Format-specific metadata:
+- **Markdown** — `markdown.headingCount`, `markdown.sectionCount`, `markdown.headings`
+- **JSON** — `json.rootKind`, `json.topLevelPropertyCount`, `json.topLevelProperties`, `json.topLevelArrayLength`
+- **EML** — `email.subject`, `email.fromCount`, `email.toCount`, `email.date`, `email.attachment.count`, `email.attachment.names`
+- **MSG** — `msg.subject`, `msg.from`, `msg.date`
+- **PDF** — `pdf.title`, `pdf.author`, `pdf.subject`, `pdf.keywords`, `pdf.creator`, `pdf.pageCount`
+- **DOCX** — `docx.title`, `docx.author`, `docx.subject`, `docx.created`, `docx.modified`, `docx.revision`
+- **PPTX** — `pptx.title`, `pptx.author`, `pptx.slideCount`
+- **XLSX** — `xlsx.title`, `xlsx.author`
+
+---
+
+### `ExtractionOptions`
+
+```csharp
+var options = new ExtractionOptions
+{
+    MaxCharacters       = 50_000,          // hard cap on output length
+    MaxPages            = 5,               // max pages / slides / chapters to extract
+    StartPage           = 2,               // 1-based; skip earlier pages
+    EndPage             = 8,               // inclusive; stop after this page
+    IncludePageMarkers  = true,            // insert [Page N], [Slide N], [Chapter N]
+    TableMode           = TableMode.Csv,   // KeyValue | Markdown | Csv | Omit
+    MaxDecompressedBytes = 256 * 1024 * 1024, // ZIP bomb guard (default 512 MB)
+};
+```
+
+`TableMode` applies to any extractor that produces tables: DOCX, HTML, Excel (`.xlsx`/`.xls`), and ODT.
+
+| `TableMode` | Output |
+|-------------|--------|
+| `KeyValue` (default) | `Header: Value \| Header2: Value2` per row |
+| `Markdown` | GitHub-flavored pipe tables |
+| `Csv` | CSV rows |
+| `Omit` | Tables suppressed entirely |
+
+---
+
+### `TextExtractorBuilder`
+
+```csharp
+var extractors = TextExtractor.CreateDefaultExtractors().ToList();
+var builder    = new TextExtractorBuilder(extractors);
+
+builder.Add(new WordPerfectExtractor())  // inserted before catch-all TxtExtractor
+       .Replace<PdfExtractor, MyPdfExtractor>()
+       .Disable<LogExtractor>();
+
+var pipeline = new TextExtractor(builder.Build());
+```
+
+| Method | Description |
+|--------|-------------|
+| `Add(extractor)` | Adds instance before `TxtExtractor` catch-all |
+| `Add<T>()` | Adds parameterless instance |
+| `Replace<TOld>(replacement)` | Replaces first extractor of type `TOld` in-place |
+| `Replace<TOld, TNew>()` | Replaces with `new TNew()` |
+| `Disable<T>()` | Removes all extractors of type `T` |
+| `Build()` | Returns the configured pipeline |
+
+---
+
+### `TextChunker` — RAG chunking
+
+```csharp
+// Fixed character windows with overlap — snaps to nearest word boundary
+var chunks = TextChunker.ChunkByCharacters(text, maxLength: 500, overlap: 50);
+
+// Sentence-boundary aware
+var chunks = TextChunker.ChunkBySentences(text, maxLength: 800, overlap: 100);
+
+// Paragraph-boundary aware
+var chunks = TextChunker.ChunkByParagraphs(text, maxLength: 1000);
+
+// One chunk per Markdown section — carries HeadingPath breadcrumb
+var sections = MarkdownStructureExtractor.ExtractSections(markdownText);
+var chunks   = TextChunker.ChunkBySections(sections, maxLength: 1500);
+// chunks[i].HeadingPath → ["Chapter 1", "Section 2", ...]
+
+// Token-budget aware — pass your model's tokenizer; no tokenizer bundled
+var chunks = TextChunker.ChunkByTokens(text, maxTokens: 512,
+    tokenCounter: t => myTokenizer.CountTokens(t),
+    overlapTokens: 32);
+```
+
+**`TextChunk`** record:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Index` | `int` | Zero-based position in the sequence |
+| `Text` | `string` | Chunk content |
+| `StartOffset` | `int` | Character offset in the original text |
+| `EndOffset` | `int` | Exclusive end offset |
+| `PageNumber` | `int?` | 1-based source page, when available |
+| `HeadingPath` | `IReadOnlyList<string>?` | Breadcrumb from `ChunkBySections`; `null` otherwise |
+
+---
+
+### `JsonSchemaValidator`
+
+```csharp
+bool isValid  = JsonSchemaValidator.ValidateJson(rawJson, schemaJson);
+var  errors   = JsonSchemaValidator.ListSchemaErrors(rawJson, schemaJson);
+string clean  = JsonSchemaValidator.NormalizeJson(rawJson);  // strips ```json fences
+bool changed  = JsonSchemaValidator.HasChanged("{\"a\":1}", "{\"a\":2}");
+```
+
+---
+
+### `MarkdownStructureExtractor`
+
+```csharp
+string normalized = MarkdownStructureExtractor.NormalizeMarkdown(markdown);
+var    headings   = MarkdownStructureExtractor.BuildHeadingMap(markdown);
+var    sections   = MarkdownStructureExtractor.ExtractSections(markdown);
+bool   changed    = MarkdownStructureExtractor.HasChanged(oldMarkdown, newMarkdown);
+```
+
+---
+
+### `DocumentContent` — unified normalize/compare
+
+```csharp
+string normalized = DocumentContent.Normalize(content, DocumentFormat.Markdown);
+bool   changed    = DocumentContent.HasChanged(oldContent, newContent, DocumentFormat.Json);
+```
+
+Supported `DocumentFormat` values: `PlainText`, `Markdown`, `Json`
+
+---
+
+### `CsvDataProfiler`
+
+```csharp
+var profile = CsvDataProfiler.ProfileCsv(csvText);
+// profile.RowCount, .ColumnCount, .Headers, .ColumnTypes, .Distributions, .Issues
+
+var types  = CsvDataProfiler.InferColumnTypes(csvText);
+var issues = CsvDataProfiler.DetectDataIssues(csvText);
+```
+
+`CsvColumnType` values: `Empty`, `Boolean`, `Integer`, `Decimal`, `DateTime`, `Guid`, `String`, `Mixed`
+
+---
+
+### Custom extractors
+
+Implement `ITextExtractor` to add support for a new format:
+
+```csharp
+public class WordPerfectExtractor : ITextExtractor
+{
+    public bool CanHandle(string extension) =>
+        extension.Equals(".wpd", StringComparison.OrdinalIgnoreCase);
+
+    public string ExtractText(byte[] data) { ... }
+
+    // Optional: override for per-call options (backward-compatible default provided)
+    public string ExtractText(byte[] data, ExtractionOptions? options) { ... }
+}
+
+// Register via builder:
+services.AddTextExtractor(b => b.Add(new WordPerfectExtractor()));
+
+// Or ad-hoc:
+var pipeline  = TextExtractor.CreateDefaultExtractors().ToList();
+var extractor = new TextExtractor(new[] { new WordPerfectExtractor() }.Concat(pipeline));
+```
+
+---
+
+## Supported Formats
+
+| Format | Extensions | Notes |
+|--------|-----------|-------|
+| PDF | `.pdf` | Page text + document properties; `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers` |
+| Word | `.docx` | Paragraphs + tables; `TableMode`, `IncludePageMarkers` |
+| PowerPoint | `.pptx` | Slide titles, body text, speaker notes; `MaxPages`, `StartPage`, `EndPage` |
+| Excel | `.xlsx`, `.xls`, `.xlsm` | `TableMode` |
+| HTML | `.html`, `.htm` | `TableMode` |
+| OpenDocument Text/Presentation | `.odt`, `.odp` | `TableMode` |
+| RTF | `.rtf` | Self-contained parser; no extra dependency |
+| EPUB | `.epub` | ZIP + OPF spine + HTML; `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers` |
+| Markdown | `.md`, `.markdown` | |
+| CSV | `.csv` | |
+| Outlook email | `.msg` | Subject, sender, date |
+| Internet email | `.eml` | Full metadata + attachment text |
+| JSON | `.json` | |
+| XML / Config | `.xml`, `.config` | |
+| YAML | `.yaml`, `.yml` | |
+| ZIP archive | `.zip` | Routes each entry through the pipeline; `MaxDecompressedBytes` ZIP-bomb guard |
+| Log / Output | `.log`, `.out` | |
+| Source code | `.cs`, `.py`, `.js`, `.ts`, `.cpp`, `.h`, `.java`, `.ps1`, `.sh`, `.go`, `.rs`, `.sql`, `.rb`, `.php`, `.swift`, `.kt`, `.scala`, `.fs`, `.vb`, `.lua`, `.r`, `.m`, `.dart` | |
+| Plain text (fallback) | any | |
+
+---
+
+## Dependencies
+
+- **CsvHelper** — CSV parsing
+- **DocumentFormat.OpenXml** — DOCX / XLSX support
+- **ExcelDataReader** — legacy Excel reading
+- **HtmlAgilityPack** — HTML parsing
+- **JsonSchema.Net** — JSON schema validation
+- **Markdig** — Markdown processing
+- **Microsoft.Extensions.DependencyInjection.Abstractions** — DI registration extension
+- **Microsoft.Extensions.Logging.Abstractions** — structured logging support
+- **MimeKit** — EML parsing
+- **MSGReader** — Outlook MSG parsing
+- **PdfPig** — PDF text extraction
+- **YamlDotNet** — YAML parsing
+
+RTF and EPUB parsing use BCL only — no additional dependencies.
+
+---
+
+## Changelog
+
+### 2.0.4 (current)
+
+**New formats (zero new dependencies):**
+- `RtfExtractor` — Rich Text Format `.rtf`; self-contained state machine parser handles control words, hex/Unicode escapes, and skips metadata groups (`\fonttbl`, `\info`, etc.)
+- `EpubExtractor` — EPUB `.epub`; reads OPF spine from ZIP, extracts XHTML chapters via the HTML extractor; supports `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers`
+
+**`ExtractionOptions` expanded:**
+- `MaxPages`, `StartPage`, `EndPage` — page/slide/chapter windowing for PDF, PPTX, EPUB
+- `IncludePageMarkers` — inserts `[Page N]`, `[Slide N]`, `[Chapter N]` markers in DOCX, PDF, PPTX, EPUB output
+- `MaxDecompressedBytes` — ZIP bomb guard (default 512 MB); honoured by `ZipExtractor` and `EpubExtractor`
+
+**`TableMode` enum** — controls table rendering across all table-capable extractors:
+- `KeyValue` (default) — `Header: Value | ...` key-value rows
+- `Markdown` — GitHub-style pipe tables
+- `Csv` — CSV rows
+- `Omit` — suppress tables entirely
+
+**`ITextExtractor` interface** — new default method `ExtractText(byte[], ExtractionOptions?)` so existing custom extractors remain source-compatible without changes
+
+**`TextChunk` provenance fields:**
+- `PageNumber?` — 1-based source page, set by page-aware extractors
+- `HeadingPath?` — breadcrumb of heading titles from `ChunkBySections`; `ChunkBySections` now maintains a heading stack and stamps every chunk with its full ancestor path
+
+**`TextExtractor.DetectFormat(byte[])` static method** — sniffs content type from magic bytes and returns the file extension (`.pdf`, `.docx`, `.rtf`, `.epub`, `.eml`, etc.) or `null`
+
+**`TextExtractorBuilder` class** — fluent, type-safe pipeline builder available for both DI and direct construction; exposes `Add`, `Add<T>`, `Replace<TOld>`, `Replace<TOld, TNew>`, `Disable<T>`, and `Build`
+
+**Content-type sniffing extended** — now detects RTF (`{\rtf`), EML (RFC 2822 headers), and EPUB (`mimetype` entry in ZIP)
+
+---
+
+### 4.0.0
+
+**New formats:**
+- `PptxExtractor` — slide titles, body text, and speaker notes from `.pptx` files
+- `ZipExtractor` — routes each ZIP entry through the full extraction pipeline; handles nested text, DOCX, XLSX, PPTX etc.
+
+**Extraction result enrichment:**
+- `ExtractionResult.ExtractorName` — which extractor handled the file
+- `ExtractionResult.Duration` — wall-clock time for the extraction
+- `ExtractionMetadataResult` gains the same two properties plus `extraction.extractor` and `extraction.durationMs` keys in `Metadata`
+
+**Format-specific document properties** (via `GetTextWithMetadata`):
+- PDF: `pdf.title`, `pdf.author`, `pdf.subject`, `pdf.keywords`, `pdf.creator`, `pdf.pageCount`
+- DOCX: `docx.title`, `docx.author`, `docx.subject`, `docx.created`, `docx.modified`, `docx.revision`
+- MSG: `msg.subject`, `msg.from`, `msg.date`
+
+**DOCX table extraction** — tables are now emitted as `Header: Value | Header2: Value2` rows rather than a flat text stream
+
+**ILogger integration** — `TextExtractor(ILogger<TextExtractor>)` constructor; DI injects the logger automatically; structured log events at Debug and Warning levels
+
+**Content-type sniffing** — magic-byte fallback; detects PDF, DOCX/XLSX/PPTX (ZIP + `[Content_Types].xml`), MSG (OLE2 magic), HTML
+
+**`TextChunker.ChunkByCharacters`** — chunk boundaries now snap to word boundaries
+
+**`TextChunker.ChunkByTokens`** — splits at paragraph boundaries using a caller-supplied token counter; supports token overlap
+
+---
+
+### 3.0.0
+
+**Breaking changes:**
+- `Compare` on `DocumentContent`, `MarkdownStructureExtractor`, and `JsonSchemaValidator` replaced by `HasChanged` (same semantics, clearer name)
+- CSV rows now emitted in document order (previously reversed)
+- Binary files produce `IsSuccess=true, Text=""` rather than a `[Skipped...]` placeholder
+- All extractor classes are now `public`
+
+**New:**
+- `IDocumentTextExtractor` facade interface
+- `TextExtractor(IEnumerable<ITextExtractor>)` constructor
+- `TextExtractor.CreateDefaultExtractors()` static method
+- `ServiceCollectionExtensions.AddTextExtractor()`
+- Stream overloads and async API
+- `MsgExtractor` — Outlook `.msg` support
+- `TextChunker` — `ChunkByCharacters`, `ChunkBySentences`, `ChunkByParagraphs`, `ChunkBySections`
+- `CodeExtractor` extended to 22 language extensions
+
+---
+
+## License
+
+MIT — see repository for details.

@@ -31,20 +31,22 @@ Pick what you need:
 | **`Transformations.Dapper`** | Resilient Dapper queries with transient SQL fault detection | Core + Dapper + SqlClient |
 | **`Transformations.EntityFramework`** | Resilient SaveChanges, ChangeTracker audit logging, IQueryable CSV export | Core + EF Core |
 | **`Transformations.Mapping`** | Zero-reflection compile-time object mapper with automatic type conversion | Core + Source Generator |
+| **`Transformations.Text`** | Multi-format text extraction and RAG chunking (PDF, DOCX, EPUB, RTF, and 15 more) | See package |
 
 **Core has zero ASP.NET Core dependency.** If you're building a console app, background service, or library — use Core and keep your dependency graph lean.
 
 ```xml
 <!-- All-in-one -->
-<PackageReference Include="Transformations" Version="2.0.0" />
+<PackageReference Include="Transformations" Version="2.0.2" />
 
 <!-- Or pick your slice -->
-<PackageReference Include="Transformations.Core" Version="2.0.0" />
-<PackageReference Include="Transformations.Data" Version="2.0.0" />
-<PackageReference Include="Transformations.Web" Version="2.0.0" />
-<PackageReference Include="Transformations.Dapper" Version="2.0.0" />
-<PackageReference Include="Transformations.EntityFramework" Version="2.0.0" />
-<PackageReference Include="Transformations.Mapping" Version="2.0.0" />
+<PackageReference Include="Transformations.Core" Version="2.0.2" />
+<PackageReference Include="Transformations.Data" Version="2.0.2" />
+<PackageReference Include="Transformations.Web" Version="2.0.2" />
+<PackageReference Include="Transformations.Dapper" Version="2.0.2" />
+<PackageReference Include="Transformations.EntityFramework" Version="2.0.2" />
+<PackageReference Include="Transformations.Mapping" Version="2.0.2" />
+<PackageReference Include="Transformations.Text" Version="2.0.4" />
 ```
 
 ---
@@ -74,7 +76,7 @@ int safe  = "nope".ConvertTo<int>(-1);       // -1
 5.IsBetween(1, 10);                          // true
 
 // Enum utilities
-MyEnum.Value.GetEnumDescription2();          // reads [Description] attribute
+MyEnum.Value.GetEnumDescription();           // reads [Description] attribute
 "Active".ToEnum<Status>();                   // parses string to enum
 
 // Date helpers

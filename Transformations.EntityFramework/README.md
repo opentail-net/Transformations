@@ -1,55 +1,105 @@
-﻿# Transformations.EntityFramework
+# Transformations.EntityFramework
 
-*A practical, problem-first .NET library for resilient EF Core workflows.*
+Resilient `SaveChanges`, structured audit extraction, and `IQueryable` CSV export for EF Core — without subclassing `DbContext` or adding custom interceptors.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.EntityFramework.svg)](https://nuget.org/packages/Transformations.EntityFramework)
+[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
 
 ## 📖 Overview
-`Transformations.EntityFramework` equips standard `DbContext` instances with enterprise-grade resilience wrappers and built-in audit extraction utilities. Save transactions safely across volatile cloud connections, extract modified properties for history tables, and export datasets natively.
+
+`Transformations.EntityFramework` equips any standard `DbContext` with resilient saves, structured audit extraction, and `IQueryable` CSV export — without subclassing `DbContext` or writing custom interceptors.
 
 ## 🚀 Why Transformations.EntityFramework?
-Entity Framework Core is powerful, but extracting audit trails (added/modified/deleted entities) usually requires heavy custom overrides of `SaveChanges`. Furthermore, transient connectivity drops require specific strategy implementations. These helpers inject ready-to-use solutions into any standard EF context.
 
-## 💡 Key Features & Examples
+EF Core is powerful, but two things require disproportionate effort: handling transient connectivity drops (Azure SQL throttling, network blips) and capturing exactly which properties changed before a save. The standard workarounds — custom execution strategies, `SaveChanges` overrides, manual ChangeTracker loops — mean boilerplate in every project. These extensions inject both capabilities as simple extension method calls on any existing `DbContext`.
 
-### 1. Resilient DB Commits
-Automatically wrap your SaveChanges logic to handle database timeouts and concurrency conflicts seamlessly.
-```csharp
-// Will attempt the transaction up to 4 times with an exponential backoff curve
-int rowsAffected = await dbContext.SaveChangesWithRetryAsync(
-    retryCount: 4, 
-    initialDelay: TimeSpan.FromMilliseconds(250)
-);
+## 📦 Install
+
+```xml
+<PackageReference Include="Transformations.EntityFramework" Version="2.0.2" />
 ```
 
-### 2. ChangeTracker Audit Interception
-If you need to construct a robust history log prior to saving, simply ask the extension method for the exact data deltas.
-```csharp
-// Pulls all modified entities of a specific type (or any type) matching the EF Modified state
-var modifiedUsers = dbContext.GetModifiedEntities<User>();
+---
 
-foreach (var audit in modifiedUsers)
+## 💡 What's Included
+
+### Resilient SaveChanges
+
+Wraps `SaveChangesAsync` with exponential backoff and optional exception filters. Handles transient connectivity drops on Azure SQL and other cloud databases.
+
+```csharp
+// 4 retries, 250ms initial delay (doubles each attempt)
+int rowsAffected = await context.SaveChangesWithRetryAsync(
+    retryCount: 4,
+    initialDelay: TimeSpan.FromMilliseconds(250));
+
+// With cancellation token
+await context.SaveChangesWithRetryAsync(cancellationToken: ct);
+```
+
+### ChangeTracker Audit Extraction
+
+Captures structured `AuditEntry` records from EF Core's `ChangeTracker` **before** calling `SaveChanges`. After save, entity states are reset — so capture first.
+
+```csharp
+// Capture all pending Added/Modified/Deleted changes
+var audit = context.GetAuditEntries();
+
+// Or filter to a specific state
+var modified = context.GetAuditEntries(EntityState.Modified);
+
+await context.SaveChangesWithRetryAsync();
+
+foreach (var entry in modified)
 {
-    Console.WriteLine($"User {audit.Id} was updated.");
-    // Evaluate original vs current values from EF's Property entries
+    logger.LogInformation("{Entity} [{Key}] — {Prop}: {Old} → {New}",
+        entry.EntityType,
+        entry.KeyValues,
+        entry.PropertyName,
+        entry.OriginalValue,
+        entry.CurrentValue);
 }
 ```
 
-### 3. Native IQueryable to CSV
-Export server-side tables directly to CSV formats without manually iterating loops.
+`AuditEntry` properties: `EntityType`, `State`, `PropertyName`, `OriginalValue`, `CurrentValue`, `KeyValues`, `TimestampUtc`.
+
+### IQueryable → CSV Export
+
+Materializes a query and joins results with a configurable separator. Each element is rendered via `ToString()`.
+
 ```csharp
-// Streams data into a cleanly formatted CSV string buffer
-string csvPayload = await dbContext.Users
+// Comma-separated (default)
+string csv = await context.Users
     .Where(u => u.IsActive)
-    .ToCsvStringAsync();
+    .Select(u => u.Email)
+    .ToCsvAsync();
+
+// Custom separator
+string tsv = await context.Users
+    .Select(u => u.Name)
+    .ToCsvAsync(separator: '\t');
 ```
 
-## 🛠 Advanced Usage
-The resilience wrappers can be paired with custom CancellationToken injections, allowing long-running retries to gracefully terminate if the parent HTTP request is cancelled.
+---
 
-## 📦 Dependencies
-* `Transformations.Core`
-* `Microsoft.EntityFrameworkCore`
+## 🛠 API Reference
+
+| Class | Purpose | Key Members |
+|-------|---------|-------------|
+| `DbContextResilienceExtensions` | Resilient saves | `SaveChangesWithRetryAsync(retryCount, initialDelay, shouldRetry, ct)` |
+| `ChangeTrackerAuditExtensions` | Audit capture | `GetAuditEntries()`, `GetAuditEntries(EntityState)` |
+| `QueryableCsvExtensions` | CSV export | `ToCsvAsync<T>(ct)`, `ToCsvAsync<T>(separator, ct)` |
+| `AuditEntry` | Audit record | `EntityType`, `State`, `PropertyName`, `OriginalValue`, `CurrentValue`, `KeyValues`, `TimestampUtc` |
 
 ---
-*Part of the Transformations ecosystem. Designed for modern .NET 8+.*
+
+## 📦 Dependencies
+
+- `Transformations.Core`
+- `Microsoft.EntityFrameworkCore`
+
+---
+
+## License
+
+[MIT](https://opensource.org/licenses/MIT) — Copyright © 2026 [opentail.net](https://opentail.net)

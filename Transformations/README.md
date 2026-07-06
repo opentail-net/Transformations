@@ -20,82 +20,20 @@ This library is that code — battle-tested, documented, and shipped as a single
 
 ---
 
-## **Modular Packages**
+## Modular Packages
 
 You can install the full library or pick specific slices to keep your dependency graph lean.
 
 | Package | Purpose | Primary Dependencies |
-| :---- | :---- | :---- |
+|---------|---------|---------------------|
 | **Transformations** | The all-in-one package | ASP.NET Core, SqlClient |
-| **Transformations.Core** | Strings, collections, conversion, dates, resilience | SqlClient |
+| **Transformations.Core** | Strings, collections, conversion, dates, resilience | None |
 | **Transformations.Data** | DataRow/DataReader extraction, SQL parameters, CSV | Core |
-| **Transformations.Web** | HTTP, session, cookies, query strings, config | Core \+ ASP.NET Core |
-| **Transformations.Dapper** | Resilient Dapper queries with fault detection | Core \+ Dapper |
-| **Transformations.EntityFramework** | Resilient SaveChanges, Audit logging, CSV export | Core \+ EF Core |
-| **Transformations.Mapping** | Zero-reflection compile-time object mapper | Core \+ Source Generator |
-
----
-
-## **Core Capabilities**
-
-### **Safe Type Conversion**
-
-Moves between types with explicit fallbacks rather than throwing exceptions.
-
-C\#  
-string input \= "42";  
-int value \= input.ConvertTo\<int\>();          // 42  
-int safe  \= "nope".ConvertTo\<int\>(-1);       // \-1  
-bool active \= "yes".ConvertTo\<bool\>();       // Handles common truthy strings
-
-### **Context-Aware Strings**
-
-Handles text based on its structure, such as HTML or grammatical rules.
-
-C\#  
-// HTML-aware truncation that respects tags and entities  
-string html \= "\<div\>Hello \<b\>World\</b\>\</div\>";  
-var teaser \= html.TruncateSemantic(10);      // "\<div\>Hello...\</div\>"
-
-// Pluralization for irregular nouns  
-"child".Pluralize(3);                        // "children"  
-"person".Pluralize(5);                       // "people"
-
-// Strips scripts and unsafe tags  
-var clean \= rawHtml.SanitizeHtml(HtmlSanitizationPolicy.PermitLinks);
-
-### **Infrastructure Resilience**
-
-Built-in logic for transient SQL fault detection and exponential backoff.
-
-C\#  
-// Simple retry with exponential backoff  
-int result \= Resilience.Retry(() \=\> CallService(), retryCount: 3);
-
-// SQL transient fault detection for deadlocks and timeouts  
-catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex)) {  
-    // Safely retry or log  
-}
-
----
-
-## **Compile-Time Mapping (Transformations.Mapping)**
-
-The library’s original core, this module uses C\# Source Generators to create mapping code at compile time. This avoids the runtime performance cost of reflection and ensures type safety during the build.
-
-C\#  
-\[MapTo\<UserDto\>\]  
-public partial class User  
-{  
-    public int Id { get; set; }  
-    public string Name { get; set; }  
-      
-    \[IgnoreMap\]  
-    public string InternalToken { get; set; }  
-}
-
-// Usage: user.ToUserDto() is generated at compile time
-
+| **Transformations.Web** | HTTP, session, cookies, query strings, config | Core + ASP.NET Core |
+| **Transformations.Dapper** | Resilient Dapper queries with fault detection | Core + Dapper |
+| **Transformations.EntityFramework** | Resilient SaveChanges, audit logging, CSV export | Core + EF Core |
+| **Transformations.Mapping** | Zero-reflection compile-time object mapper | Core + Source Generator |
+| **Transformations.Text** | Multi-format text extraction and RAG chunking | See package |
 
 ---
 
@@ -106,26 +44,26 @@ Pick what you need:
 | Package | What you get | Dependencies |
 |---------|-------------|-------------|
 | **`Transformations`** | Everything — the all-in-one package | ASP.NET Core, SqlClient, Configuration |
-| **`Transformations.Core`** | Strings, collections, conversion, dates, files, diagnostics, batching, resilience | SqlClient only |
+| **`Transformations.Core`** | Strings, collections, conversion, dates, files, diagnostics, batching, resilience | None |
 | **`Transformations.Data`** | DataRow, DataReader, SQL parameters, CSV, DataTable conversion | Core |
 | **`Transformations.Web`** | HTTP, session, cookies, query strings, configuration, SelectList helpers | Core + ASP.NET Core |
 | **`Transformations.Dapper`** | Resilient Dapper queries with transient SQL fault detection | Core + Dapper + SqlClient |
 | **`Transformations.EntityFramework`** | Resilient SaveChanges, ChangeTracker audit logging, IQueryable CSV export | Core + EF Core |
 | **`Transformations.Mapping`** | Zero-reflection compile-time object mapper with automatic type conversion | Core + Source Generator |
 
-**Core has zero ASP.NET Core dependency.** If you're building a console app, background service, or library — use Core and keep your dependency graph lean.
+**Core has zero external NuGet dependencies.** If you're building a console app, background service, or library — use Core and keep your dependency graph lean.
 
 ```xml
 <!-- All-in-one -->
-<PackageReference Include="Transformations" Version="2.0.0" />
+<PackageReference Include="Transformations" Version="2.0.2" />
 
 <!-- Or pick your slice -->
-<PackageReference Include="Transformations.Core" Version="2.0.0" />
-<PackageReference Include="Transformations.Data" Version="2.0.0" />
-<PackageReference Include="Transformations.Web" Version="2.0.0" />
-<PackageReference Include="Transformations.Dapper" Version="2.0.0" />
-<PackageReference Include="Transformations.EntityFramework" Version="2.0.0" />
-<PackageReference Include="Transformations.Mapping" Version="2.0.0" />
+<PackageReference Include="Transformations.Core" Version="2.0.2" />
+<PackageReference Include="Transformations.Data" Version="2.0.2" />
+<PackageReference Include="Transformations.Web" Version="2.0.2" />
+<PackageReference Include="Transformations.Dapper" Version="2.0.2" />
+<PackageReference Include="Transformations.EntityFramework" Version="2.0.2" />
+<PackageReference Include="Transformations.Mapping" Version="2.0.2" />
 ```
 
 ---
@@ -155,7 +93,7 @@ int safe  = "nope".ConvertTo<int>(-1);       // -1
 5.IsBetween(1, 10);                          // true
 
 // Enum utilities
-MyEnum.Value.GetEnumDescription2();          // reads [Description] attribute
+MyEnum.Value.GetEnumDescription();           // reads [Description] attribute
 "Active".ToEnum<Status>();                   // parses string to enum
 
 // Date helpers
@@ -333,15 +271,18 @@ string csv = await context.Users.Select(u => u.Name).ToCsvAsync();
 
 | Attribute | Purpose |
 |-----------|---------|
-| **`[MapTo<TTarget>]`** | Marks a `partial class` for compile-time mapping — generates `To{Target}()` and `From{Target}()` |
+| **`[MapTo<TTarget>]`** | Marks a `partial class` for compile-time mapping |
 | **`[IgnoreMap]`** | Excludes a property from mapping |
 | **`[MapProperty("Name")]`** | Maps a source property to a differently-named target property |
+| **`[MapProperty("Name", SourcePath = "...")]`** | Flattens a nested source path explicitly |
+| **`[MapProperty("Name", Converter = nameof(...))]`** | Uses a compile-time-validated static converter |
 
-**Zero reflection. NativeAOT safe. Compile-time validated.** Type mismatches are resolved automatically via `ConvertTo<T>`.
+**Zero reflection. NativeAOT safe. Compile-time validated.** Generated methods cover single objects, existing-target updates, collections, and simple `IQueryable` projection.
 
 Generated mapper diagnostics:
 
 - `TXMAP001` warns when a target member is not mapped from source.
+- `TXMAP002`-`TXMAP008` cover unsupported conversions, missing `partial`, ambiguity, nullable risks, invalid source paths, and invalid converters.
 - Opt-in error mode:
 
 ```xml
@@ -364,8 +305,13 @@ public partial class User
 
 // Generated at compile time — no reflection, no runtime cost:
 UserDto dto = user.ToUserDto();
+user.MapTo(existingDto);
+List<UserDto> dtos = users.ToUserDtoList();
+IQueryable<UserDto> query = db.Users.ProjectToUserDto();
 User back = User.FromUserDto(dto);
 ```
+
+See [MAPPING_GUIDE.md](MAPPING_GUIDE.md) for flattening, converters, query projection, and AutoMapper migration notes. See [MAPPING_BENCHMARKS.md](MAPPING_BENCHMARKS.md) for BenchmarkDotNet comparisons against manual mapping, AutoMapper, and Mapster.
 
 ### ASP.NET Core / Web *(Transformations.Web)*
 
@@ -396,82 +342,23 @@ dotnet test
 
 ```
 ├── Transformations/                     # Monolith (all-in-one package)
-│   ├── BasicTypeConverter.cs            # Safe generic type conversion
-│   ├── StringHelper.cs                  # Core string extensions
-│   ├── AdditionalStringHelper.cs        # HTML sanitization, pluralization, encoding
-│   ├── CollectionConvertor.cs           # Bulk collection conversion
-│   ├── CollectionHelper.cs              # List/collection utilities
-│   ├── BatchTransformations.cs          # Low-allocation batch conversion/transform
-│   ├── DateHelper.cs                    # Date arithmetic, IsToday, CalculateAge
-│   ├── TimeSpanHelper.cs               # Readable time string formatting
-│   ├── StopwatchHelper.cs              # Stopwatch elapsed extraction
-│   ├── HolidayHelper.cs                # UK & US public holiday calculations
-│   ├── ArrayHelper.cs                   # BlockCopy, CombineArrays, PrependItem
-│   ├── BitConvertor.cs                  # Byte/primitive round-trip conversion
-│   ├── FileInfoHelper.cs               # File rename, copy, delete
-│   ├── DirectoryInfoHelper.cs          # Directory copy, recursive file search
-│   ├── StreamHelper.cs                  # Stream read/write/copy
-│   ├── StreamExtensions.cs             # Line iteration and copy progress
-│   ├── CsvHelper.cs                     # CSV generation from collections/DataTable
-│   ├── DataRowConverter.cs              # Safe DataRow value access
-│   ├── DataReaderHelper.cs              # IDataReader extensions
-│   ├── SqlHelper.cs                     # SqlParameter builder
-│   ├── ConfigurationHelper.cs          # IConfiguration extensions
-│   ├── QueryStringHelper.cs            # Query string utilities
-│   ├── SessionHelper.cs                # Session state extensions
-│   ├── CookieHelper.cs                 # Cookie management
-│   ├── WebHelper.cs                     # HTTP redirect/status helpers
-│   ├── ResponseHelper.cs               # Response extensions
-│   ├── Inspect.cs                       # Type validation (IsNumeric, IsDate, etc.)
-│   ├── Helper.cs                        # IsNull, IsNotNull, ComputeHash
-│   ├── DiagnosticsProbe.cs             # Process + lightweight GPU/VRAM metrics
-│   ├── DiagnosticExtensions.cs         # Chainable trace helper
-│   ├── Resilience.cs                    # Sync retry with exponential backoff
-│   ├── SemanticStringComparer.cs       # Intent-based string comparisons
-│   ├── ObjectDelta.cs                   # Shallow object diff + SkipDelta
-│   ├── MeasurementExtensions.cs        # Size/time compact formatting
-│   ├── WebAndFileExtensions.cs         # URL segment + local path helpers
-│   ├── EnumHelper.cs                    # Enum description/parse extensions
-│   ├── ComparableHelper.cs             # Range/between checks
-│   ├── ExtensionHelper.cs              # Clamped index helpers
-│   ├── RegExHelper.cs                   # Regex match/split wrappers
-│   ├── MiscHelper.cs                    # Miscellaneous utilities
-│   └── Transform.cs                     # Shared enumerations
-│
 ├── Transformations.Core/               # Core-only package (no ASP.NET Core)
 ├── Transformations.Data/               # Data package (Core + DataRow/SQL)
 ├── Transformations.Web/                # Web package (Core + ASP.NET Core)
-│   └── SelectListExtensions.cs         # DataTable → SelectListItem
-│
 ├── Transformations.Dapper/             # Dapper package (Core + Dapper + SqlClient)
-│   ├── DapperResilienceExtensions.cs   # Retry-wrapped Query/Execute
-│   ├── SqlTransientFaultDetector.cs    # Transient SQL error classification
-│   └── SqlParameterBridge.cs           # Anonymous object → SqlParameter[]
-│
 ├── Transformations.EntityFramework/    # EF Core package (Core + EF Core)
-│   ├── DbContextResilienceExtensions.cs # SaveChangesWithRetryAsync
-│   ├── ChangeTrackerAuditExtensions.cs  # ChangeTracker → AuditEntry[]
-│   └── QueryableCsvExtensions.cs        # IQueryable → CSV
-│
 ├── Transformations.Mapping/            # Zero-reflection mapper (Core + source generator)
-│   └── Attributes.cs                   # [MapTo<T>], [IgnoreMap], [MapProperty]
-│
 ├── Transformations.Mapping.Generator/  # Incremental source generator (netstandard2.0)
-│   └── MappingGenerator.cs             # Emits To{Target}() and From{Target}() methods
-│
 ├── Transformations.Analyzers/          # Roslyn analyzer (netstandard2.0)
-│   ├── DeprecatedApiAnalyzer.cs        # TX0001 diagnostic
-│   └── DeprecatedApiCodeFixProvider.cs # Lightbulb rename fix
-│
-├── Transformations.Tests/              # NUnit test project (90+ test files)
+├── Transformations.TextExtractor/      # Text extraction library (Transformations.Text package)
+├── Transformations.Tests/              # NUnit test project
 ├── Transformations.Dapper.Tests/       # Dapper package tests
 ├── Transformations.EntityFramework.Tests/ # EF Core package tests
 ├── Transformations.Mapping.Tests/      # Mapper tests (verifies generated code)
 ├── Transformations.Analyzers.Tests/    # Analyzer tests
-│
-├── COOKBOOK.md                           # Problem-first recipes
-├── Batching.md                          # Performance deep dive
-├── Sanitation.md                        # HTML sanitization deep dive
+├── COOKBOOK.md                         # Problem-first recipes
+├── Batching.md                         # Performance deep dive
+├── Sanitation.md                       # HTML sanitization deep dive
 ├── DEPRECATION_POLICY.md               # Versioned API deprecation plan
 └── README.md
 ```
@@ -506,8 +393,8 @@ See [DEPRECATION_POLICY.md](DEPRECATION_POLICY.md) for full details.
 |---------|---------|---------|
 | `Microsoft.AspNetCore.App` (FrameworkReference) | — | `Transformations`, `Transformations.Web` |
 | `Microsoft.Data.SqlClient` | 7.0.0 | `SqlHelper`, `DataReaderHelper`, `StringHelper.ParseConnectionString` |
-| `Microsoft.Extensions.Configuration` | 10.0.5 | `ConfigurationHelper` |
-| `Microsoft.Extensions.Configuration.Binder` | 10.0.5 | `ConfigurationHelper.GetValue<T>` |
+| `Microsoft.Extensions.Configuration` | 10.0.7 | `ConfigurationHelper` |
+| `Microsoft.Extensions.Configuration.Binder` | 10.0.7 | `ConfigurationHelper.GetValue<T>` |
 | `Dapper` | 2.1.72 | `Transformations.Dapper` |
 | `Microsoft.EntityFrameworkCore` | 9.0.7 | `Transformations.EntityFramework` |
 
@@ -542,4 +429,3 @@ GitHub Actions workflow: `.github/workflows/ci-quality-gates.yml`
 ---
 
 *Built for .NET professionals by [opentail.net](https://opentail.net/)*
-

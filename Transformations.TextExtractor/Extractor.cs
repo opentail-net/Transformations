@@ -1,133 +1,306 @@
-﻿using System.Text.Json;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using DocumentFormat.OpenXml.Packaging;
 using MimeKit;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using UglyToad.PdfPig;
 
 namespace Transformations.Text;
 
 /// <summary>
-/// The primary orchestrator and single entry point for all text extraction operations.
-/// This façade implements the "Strategy Pattern" to route files to specialized processors 
-/// while shielding the caller from the underlying complexity of diverse file formats.
+/// Primary facade for text extraction. Routes files to format-specific extractors,
+/// normalizes the result, and returns typed success/failure DTOs.
+/// Register via <see cref="ServiceCollectionExtensions.AddTextExtractor"/> for DI,
+/// or construct directly with <c>new TextExtractor()</c>.
 /// </summary>
-public class TextExtractor
+public class TextExtractor : IDocumentTextExtractor
 {
-    /// <summary>
-    /// A collection of registered strategies capable of handling specific file extensions.
-    /// </summary>
-    private readonly IEnumerable<ITextExtractor> _extractors;
+    private readonly IReadOnlyList<ITextExtractor> _extractors;
+    private readonly ILogger<TextExtractor> _logger;
 
-    /// <summary>
-    /// Initializes the extraction suite with a comprehensive list of supported format specialists.
-    /// </summary>
-    public TextExtractor()
+    // ── Constructors ─────────────────────────────────────────────────────────
+
+    /// <summary>Direct use: default extractors, no logging.</summary>
+    public TextExtractor() : this(CreateDefaultExtractors(), NullLogger<TextExtractor>.Instance) { }
+
+    /// <summary>DI constructor — logger is injected automatically.</summary>
+    public TextExtractor(ILogger<TextExtractor> logger) : this(CreateDefaultExtractors(), logger) { }
+
+    /// <summary>Custom extractor set, no logging.</summary>
+    public TextExtractor(IEnumerable<ITextExtractor> extractors)
+        : this(extractors, NullLogger<TextExtractor>.Instance) { }
+
+    /// <summary>Full constructor: custom extractors + logger.</summary>
+    public TextExtractor(IEnumerable<ITextExtractor> extractors, ILogger<TextExtractor> logger)
     {
-        // INTERNAL WIRING: The façade encapsulates the discovery of internal implementations.
-        // This centralized list follows the "Low-Magic" principle—adding a new format 
-        // simply requires appending a new extractor instance to this collection.
-        _extractors = new List<ITextExtractor>
+        _extractors = extractors.ToList().AsReadOnly();
+        _logger = logger;
+    }
+
+    public static IEnumerable<ITextExtractor> CreateDefaultExtractors()
+    {
+        var core = new List<ITextExtractor>
         {
             new PdfExtractor(),
             new DocxExtractor(),
+            new PptxExtractor(),
             new HtmlExtractor(),
             new MarkdownExtractor(),
             new CsvExtractor(),
             new ExcelExtractor(),
-            new EmlExtractor(),
+            new MsgExtractor(),
             new JsonExtractor(),
             new XmlExtractor(),
             new YamlExtractor(),
             new LogExtractor(),
             new CodeExtractor(),
+            new OdtExtractor(),
+            new RtfExtractor(),
             new TxtExtractor()
         };
+        // EmlExtractor, ZipExtractor, and EpubExtractor each take a snapshot of the core
+        // pipeline so they can recursively extract nested documents without circular refs.
+        // Insert before TxtExtractor (the catch-all) so Route finds them first.
+        core.Insert(core.Count - 1, new EmlExtractor(core));
+        core.Insert(core.Count - 1, new ZipExtractor(core));
+        core.Insert(core.Count - 1, new EpubExtractor(core));
+        return core;
     }
 
-    /// <summary>
-    /// Routes the file to the appropriate extractor based on extension and performs 
-    /// post-extraction normalization to ensure "RAG-Ready" high-density text.
-    /// </summary>
-    /// <param name="fileName">The name of the file, used primarily for extension detection.</param>
-    /// <param name="content">The raw binary content of the file.</param>
-    /// <returns>An <see cref="ExtractionResult"/> containing the normalized text or error details.</returns>
+    // ── byte[] surface ──────────────────────────────────────────────────────
+
     public ExtractionResult GetText(string fileName, byte[] content)
+        => GetTextCore(fileName, content, null);
+
+    public ExtractionResult GetText(string fileName, byte[] content, ExtractionOptions? options)
+        => GetTextCore(fileName, content, options);
+
+    public ExtractionMetadataResult GetTextWithMetadata(string fileName, byte[] content)
+        => GetTextWithMetadataCore(fileName, content, null);
+
+    public ExtractionMetadataResult GetTextWithMetadata(string fileName, byte[] content, ExtractionOptions? options)
+        => GetTextWithMetadataCore(fileName, content, options);
+
+    // ── Stream surface ───────────────────────────────────────────────────────
+
+    public ExtractionResult GetText(string fileName, Stream content)
+        => GetTextCore(fileName, ReadStream(content), null);
+
+    public ExtractionResult GetText(string fileName, Stream content, ExtractionOptions? options)
+        => GetTextCore(fileName, ReadStream(content), options);
+
+    public ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content)
+        => GetTextWithMetadataCore(fileName, ReadStream(content), null);
+
+    public ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content, ExtractionOptions? options)
+        => GetTextWithMetadataCore(fileName, ReadStream(content), options);
+
+    // ── Async surface ────────────────────────────────────────────────────────
+
+    public async Task<ExtractionResult> GetTextAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
+        => GetTextCore(fileName, await ReadStreamAsync(content, cancellationToken), null);
+
+    public async Task<ExtractionResult> GetTextAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default)
+        => GetTextCore(fileName, await ReadStreamAsync(content, cancellationToken), options);
+
+    public async Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
+        => GetTextWithMetadataCore(fileName, await ReadStreamAsync(content, cancellationToken), null);
+
+    public async Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default)
+        => GetTextWithMetadataCore(fileName, await ReadStreamAsync(content, cancellationToken), options);
+
+    // ── Batch ────────────────────────────────────────────────────────────────
+
+    public async IAsyncEnumerable<ExtractionResult> GetTextBatchAsync(
+        IEnumerable<(string FileName, byte[] Content)> documents,
+        int maxDegreeOfParallelism = 4,
+        ExtractionOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // 1. VALIDATION: Guard against empty inputs before engaging the extraction loop.
-        if (content == null || content.Length == 0)
-            return ExtractionResult.Failure("File content is empty.");
+        if (maxDegreeOfParallelism <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxDegreeOfParallelism), "Must be > 0.");
 
-        // 2. ROUTING: Identify the first extractor that claims capability for this extension.
-        var extension = Path.GetExtension(fileName);
-        var processor = _extractors.FirstOrDefault(e => e.CanHandle(extension));
+        using var semaphore = new SemaphoreSlim(maxDegreeOfParallelism, maxDegreeOfParallelism);
+        var docs = documents.ToList();
+        var tasks = new Task<ExtractionResult>[docs.Count];
 
-        if (processor == null)
-            return ExtractionResult.Failure($"Unsupported file type: {extension}");
-
-        try
+        for (int i = 0; i < docs.Count; i++)
         {
-            // 3. EXTRACTION: Execute the specialized logic for the identified format.
-            string rawText = processor.ExtractText(content);
+            var (fileName, content) = docs[i];
+            cancellationToken.ThrowIfCancellationRequested();
+            await semaphore.WaitAsync(cancellationToken);
 
-            // 4. ERROR INTERCEPTION: 
-            // In this architecture, extractors may return error messages within the string 
-            // rather than throwing exceptions. This block detects those signals (e.g., "Error" 
-            // or "Extraction") and converts them into a Failure result DTO for the caller.
-            if (!string.IsNullOrWhiteSpace(rawText) &&
-                (rawText.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 rawText.IndexOf("extraction", StringComparison.OrdinalIgnoreCase) >= 0))
+            tasks[i] = Task.Run(() =>
             {
-                return ExtractionResult.Failure(rawText);
-            }
-
-            // 5. NORMALIZATION: Apply baseline consistency (newline normalization, 
-            // whitespace collapsing) to prepare the text for the Knowledge Graph.
-            string normalizedText = TextNormalizer.Normalize(rawText);
-
-            return ExtractionResult.Success(normalizedText);
+                try { return GetTextCore(fileName, content, options); }
+                finally { semaphore.Release(); }
+            }, cancellationToken);
         }
-        catch (Exception ex)
-        {
-            // 6. SAFETY: Catch unhandled exceptions within individual extractors to 
-            // prevent a single corrupt file from crashing the host process.
-            return ExtractionResult.Failure($"Extraction failed: {ex.Message}");
-        }
+
+        foreach (var task in tasks)
+            yield return await task;
+    }
+
+    // ── Discovery ────────────────────────────────────────────────────────────
+
+    private static readonly string[] _probedExtensions =
+    [
+        ".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".xlsm",
+        ".html", ".htm", ".md", ".markdown", ".csv", ".eml", ".msg",
+        ".json", ".xml", ".config", ".yaml", ".yml", ".log", ".out",
+        ".cs", ".py", ".js", ".ts", ".cpp", ".h", ".java", ".ps1", ".sh",
+        ".go", ".rs", ".sql", ".rb", ".php", ".swift", ".kt", ".scala",
+        ".fs", ".vb", ".lua", ".r", ".m", ".dart",
+        ".zip", ".odt", ".odp", ".rtf", ".epub", ".txt"
+    ];
+
+    public IReadOnlyList<string> GetSupportedExtensions()
+        => _probedExtensions
+            .Where(ext => _extractors.Any(e => e.CanHandle(ext) && e is not TxtExtractor))
+            .OrderBy(e => e, StringComparer.OrdinalIgnoreCase)
+            .ToList()
+            .AsReadOnly();
+
+    public bool IsSupported(string fileName)
+    {
+        var ext = Path.GetExtension(fileName);
+        return _extractors.Any(e => e.CanHandle(ext));
     }
 
     /// <summary>
-    /// Routes the file to the appropriate extractor and returns normalized text with metadata.
+    /// Inspects the file's magic bytes and returns the most likely extension (e.g. ".pdf",
+    /// ".docx"), or <c>null</c> when the format cannot be identified from content alone.
     /// </summary>
-    /// <param name="fileName">The file name used for extension-based routing.</param>
-    /// <param name="content">The raw binary content of the file.</param>
-    /// <returns>An <see cref="ExtractionMetadataResult"/> containing text, metadata, and error details.</returns>
-    public ExtractionMetadataResult GetTextWithMetadata(string fileName, byte[] content)
+    public static string? DetectFormat(byte[] content) => ContentTypeDetector.SniffExtension(content);
+
+    // ── Core implementations ─────────────────────────────────────────────────
+
+    private ExtractionResult GetTextCore(string fileName, byte[] content, ExtractionOptions? options)
     {
         if (content == null || content.Length == 0)
-            return ExtractionMetadataResult.Failure("File content is empty.");
+            return ExtractionResult.Failure("File content is empty.", ExtractionErrorKind.Empty);
 
-        var extension = Path.GetExtension(fileName);
-        var processor = _extractors.FirstOrDefault(e => e.CanHandle(extension));
-
+        var processor = Route(fileName, content);
         if (processor == null)
-            return ExtractionMetadataResult.Failure($"Unsupported file type: {extension}");
+            return ExtractionResult.Failure($"Unsupported file type: {Path.GetExtension(fileName)}", ExtractionErrorKind.Unsupported);
 
+        _logger.LogDebug("Extracting {FileName} using {Extractor}", fileName, processor.GetType().Name);
+        var sw = Stopwatch.StartNew();
         try
         {
-            string rawText = processor.ExtractText(content);
-
-            if (!string.IsNullOrWhiteSpace(rawText) &&
-                (rawText.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 rawText.IndexOf("extraction", StringComparison.OrdinalIgnoreCase) >= 0))
-            {
-                return ExtractionMetadataResult.Failure(rawText);
-            }
-
-            string normalizedText = TextNormalizer.Normalize(rawText);
-            var metadata = BuildMetadata(fileName, content, normalizedText);
-
-            return ExtractionMetadataResult.Success(normalizedText, metadata);
+            var text = TextNormalizer.Normalize(processor.ExtractText(content, options));
+            if (options?.MaxCharacters is int max && text.Length > max)
+                text = text[..max];
+            sw.Stop();
+            _logger.LogDebug("Extracted {CharCount} chars from {FileName} in {ElapsedMs}ms",
+                text.Length, fileName, sw.ElapsedMilliseconds);
+            return ExtractionResult.Success(text, processor.GetType().Name, sw.Elapsed);
         }
         catch (Exception ex)
         {
-            return ExtractionMetadataResult.Failure($"Extraction failed: {ex.Message}");
+            sw.Stop();
+            _logger.LogWarning(ex, "Extraction failed for {FileName} ({Extractor}): {Message}",
+                fileName, processor.GetType().Name, ex.Message);
+            return ExtractionResult.Failure($"Extraction failed: {ex.Message}",
+                ClassifyException(ex), processor.GetType().Name, sw.Elapsed);
         }
+    }
+
+    private ExtractionMetadataResult GetTextWithMetadataCore(string fileName, byte[] content, ExtractionOptions? options)
+    {
+        if (content == null || content.Length == 0)
+            return ExtractionMetadataResult.Failure("File content is empty.", ExtractionErrorKind.Empty);
+
+        var processor = Route(fileName, content);
+        if (processor == null)
+            return ExtractionMetadataResult.Failure($"Unsupported file type: {Path.GetExtension(fileName)}", ExtractionErrorKind.Unsupported);
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var normalizedText = TextNormalizer.Normalize(processor.ExtractText(content, options));
+            if (options?.MaxCharacters is int max && normalizedText.Length > max)
+                normalizedText = normalizedText[..max];
+            sw.Stop();
+            var metadata = BuildMetadata(fileName, content, normalizedText);
+            metadata["extraction.extractor"] = processor.GetType().Name;
+            metadata["extraction.durationMs"] = sw.ElapsedMilliseconds.ToString();
+            return ExtractionMetadataResult.Success(normalizedText, metadata,
+                processor.GetType().Name, sw.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "Extraction failed for {FileName} ({Extractor}): {Message}",
+                fileName, processor.GetType().Name, ex.Message);
+            return ExtractionMetadataResult.Failure($"Extraction failed: {ex.Message}",
+                ClassifyException(ex), processor.GetType().Name, sw.Elapsed);
+        }
+    }
+
+    // ── Routing ──────────────────────────────────────────────────────────────
+
+    private ITextExtractor? Route(string fileName, byte[] content)
+    {
+        var extension = Path.GetExtension(fileName);
+        var byExtension = _extractors.FirstOrDefault(e => e.CanHandle(extension));
+
+        // If we found a specific (non-catch-all) extractor, use it
+        if (byExtension is { } matched && matched is not TxtExtractor)
+            return matched;
+
+        // Fall back to magic-byte sniffing for better specificity
+        var sniffed = ContentTypeDetector.SniffExtension(content);
+        if (sniffed != null)
+        {
+            var byContent = _extractors.FirstOrDefault(e => e.CanHandle(sniffed) && e is not TxtExtractor);
+            if (byContent != null)
+            {
+                _logger.LogDebug("Content sniffing detected {Sniffed} for {FileName}", sniffed, fileName);
+                return byContent;
+            }
+        }
+
+        return byExtension; // TxtExtractor catch-all, or null if no extractors registered
+    }
+
+    // ── Exception classification ──────────────────────────────────────────────
+
+    private static ExtractionErrorKind ClassifyException(Exception ex)
+    {
+        var msg = ex.Message ?? string.Empty;
+        var typeName = ex.GetType().Name;
+
+        if (msg.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("encrypted", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("protected", StringComparison.OrdinalIgnoreCase) ||
+            typeName.Contains("Encrypt", StringComparison.OrdinalIgnoreCase) ||
+            typeName.Contains("Password", StringComparison.OrdinalIgnoreCase) ||
+            typeName.Contains("Decrypt", StringComparison.OrdinalIgnoreCase))
+            return ExtractionErrorKind.PasswordProtected;
+
+        if (ex is InvalidDataException or System.IO.IOException or FormatException)
+            return ExtractionErrorKind.Corrupted;
+
+        return ExtractionErrorKind.ExtractionFailed;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static byte[] ReadStream(Stream stream)
+    {
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ms.ToArray();
+    }
+
+    private static async Task<byte[]> ReadStreamAsync(Stream stream, CancellationToken ct)
+    {
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms, ct);
+        return ms.ToArray();
     }
 
     private static Dictionary<string, string> BuildMetadata(string fileName, byte[] content, string normalizedText)
@@ -180,9 +353,23 @@ public class TextExtractor
         }
 
         if (extension.Equals(".eml", StringComparison.OrdinalIgnoreCase))
-        {
             TryAddEmailMetadata(content, metadata);
-        }
+
+        if (extension.Equals(".msg", StringComparison.OrdinalIgnoreCase))
+            TryAddMsgMetadata(content, metadata);
+
+        if (extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+            TryAddPdfMetadata(content, metadata);
+
+        if (extension.Equals(".docx", StringComparison.OrdinalIgnoreCase))
+            TryAddDocxMetadata(content, metadata);
+
+        if (extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".xlsm", StringComparison.OrdinalIgnoreCase))
+            TryAddXlsxMetadata(content, metadata);
+
+        if (extension.Equals(".pptx", StringComparison.OrdinalIgnoreCase))
+            TryAddPptxMetadata(content, metadata);
 
         return metadata;
     }
@@ -227,16 +414,16 @@ public class TextExtractor
                 foreach (var attachment in attachments)
                 {
                     var part = attachment as MimePart;
-                    string fileName = part?.FileName ?? string.Empty;
+                    string attachFileName = part?.FileName ?? string.Empty;
                     string mediaType = part?.ContentType?.MimeType ?? attachment.ContentType?.MimeType ?? string.Empty;
-                    bool isSpecial = fileName.Contains("special", StringComparison.OrdinalIgnoreCase) ||
+                    bool isSpecial = attachFileName.Contains("special", StringComparison.OrdinalIgnoreCase) ||
                                      mediaType.Contains("special", StringComparison.OrdinalIgnoreCase);
 
                     if (isSpecial)
                     {
                         specialCount++;
-                        if (!string.IsNullOrWhiteSpace(fileName))
-                            specialNames.Add(fileName);
+                        if (!string.IsNullOrWhiteSpace(attachFileName))
+                            specialNames.Add(attachFileName);
                     }
                 }
 
@@ -255,52 +442,243 @@ public class TextExtractor
         }
     }
 
+    private static void TryAddMsgMetadata(byte[] content, Dictionary<string, string> metadata)
+    {
+        try
+        {
+            using var stream = new MemoryStream(content);
+            using var msg = new MsgReader.Outlook.Storage.Message(stream);
+
+            if (!string.IsNullOrWhiteSpace(msg.Subject))
+                metadata["msg.subject"] = msg.Subject;
+
+            if (msg.Sender != null)
+            {
+                var from = string.IsNullOrWhiteSpace(msg.Sender.DisplayName)
+                    ? msg.Sender.Email
+                    : $"{msg.Sender.DisplayName} <{msg.Sender.Email}>";
+                if (!string.IsNullOrWhiteSpace(from))
+                    metadata["msg.from"] = from;
+            }
+
+            if (msg.SentOn.HasValue)
+                metadata["msg.date"] = msg.SentOn.Value.ToString("O");
+        }
+        catch
+        {
+            metadata["msg.metadata"] = "unavailable";
+        }
+    }
+
+    private static void TryAddPdfMetadata(byte[] content, Dictionary<string, string> metadata)
+    {
+        try
+        {
+            using var stream = new MemoryStream(content);
+            using var doc = PdfDocument.Open(stream);
+            var info = doc.Information;
+
+            if (!string.IsNullOrWhiteSpace(info.Title))    metadata["pdf.title"]    = info.Title;
+            if (!string.IsNullOrWhiteSpace(info.Author))   metadata["pdf.author"]   = info.Author;
+            if (!string.IsNullOrWhiteSpace(info.Subject))  metadata["pdf.subject"]  = info.Subject;
+            if (!string.IsNullOrWhiteSpace(info.Keywords)) metadata["pdf.keywords"] = info.Keywords;
+            if (!string.IsNullOrWhiteSpace(info.Creator))  metadata["pdf.creator"]  = info.Creator;
+            metadata["pdf.pageCount"] = doc.NumberOfPages.ToString();
+        }
+        catch
+        {
+            metadata["pdf.metadata"] = "unavailable";
+        }
+    }
+
+    private static void TryAddDocxMetadata(byte[] content, Dictionary<string, string> metadata)
+    {
+        try
+        {
+            using var stream = new MemoryStream(content);
+            using var doc = WordprocessingDocument.Open(stream, false);
+            var props = doc.PackageProperties;
+
+            if (!string.IsNullOrWhiteSpace(props.Title))    metadata["docx.title"]    = props.Title;
+            if (!string.IsNullOrWhiteSpace(props.Creator))  metadata["docx.author"]   = props.Creator;
+            if (!string.IsNullOrWhiteSpace(props.Subject))  metadata["docx.subject"]  = props.Subject;
+            if (props.Created.HasValue)  metadata["docx.created"]  = props.Created.Value.ToString("O");
+            if (props.Modified.HasValue) metadata["docx.modified"] = props.Modified.Value.ToString("O");
+            if (!string.IsNullOrWhiteSpace(props.Revision)) metadata["docx.revision"] = props.Revision;
+        }
+        catch
+        {
+            metadata["docx.metadata"] = "unavailable";
+        }
+    }
+
+    private static void TryAddXlsxMetadata(byte[] content, Dictionary<string, string> metadata)
+    {
+        try
+        {
+            using var stream = new MemoryStream(content);
+            using var doc = SpreadsheetDocument.Open(stream, false);
+            var props = doc.PackageProperties;
+
+            if (!string.IsNullOrWhiteSpace(props.Title))    metadata["xlsx.title"]    = props.Title;
+            if (!string.IsNullOrWhiteSpace(props.Creator))  metadata["xlsx.author"]   = props.Creator;
+            if (!string.IsNullOrWhiteSpace(props.Subject))  metadata["xlsx.subject"]  = props.Subject;
+            if (props.Created.HasValue)  metadata["xlsx.created"]  = props.Created.Value.ToString("O");
+            if (props.Modified.HasValue) metadata["xlsx.modified"] = props.Modified.Value.ToString("O");
+        }
+        catch
+        {
+            metadata["xlsx.metadata"] = "unavailable";
+        }
+    }
+
+    private static void TryAddPptxMetadata(byte[] content, Dictionary<string, string> metadata)
+    {
+        try
+        {
+            using var stream = new MemoryStream(content);
+            using var doc = PresentationDocument.Open(stream, false);
+            var props = doc.PackageProperties;
+
+            if (!string.IsNullOrWhiteSpace(props.Title))    metadata["pptx.title"]    = props.Title;
+            if (!string.IsNullOrWhiteSpace(props.Creator))  metadata["pptx.author"]   = props.Creator;
+            if (!string.IsNullOrWhiteSpace(props.Subject))  metadata["pptx.subject"]  = props.Subject;
+            if (props.Created.HasValue)  metadata["pptx.created"]  = props.Created.Value.ToString("O");
+            if (props.Modified.HasValue) metadata["pptx.modified"] = props.Modified.Value.ToString("O");
+
+            var slideCount = doc.PresentationPart?.Presentation?.SlideIdList?.ChildElements.Count;
+            if (slideCount.HasValue)
+                metadata["pptx.slideCount"] = slideCount.Value.ToString();
+        }
+        catch
+        {
+            metadata["pptx.metadata"] = "unavailable";
+        }
+    }
+
     private static int CountLines(string text)
     {
-        if (string.IsNullOrEmpty(text))
-            return 0;
-
+        if (string.IsNullOrEmpty(text)) return 0;
         return text.Split(new[] { Environment.NewLine }, StringSplitOptions.None).Length;
     }
 
     private static int CountWords(string text)
     {
-        if (string.IsNullOrWhiteSpace(text))
-            return 0;
-
+        if (string.IsNullOrWhiteSpace(text)) return 0;
         return text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
     }
 }
 
-/// <summary>
-/// A immutable Data Transfer Object (DTO) representing the outcome of an extraction attempt.
-/// Prevents internal engine-specific types or raw exceptions from leaking to the caller.
-/// </summary>
-public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage)
-{
-    /// <summary>
-    /// Creates a successful result containing the extracted and normalized text.
-    /// </summary>
-    public static ExtractionResult Success(string text) => new(true, text, null);
+// ── Value types ──────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Creates a failed result containing a descriptive error message.
-    /// </summary>
-    public static ExtractionResult Failure(string error) => new(false, string.Empty, error);
+/// <summary>
+/// Categorizes the reason an extraction operation failed, enabling programmatic routing
+/// without string parsing.
+/// </summary>
+public enum ExtractionErrorKind
+{
+    /// <summary>No error — extraction succeeded.</summary>
+    None = 0,
+    /// <summary>The input had zero bytes.</summary>
+    Empty,
+    /// <summary>No extractor is registered for this file type.</summary>
+    Unsupported,
+    /// <summary>The file is password-protected or encrypted.</summary>
+    PasswordProtected,
+    /// <summary>The file is corrupt or malformed.</summary>
+    Corrupted,
+    /// <summary>Extraction failed for another reason (see <c>ErrorMessage</c>).</summary>
+    ExtractionFailed
+}
+
+/// <summary>Controls how tables are rendered in extracted text.</summary>
+public enum TableMode
+{
+    /// <summary>Header: Value per cell — compact and LLM-readable. Default.</summary>
+    KeyValue,
+    /// <summary>Markdown pipe table — preserves structure for LLM consumption.</summary>
+    Markdown,
+    /// <summary>Comma-separated values, one row per line.</summary>
+    Csv,
+    /// <summary>Omit tables from the output entirely.</summary>
+    Omit
 }
 
 /// <summary>
-/// Data transfer object containing extracted text and associated metadata.
+/// Controls extraction behaviour. All properties are optional; pass <c>null</c> for defaults.
+/// </summary>
+public sealed record ExtractionOptions
+{
+    public static readonly ExtractionOptions Default = new();
+
+    /// <summary>Truncate output to this many characters after normalization. <c>null</c> = no limit.</summary>
+    public int? MaxCharacters { get; init; }
+
+    /// <summary>Stop after extracting this many pages or slides. <c>null</c> = no limit.</summary>
+    public int? MaxPages { get; init; }
+
+    /// <summary>1-based first page/slide to include. <c>null</c> = start from page 1.</summary>
+    public int? StartPage { get; init; }
+
+    /// <summary>1-based last page/slide to include (inclusive). <c>null</c> = no limit.</summary>
+    public int? EndPage { get; init; }
+
+    /// <summary>When <c>true</c>, insert <c>[Page N]</c> / <c>[Slide N]</c> markers in the output.</summary>
+    public bool IncludePageMarkers { get; init; }
+
+    /// <summary>How tables are rendered. Defaults to <see cref="TableMode.KeyValue"/>.</summary>
+    public TableMode TableMode { get; init; } = TableMode.KeyValue;
+
+    /// <summary>ZIP/EPUB decompression guard: stop after this many total bytes. Default 512 MB.</summary>
+    public long MaxDecompressedBytes { get; init; } = 512L * 1024 * 1024;
+}
+
+/// <summary>
+/// Immutable result DTO for a text extraction operation.
+/// </summary>
+public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage)
+{
+    /// <summary>Name of the extractor that processed the file, if applicable.</summary>
+    public string? ExtractorName { get; init; }
+
+    /// <summary>Time taken to extract the text.</summary>
+    public TimeSpan Duration { get; init; }
+
+    /// <summary>Structured failure category; <see cref="ExtractionErrorKind.None"/> on success.</summary>
+    public ExtractionErrorKind ErrorKind { get; init; } = ExtractionErrorKind.None;
+
+    public static ExtractionResult Success(string text, string? extractorName = null, TimeSpan duration = default)
+        => new(true, text, null) { ExtractorName = extractorName, Duration = duration };
+
+    public static ExtractionResult Failure(string error,
+        ExtractionErrorKind kind = ExtractionErrorKind.ExtractionFailed,
+        string? extractorName = null,
+        TimeSpan duration = default)
+        => new(false, string.Empty, error) { ExtractorName = extractorName, Duration = duration, ErrorKind = kind };
+}
+
+/// <summary>
+/// Immutable result DTO for a text extraction operation with associated metadata.
 /// </summary>
 public record ExtractionMetadataResult(bool IsSuccess, string Text, Dictionary<string, string> Metadata, string? ErrorMessage)
 {
-    /// <summary>
-    /// Creates a successful metadata result.
-    /// </summary>
-    public static ExtractionMetadataResult Success(string text, Dictionary<string, string> metadata) => new(true, text, metadata, null);
+    /// <summary>Name of the extractor that processed the file, if applicable.</summary>
+    public string? ExtractorName { get; init; }
 
-    /// <summary>
-    /// Creates a failed metadata result.
-    /// </summary>
-    public static ExtractionMetadataResult Failure(string error) => new(false, string.Empty, new Dictionary<string, string>(), error);
+    /// <summary>Time taken to extract the text.</summary>
+    public TimeSpan Duration { get; init; }
+
+    /// <summary>Structured failure category; <see cref="ExtractionErrorKind.None"/> on success.</summary>
+    public ExtractionErrorKind ErrorKind { get; init; } = ExtractionErrorKind.None;
+
+    public static ExtractionMetadataResult Success(string text, Dictionary<string, string> metadata,
+        string? extractorName = null, TimeSpan duration = default)
+        => new(true, text, metadata, null) { ExtractorName = extractorName, Duration = duration };
+
+    public static ExtractionMetadataResult Failure(string error,
+        ExtractionErrorKind kind = ExtractionErrorKind.ExtractionFailed,
+        string? extractorName = null,
+        TimeSpan duration = default)
+        => new(false, string.Empty, new Dictionary<string, string>(), error)
+            { ExtractorName = extractorName, Duration = duration, ErrorKind = kind };
 }

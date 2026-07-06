@@ -1,16 +1,19 @@
-﻿# Transformations.EntityFramework.Tests
+# Transformations.EntityFramework.Tests
 
-*Context resilience verification workflows.*
+NUnit test suite for `Transformations.EntityFramework`.
 
 ## 📖 Overview
-Verifies that DbContext overrides behave flawlessly, correctly logging tracking data and firing retry operations implicitly.
+
+NUnit test suite for `Transformations.EntityFramework` — resilient saves, audit extraction, and CSV export against in-memory EF Core contexts.
 
 ## 🚀 Why this project?
-Change tracking states (Added, Modified) must map deeply to `GetModifiedEntities()` and EF persistence graphs securely.
 
-## 💡 Key Features & Coverage
-* Entity addition extraction tests.
-* `IQueryable` materialization to CSV streams.
+`GetAuditEntries` must be called *before* `SaveChanges` — after which EF resets entity states. Getting that ordering wrong produces silent data loss in audit logs. This suite verifies the full capture lifecycle: correct property values, correct states, correct key extraction, and that the retry wrapper actually retries the right number of times without swallowing non-transient errors.
 
----
-*Part of the Transformations ecosystem. Designed for modern .NET 8+.*
+## 💡 Coverage
+
+- `GetAuditEntries` — captures `Added`, `Modified`, and `Deleted` entity states correctly; `PropertyName`, `OriginalValue`, `CurrentValue`, and `KeyValues` are populated; state filter overload includes only matching states
+- `SaveChangesWithRetryAsync` — retries the configured number of times; non-retryable exceptions propagate immediately; `CancellationToken` is honoured
+- `ToCsvAsync` — materializes the query and joins values with the default comma separator; custom separator overload produces correct output; empty result returns an empty string
+
+*Part of the Transformations ecosystem.*

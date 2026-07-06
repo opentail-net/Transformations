@@ -3,29 +3,23 @@ using Markdig;
 
 namespace Transformations.Text;
 
-/// <summary>
-/// Provides Markdown normalization and structure extraction helpers for documentation and RAG preparation.
-/// </summary>
 public static class MarkdownStructureExtractor
 {
     /// <summary>
-    /// Compares two markdown payloads after structural normalization.
+    /// Returns <c>true</c> when the two markdown payloads differ after normalization.
     /// </summary>
-    /// <param name="leftMarkdown">The original markdown content.</param>
-    /// <param name="rightMarkdown">The updated markdown content.</param>
-    /// <returns><c>true</c> when normalized markdown differs; otherwise <c>false</c>.</returns>
-    public static bool CompareMarkdown(string leftMarkdown, string rightMarkdown)
+    public static bool HasChanged(string leftMarkdown, string rightMarkdown)
     {
         var left = NormalizeMarkdown(leftMarkdown);
         var right = NormalizeMarkdown(rightMarkdown);
         return !string.Equals(left, right, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Normalizes markdown line endings and blank-line density while preserving markdown syntax.
-    /// </summary>
-    /// <param name="markdown">Raw markdown content.</param>
-    /// <returns>Normalized markdown text.</returns>
+    /// <inheritdoc cref="HasChanged"/>
+    [Obsolete("Use HasChanged instead — CompareMarkdown returns true when content differs, which is unintuitive.")]
+    public static bool CompareMarkdown(string leftMarkdown, string rightMarkdown) =>
+        HasChanged(leftMarkdown, rightMarkdown);
+
     public static string NormalizeMarkdown(string markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
@@ -45,11 +39,6 @@ public static class MarkdownStructureExtractor
         return normalized.Trim();
     }
 
-    /// <summary>
-    /// Builds a heading map from markdown using ATX and Setext heading rules.
-    /// </summary>
-    /// <param name="markdown">Raw markdown content.</param>
-    /// <returns>Ordered heading entries with level, title, anchor, and source line metadata.</returns>
     public static List<MarkdownHeading> BuildHeadingMap(string markdown)
     {
         var result = new List<MarkdownHeading>();
@@ -72,8 +61,7 @@ public static class MarkdownStructureExtractor
                 continue;
             }
 
-            if (i + 1 >= lines.Length)
-                continue;
+            if (i + 1 >= lines.Length) continue;
 
             var underline = lines[i + 1];
             if (Regex.IsMatch(underline, @"^\s*=+\s*$"))
@@ -95,11 +83,6 @@ public static class MarkdownStructureExtractor
         return result;
     }
 
-    /// <summary>
-    /// Extracts hierarchical sections from markdown by heading boundaries.
-    /// </summary>
-    /// <param name="markdown">Raw markdown content.</param>
-    /// <returns>Ordered sections with heading metadata and section body content.</returns>
     public static List<MarkdownSection> ExtractSections(string markdown)
     {
         var sections = new List<MarkdownSection>();
@@ -146,7 +129,6 @@ public static class MarkdownStructureExtractor
     {
         if (string.IsNullOrWhiteSpace(markdownInline))
             return string.Empty;
-
         return Markdown.ToPlainText(markdownInline).Trim();
     }
 

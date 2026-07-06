@@ -1,75 +1,57 @@
-﻿using System.Text;
+using System.Text;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace Transformations.Text;
 
-/// <summary>
-/// Extracts high-fidelity text from PDF documents using the PdfPig library.
-/// This implementation uses layout-aware extraction to ensure that the 
-/// resulting text follows the natural reading order intended by the document creator.
-/// </summary>
 public class PdfExtractor : ITextExtractor
 {
-    /// <summary>
-    /// Validates if the extractor can handle the provided file extension.
-    /// </summary>
     public bool CanHandle(string extension) =>
         extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Orchestrates the extraction of text from a raw byte array.
-    /// </summary>
-    /// <param name="fileData">The binary content of the .pdf file.</param>
-    /// <returns>The extracted text string or a descriptive error message.</returns>
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var stream = new MemoryStream(fileData);
-        return ExtractFromStream(stream);
+        return ExtractFromStream(stream, options);
     }
 
-    /// <summary>
-    /// Performs the layout-aware text extraction from the PDF stream.
-    /// </summary>
-    /// <param name="stream">The stream containing the PDF document.</param>
-    /// <returns>A normalized string containing all text from the document pages.</returns>
-    public string ExtractFromStream(Stream stream)
+    public string ExtractFromStream(Stream stream, ExtractionOptions? options = null)
     {
         var sb = new StringBuilder();
+        int start = options?.StartPage ?? 1;
+        int end = options?.EndPage ?? int.MaxValue;
+        int max = options?.MaxPages.HasValue == true ? (start - 1) + options.MaxPages.Value : int.MaxValue;
+        end = Math.Min(end, max);
+        bool pageMarkers = options?.IncludePageMarkers == true;
 
         try
         {
-            // OPEN: Initialize the PdfDocument. PdfPig is highly efficient 
-            // for text-heavy documents and handles complex font encodings internally.
             using var document = PdfDocument.Open(stream);
 
             foreach (var page in document.GetPages())
             {
-                // LAYOUT ANALYSIS: ContentOrderTextExtractor is layout-aware.
-                // It groups individual characters into words and lines based on 
-                // physical proximity (coordinates) rather than the raw byte order.
-                // This is essential for correctly reading multi-column layouts.
-                var pageText = ContentOrderTextExtractor.GetText(page);
+                int pageNum = page.Number;
+                if (pageNum < start) continue;
+                if (pageNum > end) break;
 
+                if (pageMarkers)
+                    sb.AppendLine($"[Page {pageNum}]");
+
+                var pageText = ContentOrderTextExtractor.GetText(page);
                 if (!string.IsNullOrWhiteSpace(pageText))
                 {
                     sb.AppendLine(pageText);
-
-                    // PAGE BOUNDARY: Append an extra newline between pages to 
-                    // preserve paragraph separation and assist the Hierarchical 
-                    // Knowledge Graph in identifying logical breaks.
                     sb.AppendLine();
                 }
             }
         }
         catch (Exception ex)
         {
-            // DIAGNOSTICS: Return the exception message to be intercepted 
-            // by the TextExtractor façade for professional error reporting.
-            return $"Error extracting PDF text: {ex.Message}";
+            throw new InvalidOperationException($"PDF extraction failed: {ex.Message}", ex);
         }
 
-        // Final trim to remove the extra newlines appended after the last page.
         return sb.ToString().Trim();
     }
 }

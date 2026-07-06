@@ -1,27 +1,31 @@
-﻿namespace Transformations.Text;
+namespace Transformations.Text;
 
 /// <summary>
-/// Defines the fundamental contract for all specialized text extraction strategies.
-/// This interface enables the Strategy Pattern within the TextExtractor façade, 
-/// allowing for modular, decoupled processing of various file formats.
+/// Strategy contract for format-specific text extractors.
+/// Implementations should return <see cref="string.Empty"/> for empty or unsupported content,
+/// and throw on extraction failure so the facade can produce a typed error result.
 /// </summary>
 public interface ITextExtractor
 {
-    /// <summary>
-    /// Evaluates whether this specific extractor is capable of processing the provided file extension.
-    /// </summary>
-    /// <param name="extension">The file extension (including the leading dot, e.g., ".pdf").</param>
-    /// <returns>True if the extractor supports the format; otherwise, false.</returns>
     bool CanHandle(string extension);
 
-    /// <summary>
-    /// Executes the core extraction logic to transform raw binary data into a normalized text string.
-    /// </summary>
-    /// <param name="data">The raw byte array representing the file content.</param>
-    /// <returns>
-    /// A string containing the extracted text. In the event of a failure, 
-    /// implementations should return an error message containing the word "error" 
-    /// to be intercepted by the orchestrator.
-    /// </returns>
     string ExtractText(byte[] data);
+
+    /// <summary>
+    /// Extracts with caller-supplied options. The default implementation ignores options
+    /// and calls <see cref="ExtractText(byte[])"/>; override in extractors that support
+    /// <see cref="ExtractionOptions.TableMode"/>, <see cref="ExtractionOptions.MaxPages"/>, etc.
+    /// </summary>
+    string ExtractText(byte[] data, ExtractionOptions? options) => ExtractText(data);
+
+    /// <summary>
+    /// Extracts text from a stream. The default implementation buffers to a byte array;
+    /// override for streaming-capable formats.
+    /// </summary>
+    string ExtractText(Stream stream)
+    {
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ExtractText(ms.ToArray());
+    }
 }

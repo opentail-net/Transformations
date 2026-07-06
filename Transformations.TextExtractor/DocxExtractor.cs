@@ -1,77 +1,120 @@
-﻿using System.Text;
+using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Transformations.Text;
 
-/// <summary>
-/// Extracts high-density text from Microsoft Word (.docx) files using the OpenXML SDK.
-/// This implementation prioritizes linear document flow, making it ideal for 
-/// feeding narrative content into a RAG pipeline or Vector Store.
-/// </summary>
 public class DocxExtractor : ITextExtractor
 {
-    /// <summary>
-    /// Validates if the extractor can handle the provided file extension.
-    /// </summary>
     public bool CanHandle(string extension) =>
         extension.Equals(".docx", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Orchestrates the extraction of text from a raw byte array.
-    /// </summary>
-    /// <param name="fileData">The binary content of the .docx file.</param>
-    /// <returns>The extracted text string or an error message.</returns>
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var stream = new MemoryStream(fileData);
-        return ExtractFromStream(stream);
+        return ExtractFromStream(stream, options);
     }
 
-    /// <summary>
-    /// Performs the actual XML traversal to extract text content.
-    /// </summary>
-    /// <param name="stream">The stream containing the Word document.</param>
-    /// <returns>A normalized string containing all paragraph text.</returns>
-    public string ExtractFromStream(Stream stream)
+    public string ExtractText(Stream stream) => ExtractFromStream(stream, null);
+
+    private static string ExtractFromStream(Stream stream, ExtractionOptions? options)
     {
         var sb = new StringBuilder();
+        var tableMode = options?.TableMode ?? TableMode.KeyValue;
+        bool pageMarkers = options?.IncludePageMarkers == true;
+        int pageNumber = 1;
 
-        try
+        using var wordDoc = WordprocessingDocument.Open(stream, false);
+        var body = wordDoc.MainDocumentPart?.Document?.Body;
+        if (body == null) return string.Empty;
+
+        if (pageMarkers)
+            sb.AppendLine("[Page 1]");
+
+        foreach (var element in body.ChildElements)
         {
-            // PERFORMANCE: Open the document as ReadOnly (isEditable: false).
-            // This reduces memory overhead and ensures we don't accidentally modify 
-            // the source stream, adhering to the "Low-Magic" principle.
-            using var wordDoc = WordprocessingDocument.Open(stream, false);
-
-            var body = wordDoc.MainDocumentPart?.Document?.Body;
-
-            // Guard against empty or corrupted document parts.
-            if (body == null) return string.Empty;
-
-            // TRAVERSAL: Descendants<Paragraph>() retrieves all paragraphs in document order.
-            // By focusing on Paragraph elements, we effectively extract the main narrative 
-            // while naturally ignoring non-textual metadata or complex drawing instructions.
-            foreach (var paragraph in body.Descendants<Paragraph>())
+            if (element is Paragraph para)
             {
-                // InnerText flattens the various 'Runs' within a paragraph into a single string.
-                string text = paragraph.InnerText;
-
-                // Ensure we only append meaningful content to keep the result "High-Density".
-                if (!string.IsNullOrWhiteSpace(text))
+                // Detect explicit page breaks within this paragraph
+                if (pageMarkers && para.Descendants<Break>().Any(b => b.Type?.Value == BreakValues.Page))
                 {
-                    sb.AppendLine(text);
+                    pageNumber++;
+                    sb.AppendLine($"[Page {pageNumber}]");
                 }
+
+                var text = para.InnerText.Trim();
+                if (!string.IsNullOrWhiteSpace(text))
+                    sb.AppendLine(text);
+            }
+            else if (element is Table table && tableMode != TableMode.Omit)
+            {
+                AppendTable(table, sb, tableMode);
             }
         }
-        catch (Exception ex)
-        {
-            // DIAGNOSTICS: Return the exception message to aid in interception 
-            // and error logging within the host application.
-            return $"Error extracting DOCX text: {ex.Message}";
-        }
 
-        // Return the final result, trimmed of any trailing whitespace from the last paragraph.
         return sb.ToString().Trim();
+    }
+
+    private static void AppendTable(Table table, StringBuilder sb, TableMode mode)
+    {
+        var rows = table.Elements<TableRow>().ToList();
+        if (rows.Count == 0) return;
+
+        var grid = rows.Select(r => r.Elements<TableCell>()
+            .Select(c => c.InnerText.Trim())
+            .ToArray()).ToList();
+
+        if (grid.Count == 0) return;
+        var headers = grid[0];
+
+        switch (mode)
+        {
+            case TableMode.Markdown:
+                var mdHeaders = headers.Select(h => h.Replace("|", "\\|")).ToArray();
+                sb.Append("| ").Append(string.Join(" | ", mdHeaders)).AppendLine(" |");
+                sb.Append("| ").Append(string.Join(" | ", mdHeaders.Select(_ => "---"))).AppendLine(" |");
+                for (int r = 1; r < grid.Count; r++)
+                {
+                    if (grid[r].All(c => string.IsNullOrWhiteSpace(c))) continue;
+                    sb.Append("| ").Append(string.Join(" | ", grid[r].Select(v => v.Replace("|", "\\|")))).AppendLine(" |");
+                }
+                sb.AppendLine();
+                break;
+
+            case TableMode.Csv:
+                sb.AppendLine(string.Join(",", headers.Select(EscapeCsv)));
+                for (int r = 1; r < grid.Count; r++)
+                    sb.AppendLine(string.Join(",", grid[r].Select(EscapeCsv)));
+                sb.AppendLine();
+                break;
+
+            default: // KeyValue
+                bool hasHeaders = headers.Any(h => !string.IsNullOrWhiteSpace(h));
+                for (int r = hasHeaders ? 1 : 0; r < grid.Count; r++)
+                {
+                    var cells = grid[r];
+                    var parts = new List<string>();
+                    for (int c = 0; c < cells.Length; c++)
+                    {
+                        if (string.IsNullOrWhiteSpace(cells[c])) continue;
+                        if (hasHeaders && c < headers.Length && !string.IsNullOrWhiteSpace(headers[c]))
+                            parts.Add($"{headers[c]}: {cells[c]}");
+                        else
+                            parts.Add(cells[c]);
+                    }
+                    if (parts.Count > 0)
+                        sb.AppendLine(string.Join(" | ", parts));
+                }
+                break;
+        }
+    }
+
+    internal static string EscapeCsv(string value)
+    {
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
     }
 }
