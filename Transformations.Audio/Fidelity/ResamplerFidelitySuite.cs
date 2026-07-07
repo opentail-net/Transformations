@@ -89,13 +89,28 @@ public static class ResamplerFidelitySuite
         new("ratio_aware_lagrange_hybrid", "Experimental RatioAwareLagrangeHybrid", "v1", true, RatioAwareLagrangeHybrid.Resample),
         // ratio_aware_sinc_hybrid (v1) is retired (see Resampler/Experimental/Rejected/README.md):
         // superseded by the superior multi-stage hybrid router sinc_v10 (SincV10).
-        new("sinc_v10", "Experimental SincV10", "v1", true, SincV10.Resample),
+        // sinc_v10 (v1) is retired (2026-07-07) - strictly dominated by the newer hybrids
+        // sinc_v14 and sinc_v15 on speed, and beaten by sinc_v15 on quality. Moved to
+        // Resampler/Experimental/Rejected/SincV10.cs.old.
         // sinc_v11 (v1) is retired (2026-07-07) - strictly dominated by sinc_v12 (order 5 Lanczos)
         // on both quality and speed. Moved to Resampler/Experimental/Rejected/SincV11.cs.old.
         // sinc_v12 (v1) is retired (2026-07-07) - strictly dominated by sinc_v13 (order 6 Lanczos
         // + Farrow) on both quality and speed. Moved to Resampler/Experimental/Rejected/SincV12.cs.old.
-        new("sinc_v13", "Experimental SincV13", "v1", true, SincV13.Resample),
-        new("sinc_v14", "Experimental SincV14", "v1", true, SincV14.Resample),
+        // sinc_v13 (v1) is retired (2026-07-07) - strictly dominated by sinc_v20 on both
+        // quality (+0.35 dB SNR on Speech) and speed (5x faster, 6 ms vs 31 ms on Speech).
+        // Moved to Resampler/Experimental/Rejected/SincV13.cs.old.
+        // sinc_v14 (v1) is retired (2026-07-07) - strictly dominated by sinc_v18 on both quality
+        // and speed. Moved to Resampler/Experimental/Rejected/SincV14.cs.old.
+        // sinc_v15 (v1) is retired (2026-07-07) - strictly dominated by sinc_v20. Moved to
+        // Resampler/Experimental/Rejected/SincV15.cs.old.
+        // sinc_v16 (v1) is retired (2026-07-07) - strictly dominated by sinc_v20. Moved to
+        // Resampler/Experimental/Rejected/SincV16.cs.old.
+        // sinc_v17 (v1) is retired (2026-07-07) - strictly dominated by sinc_v20. Moved to
+        // Resampler/Experimental/Rejected/SincV17.cs.old.
+        new("sinc_v18", "Experimental SincV18", "v1", true, SincV18.Resample),
+        // sinc_v19 (v1) is retired (2026-07-07) - failed strict anti-alias gating (gained only
+        // 23.83 dB on Alias Stress). Moved to Resampler/Experimental/Rejected/SincV19.cs.old.
+        new("sinc_v20", "Experimental SincV20", "v1", true, SincV20.Resample),
         new("cubic_farrow", "Experimental CubicFarrow", "v1", true, FarrowResampler.Resample),
         // bspline (v1), tcb_spline (v1), newton_poly (v1), and nuttall_farrow (v1) are retired
         // (see Resampler/Experimental/Rejected/README.md): bspline, tcb_spline, and newton_poly
@@ -147,10 +162,10 @@ public static class ResamplerFidelitySuite
                 string id = "ratio_aware_threshold_" + thresholdText.Replace(".", "", StringComparison.Ordinal);
                 return new AlgorithmSpec(
                     id,
-                    "Experimental SincV10",
+                    "Experimental SincV20",
                     "v1",
                     true,
-                    (input, inRate, outRate, channels) => SincV10.Resample(input, inRate, outRate, channels, threshold));
+                    (input, inRate, outRate, channels) => SincV20.Resample(input, inRate, outRate, channels, threshold));
             })
             .ToArray();
 

@@ -1,0 +1,92 @@
+namespace Transformations.Audio.Resampler.Experimental;
+
+/// <summary>
+/// SincV15 (v15): A highly-tuned multi-stage hybrid resampler routing to the mathematically optimal
+/// kernels based on the resampling ratio:
+/// - Large upsampling (ratio &gt;= 1.5): Short-kernel NuttallSinc (halfWidth=16, rolloff=0.98) for fast,
+///   ultra-low-ripple upsampling.
+/// - Near-unity upsampling/downsampling (0.875 &lt;= ratio &lt; 1.5): Sinc (v1) for peak transient preservation.
+/// - Severe downsampling (ratio &lt; 0.35): JuliusSinc (v2) for maximum anti-alias suppression.
+/// - Medium downsampling (0.35 &lt;= ratio &lt; 0.875): Tuned FarrowResampler (halfWidth=32, rolloff=0.96, beta=9.5)
+///   for high-performance, steep polynomial-based downsampling.
+/// </summary>
+public static class SincV15
+{
+    private const double LargeUpsampleThreshold = 1.5;
+    private const double NearUnityThreshold = 0.875;
+    private const double SevereDownsampleThreshold = 0.35;
+    
+    // Tuned short-kernel NuttallSinc parameters for upsampling
+    private const int UpsampleHalfWidth = 16;
+    private const double UpsampleRolloff = 0.98;
+    
+    // Tuned Farrow parameters for downsampling (64 taps total)
+    private const int FarrowHalfWidth = 32;
+    private const double FarrowRolloff = 0.96;
+    private const double FarrowBeta = 9.5;
+
+    /// <summary>
+    /// Resamples the given interleaved audio data routing to the optimal algorithm with default settings.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        => Resample(inputData, inRate, outRate, channels, NearUnityThreshold);
+
+    /// <summary>
+    /// Resamples the given audio data routing to the optimal algorithm with a customizable near-unity threshold.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <param name="nearUnityThreshold">Threshold ratio above which to use Sinc v1 (if below LargeUpsampleThreshold).</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
+    public static float[] Resample(
+        float[] inputData,
+        int inRate,
+        int outRate,
+        int channels,
+        double nearUnityThreshold)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        double ratio = outRate / (double)inRate;
+
+        if (ratio >= LargeUpsampleThreshold)
+        {
+            return NuttallSinc.Resample(inputData, inRate, outRate, channels, UpsampleHalfWidth, UpsampleRolloff);
+        }
+        else if (ratio >= nearUnityThreshold)
+        {
+            return Sinc.Resample(inputData, inRate, outRate, channels);
+        }
+        else if (ratio < SevereDownsampleThreshold)
+        {
+            return JuliusSinc.Resample(inputData, inRate, outRate, channels);
+        }
+        else
+        {
+            return FarrowResampler.Resample(
+                inputData,
+                inRate,
+                outRate,
+                channels,
+                FarrowHalfWidth,
+                FarrowRolloff,
+                FarrowBeta);
+        }
+    }
+}

@@ -1,0 +1,30 @@
+using NUnit.Framework;
+using Transformations.Audio.Resampler.Experimental;
+using Transformations.Audio.Analysis;
+
+namespace Transformations.Audio.Tests.Resampler;
+
+[TestFixture]
+public sealed class SincV15Tests
+{
+    [Test]
+    public void Resample_keeps_frequencies_within_acceptable_limits()
+    {
+        float[] silence = new float[480];
+        var output = SincV15.Resample(silence, 48_000, 44_100, 1);
+
+        Assert.That(output.Length, Is.EqualTo((int)Math.Round(480 * 44100.0 / 48000.0)));
+        Assert.That(AudioLevels.MeasureSamplePeak(output), Is.EqualTo(0.0).Within(1e-6));
+    }
+
+    [Test]
+    public void Resample_rejects_invalid_arguments()
+    {
+        Assert.Throws<ArgumentException>(() => SincV15.Resample(null!, 48000, 44100, 1));
+        Assert.Throws<ArgumentException>(() => SincV15.Resample([], 48000, 44100, 1));
+        Assert.Throws<ArgumentException>(() => SincV15.Resample([1, 2], 0, 44100, 1));
+        Assert.Throws<ArgumentException>(() => SincV15.Resample([1, 2], 48000, -100, 1));
+        Assert.Throws<ArgumentException>(() => SincV15.Resample([1, 2], 48000, 44100, 0));
+        Assert.Throws<ArgumentException>(() => SincV15.Resample([1, 2, 3], 48000, 44100, 2));
+    }
+}

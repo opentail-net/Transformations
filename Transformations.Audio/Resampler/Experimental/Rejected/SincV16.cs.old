@@ -1,0 +1,77 @@
+namespace Transformations.Audio.Resampler.Experimental;
+
+/// <summary>
+/// SincV16 (v16): An octave-gated multi-stage hybrid resampler.
+/// - If the ratio is an exact octave up or down (2.0 or 0.5): Routes to LagrangeFractionalDelay (order 6)
+///   for maximally-flat, ultra-fast resampling.
+/// - Otherwise: Routes to SincV15 logic (Nuttall-16 + Farrow).
+/// </summary>
+public static class SincV16
+{
+    private const double LargeUpsampleThreshold = 1.5;
+    private const double NearUnityThreshold = 0.875;
+    private const double SevereDownsampleThreshold = 0.35;
+    
+    // Tuned short-kernel NuttallSinc parameters for upsampling
+    private const int UpsampleHalfWidth = 16;
+    private const double UpsampleRolloff = 0.98;
+    
+    // Tuned Farrow parameters for downsampling (64 taps total)
+    private const int FarrowHalfWidth = 32;
+    private const double FarrowRolloff = 0.96;
+    private const double FarrowBeta = 9.5;
+
+    /// <summary>
+    /// Resamples the given interleaved audio data routing to the optimal algorithm with default settings.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        double ratio = outRate / (double)inRate;
+
+        // Exact octave fast-path
+        if (ratio == 2.0 || ratio == 0.5)
+        {
+            return LagrangeFractionalDelay.Resample(inputData, inRate, outRate, channels, 6, 0.98, 48);
+        }
+
+        if (ratio >= LargeUpsampleThreshold)
+        {
+            return NuttallSinc.Resample(inputData, inRate, outRate, channels, UpsampleHalfWidth, UpsampleRolloff);
+        }
+        else if (ratio >= NearUnityThreshold)
+        {
+            return Sinc.Resample(inputData, inRate, outRate, channels);
+        }
+        else if (ratio < SevereDownsampleThreshold)
+        {
+            return JuliusSinc.Resample(inputData, inRate, outRate, channels);
+        }
+        else
+        {
+            return FarrowResampler.Resample(
+                inputData,
+                inRate,
+                outRate,
+                channels,
+                FarrowHalfWidth,
+                FarrowRolloff,
+                FarrowBeta);
+        }
+    }
+}

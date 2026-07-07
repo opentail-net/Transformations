@@ -450,11 +450,17 @@ for the build to stay clean.
 - **Source idea**: Two-way hybrid router selecting Sinc (v1) for upsampling and
   sinc_v2 (JuliusSinc) for downsampling.
 - **Why retired**: Superseded by the superior three-way hybrid router `sinc_v10`
-  (SincV10). `sinc_v10` achieves higher quality on Broadband (+0.05 dB) and Sweep
-  (+0.08 dB) while running nearly **twice as fast** (17 ms vs 31 ms) by utilizing
-  `NuttallSinc` for moderate downsampling.
-- **What would need to change to revive it**: The multi-stage routing logic of
-  `sinc_v10` renders this simpler two-stage hybrid obsolete.
+  (SincV10), which was in turn superseded by the faster and cleaner `sinc_v14` and `sinc_v15` routers.
+- **What would need to change to revive it**: Newer hybrid architectures render this version obsolete.
+
+### `sinc_v10` / v1 - `SincV10.cs.old` (retired, dominated by sinc_v14 and sinc_v15)
+
+- **Source idea**: Three-way hybrid router routing to Sinc, JuliusSinc, and NuttallSinc.
+- **Why retired**: Dominated by the newer hybrid routers `sinc_v14` and `sinc_v15`.
+  `sinc_v15` achieves higher quality (e.g. +0.04 dB on Speech) while running **3x faster** (10 ms vs 31 ms)
+  by using the polynomial Cubic Farrow downsampler.
+- **What would need to change to revive it**: The combination of Farrow polynomial downsampling
+  and optimized short-kernel Nuttall/Lanczos upsampling makes this all-sinc design obsolete.
 
 ### `sinc_v11` / v1 - `SincV11.cs.old` (retired, dominated by sinc_v12)
 
@@ -476,6 +482,57 @@ for the build to stay clean.
   noticeably faster (e.g. 4 ms vs 10 ms on Speech) due to the Cubic Farrow downsampler.
 - **What would need to change to revive it**: The combination of order-6 Lanczos and
   polynomial Farrow interpolation in `sinc_v13` is strictly superior.
+
+### `sinc_v13` / v1 - `SincV13.cs.old` (retired, strictly dominated by sinc_v20)
+
+- **Source idea**: Sinc hybrid router incorporating Lanczos (order 6) for large
+  upsampling ratios ($\ge 1.5$x) and default FarrowResampler for medium downsampling.
+- **Why retired**: Strictly dominated by `sinc_v20` on both quality and execution speed.
+  `sinc_v20` achieves significantly higher quality in Speech (+0.35 dB SNR) and upsampling
+  while executing 5 times faster on Speech downsampling (6 ms vs 31 ms) due to pre-computed,
+  tuned Farrow parameters.
+- **What would need to change to revive it**: The precision-tuned Farrow downsampling and
+  short Nuttall-16 upsampling in `sinc_v20` render this configuration obsolete.
+
+### `sinc_v14` / v1 - `SincV14.cs.old` (retired, strictly dominated by sinc_v18)
+
+- **Source idea**: Sinc hybrid router incorporating Lanczos (order 8) for large
+  upsampling ratios ($\ge 1.5$x) and tuned FarrowResampler for downsampling.
+- **Why retired**: Strictly dominated by `sinc_v18` on speed and quality. `sinc_v18`
+  achieves significantly higher quality (+0.33 dB SNR on Speech, +0.59 dB SNR on Upsample)
+  while running at the exact same high speed (5 ms).
+- **What would need to change to revive it**: Short-Nuttall windowed upsampling is mathematically
+  superior to Lanczos-8 at identical speeds.
+
+### `sinc_v15` / v1 - `SincV15.cs.old` (retired, strictly dominated by sinc_v20)
+
+- **Source idea**: Sinc hybrid router incorporating Nuttall (order 16) for large
+  upsampling ratios ($\ge 1.5$x) and tuned FarrowResampler for downsampling.
+- **Why retired**: Strictly dominated by `sinc_v16` and `sinc_v20`. `sinc_v20` achieves
+  higher SNR across Broadband, Sweep, and Upsample at identical speeds.
+- **What would need to change to revive it**: Upgrade to the wider Nuttall windowing of `sinc_v20`.
+
+### `sinc_v16` / v1 - `SincV16.cs.old` (retired, strictly dominated by sinc_v20)
+
+- **Source idea**: Octave-gated Lagrange hybrid router falling back to SincV15.
+- **Why retired**: Dominated by `sinc_v20`, which achieves superior quality (+0.43 dB SNR
+  on Upsample, +0.07 dB SNR on Sweep) at matching speeds.
+- **What would need to change to revive it**: The precision tuning of `sinc_v20` is overall superior.
+
+### `sinc_v17` / v1 - `SincV17.cs.old` (retired, strictly dominated by sinc_v20)
+
+- **Source idea**: All-Farrow hybrid resampler using Cubic Farrow structures for both up/down.
+- **Why retired**: Strictly dominated by `sinc_v20` on both speed and quality.
+- **What would need to change to revive it**: Change the design to use windowed sinc structures for upsampling.
+
+### `sinc_v19` / v1 - `SincV19.cs.old` (retired, failed anti-alias gating)
+
+- **Source idea**: Ultra-fast hybrid resampler prioritizing raw execution speed.
+- **Why retired**: Failed the strict anti-alias gating scenario (Alias Stress), yielding only
+  23.83 dB SNR due to the lack of adequate lowpass filtering in the Farrow decimation path.
+- **What would need to change to revive it**: Add steep anti-alias filtering, which defeats the speed priority.
+
+
 
 
 

@@ -51,19 +51,18 @@ namespace Transformations.Audio.Resampler
 
             // --- If rates match, no resampling needed ---
             if (inRate == outRate)
-                return inputData;
+                return (float[])inputData.Clone();
 
-            // Decide based on sample rates and quality
-            int kernelHalfWidth = (int)quality;
-
-            // Use high-quality Sinc for high rates
-            if (inRate >= 44100 && outRate >= 44100)
+            // Route based on quality level:
+            // Fast or below uses SincV18 (fast hybrid).
+            // Balanced or above uses SincV20 (precision hybrid).
+            if (quality <= ResampleQuality.Fast)
             {
-                return Sinc.Resample(inputData, inRate, outRate, channels, kernelHalfWidth);
+                return Experimental.SincV18.Resample(inputData, inRate, outRate, channels);
             }
             else
             {
-                return Linear.Resample(inputData, inRate, outRate, channels);
+                return Experimental.SincV20.Resample(inputData, inRate, outRate, channels);
             }
         }
     }
