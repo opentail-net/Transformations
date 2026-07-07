@@ -18,9 +18,26 @@ public static class LagrangeFractionalDelay
 
     private static readonly ConcurrentDictionary<int, double[]> LowPassCache = new();
 
+    /// <summary>
+    /// Resamples the given audio data using Lagrange fractional delay interpolation (default order 4).
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         => Resample(inputData, inRate, outRate, channels, DefaultOrder);
 
+    /// <summary>
+    /// Resamples the given audio data using Lagrange fractional delay interpolation with a specified order.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <param name="order">The Lagrange polynomial order.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels, int order)
     {
         if (inRate <= 0 || outRate <= 0)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -14,6 +14,14 @@ namespace Transformations.Audio.Resampler
     {
 
 
+        /// <summary>
+        /// Resamples audio using either a high-quality sinc method or a faster linear method.
+        /// </summary>
+        /// <param name="inputData">Interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate in Hz.</param>
+        /// <param name="outRate">Output sample rate in Hz.</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <returns>Resampled interleaved audio data.</returns>
         public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         {
             return Resample(inputData, inRate, outRate, channels, ResampleQuality.Balanced);

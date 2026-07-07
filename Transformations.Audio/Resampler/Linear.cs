@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 
 namespace Transformations.Audio.Resampler
 {
@@ -111,8 +111,19 @@ namespace Transformations.Audio.Resampler
         }
     }
 
+    /// <summary>
+    /// Provides a static entry point for linear resampling.
+    /// </summary>
     public static class Linear
     {
+        /// <summary>
+        /// Resamples audio data using linear interpolation.
+        /// </summary>
+        /// <param name="inputData">Interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate (Hz).</param>
+        /// <param name="outRate">Desired output sample rate (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <returns>Resampled interleaved audio data.</returns>
         public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         {
             LinearResampler lr = new LinearResampler();

@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 
 namespace Transformations.Audio.Resampler
 {
@@ -23,8 +23,16 @@ namespace Transformations.Audio.Resampler
         float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat);
     };
 
+    /// <summary>
+    /// Factory for creating audio resamplers.
+    /// </summary>
     public static class ResamplerFactory
     {
+        /// <summary>
+        /// Creates an <see cref="IAudioResampler"/> based on the specified algorithm.
+        /// </summary>
+        /// <param name="algorithm">The algorithm to use.</param>
+        /// <returns>A new <see cref="IAudioResampler"/>.</returns>
         public static IAudioResampler Create(ResampleAlgorithm algorithm)
         {
             return algorithm switch

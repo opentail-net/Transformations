@@ -1,8 +1,11 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 
 namespace Transformations.Audio.Resampler.Experimental
 {
+    /// <summary>
+    /// WDL-based sinc resampler using a precomputed interpolated lookup table.
+    /// </summary>
     public static class WDL_Sinc
     {
         private const int FilterHalf = 8;
@@ -12,6 +15,14 @@ namespace Transformations.Audio.Resampler.Experimental
         private const int TableSize = (2 * FilterHalf * TableResolution) + 1;
         private const int MaxTableIndex = 2 * FilterHalf * TableResolution;
 
+        /// <summary>
+        /// Resamples audio data using a precomputed sinc table.
+        /// </summary>
+        /// <param name="inputData">Input interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate (Hz).</param>
+        /// <param name="outRate">Desired output sample rate (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <returns>Resampled interleaved audio samples.</returns>
         public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         {
             // Input validation.

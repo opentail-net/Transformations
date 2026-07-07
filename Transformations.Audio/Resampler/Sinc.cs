@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 using System.Collections.Concurrent;
 using System.Numerics;
 
@@ -191,7 +191,7 @@ namespace Transformations.Audio.Resampler
         /// Key optimizations:
         /// - Padded channel copy to avoid boundary checks.
         /// - Conversion of padded data to double for high-precision vectorized dot product.
-        /// - Use of System.Numerics.Vector<double> to compute dot products in chunks.
+        /// - Use of System.Numerics.Vector&lt;double&gt; to compute dot products in chunks.
         /// </summary>
         protected override float[] ResampleChannel(float[] channel, double ratio, int p, int q, int kernelHalfWidth)
         {

@@ -12,9 +12,27 @@ public static class JuliusSinc
 
     private static readonly ConcurrentDictionary<KernelKey, double[][]> KernelCache = new();
 
+    /// <summary>
+    /// Resamples the given audio data using a low-pass windowed sinc filter with default settings.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         => Resample(inputData, inRate, outRate, channels, DefaultZeros, DefaultRolloff);
 
+    /// <summary>
+    /// Resamples the given audio data using a low-pass windowed sinc filter with custom settings.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <param name="zeros">Number of zero crossings (kernel half-width).</param>
+    /// <param name="rolloff">The filter rolloff factor (0 to 1).</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(
         float[] inputData,
         int inRate,

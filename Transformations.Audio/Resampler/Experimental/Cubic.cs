@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 using System.Buffers;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -18,11 +18,17 @@ namespace Transformations.Audio.Resampler.Experimental
         }
     }
 
+    /// <summary>
+    /// A cubic interpolation resampler (Mitchell-Netravali/Catmull–Rom style).
+    /// </summary>
     public class CubicResampler : IAudioResampler
     {
         // Precompute a SIMD vector for indices [0, 1, 2, ..., Vector<float>.Count - 1]
         private readonly Vector<float> SIMDIndexVector;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CubicResampler"/> class.
+        /// </summary>
         public CubicResampler()
         {
             int simdWidth = Vector<float>.Count;
@@ -35,6 +41,13 @@ namespace Transformations.Audio.Resampler.Experimental
         }
 
 
+        /// <summary>
+        /// Resamples interleaved audio data using cubic interpolation based on input and output <see cref="WaveFormat"/>s.
+        /// </summary>
+        /// <param name="inputData">Interleaved audio samples as a float array.</param>
+        /// <param name="inFormat">The <see cref="WaveFormat"/> describing the input sample rate and channel count.</param>
+        /// <param name="outFormat">The <see cref="WaveFormat"/> describing the desired output sample rate and channel count.</param>
+        /// <returns>Resampled interleaved audio data as a float array.</returns>
         public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
         {
             return Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels);

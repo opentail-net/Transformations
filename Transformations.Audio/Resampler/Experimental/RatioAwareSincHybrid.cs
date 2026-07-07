@@ -12,9 +12,26 @@ public static class RatioAwareSincHybrid
 {
     private const double NearUnityDownsampleThreshold = 0.875;
 
+    /// <summary>
+    /// Resamples the given audio data using a hybrid approach, falling back to a safer kernel for large downsampling ratios.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         => Resample(inputData, inRate, outRate, channels, NearUnityDownsampleThreshold);
 
+    /// <summary>
+    /// Resamples the given audio data using a hybrid approach with a customizable downsampling threshold.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <param name="nearUnityDownsampleThreshold">The ratio threshold below which to use the safer kernel.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels, double nearUnityDownsampleThreshold)
     {
         if (inRate <= 0 || outRate <= 0)

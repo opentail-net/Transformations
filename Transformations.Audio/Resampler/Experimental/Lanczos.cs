@@ -1,10 +1,13 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
 namespace Transformations.Audio.Resampler.Experimental
 {
+    /// <summary>
+    /// A Lanczos resampling implementation for high-quality fractional delay interpolation.
+    /// </summary>
     public static class Lanczos
     {
         // Cache kernel weights keyed by (effectiveA, rounded fractional offset)
@@ -16,6 +19,15 @@ namespace Transformations.Audio.Resampler.Experimental
             return Resample(inputData, inRate, outRate, channels, 3);
         }
 
+        /// <summary>
+        /// Resamples audio data using a Lanczos kernel.
+        /// </summary>
+        /// <param name="inputData">Input interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate (Hz).</param>
+        /// <param name="outRate">Desired output sample rate (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <param name="a">The Lanczos kernel parameter (number of lobes).</param>
+        /// <returns>Resampled interleaved audio samples.</returns>
         public static float[] Resample(float[] inputData, int inRate, int outRate, int channels, int a = 3)
         {
             // Input validation

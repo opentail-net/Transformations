@@ -20,11 +20,26 @@ namespace Transformations.Audio.Resampler
     {
         private static readonly SplineResampler _instance = new SplineResampler();
 
+        /// <summary>
+        /// Resamples audio data using natural cubic spline interpolation.
+        /// </summary>
+        /// <param name="inputData">Interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate (Hz).</param>
+        /// <param name="outRate">Desired output sample rate (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <returns>Resampled interleaved audio data.</returns>
         public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         {
             return _instance.Resample(inputData, inRate, outRate, channels);
         }
 
+        /// <summary>
+        /// Resamples audio data using natural cubic spline interpolation and <see cref="WaveFormat"/>s.
+        /// </summary>
+        /// <param name="inputData">Interleaved audio samples.</param>
+        /// <param name="inFormat">The <see cref="WaveFormat"/> describing the input.</param>
+        /// <param name="outFormat">The <see cref="WaveFormat"/> describing the desired output.</param>
+        /// <returns>Resampled interleaved audio data.</returns>
         public static float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
         {
             return _instance.Resample(inputData, inFormat, outFormat);
@@ -37,6 +52,13 @@ namespace Transformations.Audio.Resampler
     /// </summary>
     public class SplineResampler : IAudioResampler
     {
+        /// <summary>
+        /// Resamples audio data using natural cubic spline interpolation and <see cref="WaveFormat"/>s.
+        /// </summary>
+        /// <param name="inputData">Interleaved audio samples.</param>
+        /// <param name="inFormat">The <see cref="WaveFormat"/> describing the input.</param>
+        /// <param name="outFormat">The <see cref="WaveFormat"/> describing the desired output.</param>
+        /// <returns>Resampled interleaved audio data.</returns>
         public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
         {
             if (inFormat == null || outFormat == null)
@@ -45,6 +67,14 @@ namespace Transformations.Audio.Resampler
             return Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels);
         }
 
+        /// <summary>
+        /// Resamples audio data using natural cubic spline interpolation.
+        /// </summary>
+        /// <param name="inputData">Interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate (Hz).</param>
+        /// <param name="outRate">Desired output sample rate (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <returns>Resampled interleaved audio data.</returns>
         public float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         {
             if (inRate <= 0 || outRate <= 0)

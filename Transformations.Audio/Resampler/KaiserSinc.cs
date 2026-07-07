@@ -13,9 +13,28 @@ public static class KaiserSinc
 
     private static readonly ConcurrentDictionary<KernelKey, double[]> KernelCache = new();
 
+    /// <summary>
+    /// Resamples the given audio data using a Kaiser-windowed sinc filter with default settings.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         => Resample(inputData, inRate, outRate, channels, DefaultHalfWidth, DefaultRolloff, DefaultBeta);
 
+    /// <summary>
+    /// Resamples the given audio data using a Kaiser-windowed sinc filter with custom settings.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <param name="halfWidth">Kernel half-width.</param>
+    /// <param name="rolloff">Filter rolloff factor.</param>
+    /// <param name="beta">Kaiser window beta parameter.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(
         float[] inputData,
         int inRate,

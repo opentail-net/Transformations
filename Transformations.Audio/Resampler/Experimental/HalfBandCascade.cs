@@ -27,6 +27,14 @@ public static class HalfBandCascade
     /// <summary>Coefficients[0] is the center tap; Coefficients[k] is the tap at offset +-(2k-1).</summary>
     private static readonly double[] Coefficients = BuildHalfBandCoefficients(DefaultZeros, DefaultBeta);
 
+    /// <summary>
+    /// Resamples the given audio data using a half-band filter cascade.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
     {
         if (inRate <= 0 || outRate <= 0)

@@ -1,10 +1,20 @@
-﻿using Transformations.Audio.Resampler;
+using Transformations.Audio.Resampler;
 using System.Diagnostics;
 
 namespace Transformations.Audio.Testing
 {
+    /// <summary>
+    /// Utility class for benchmarking audio resamplers.
+    /// </summary>
     public static class ResamplerBenchmark
     {
+        /// <summary>
+        /// Compares the fidelity of various resamplers by running a round-trip test and measuring SNR.
+        /// </summary>
+        /// <param name="inputData">Input interleaved audio samples.</param>
+        /// <param name="inRate">Original sample rate (Hz).</param>
+        /// <param name="outRate">Target sample rate for the first pass (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
         public static void CompareResamplingWithSNR(float[] inputData, int inRate, int outRate, int channels)
         {
             string results = "";

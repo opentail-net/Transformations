@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,7 @@ namespace Transformations.Audio.Resampler
     /// Extension methods for resampling audio data.
     /// </summary>
     /// <example>
+    /// <![CDATA[
     /// using TestAudioUI.Resamplers;
     /// float[] input = GetSamples(); // whatever source you're using
     /// float[] output = input.ResampleLinear(48000, 44100, 2); // e.g., from 48kHz to 44.1kHz stereo
@@ -21,6 +22,7 @@ namespace Transformations.Audio.Resampler
     /// 
     /// Memory<float> inputMemory = new Memory<float>(input);
     /// float[] outputFromMemory = inputMemory.ResampleLinear(48000, 44100, 2);
+    /// ]]>
     /// </example>
     public static class ResamplerExtensions
     {
@@ -77,7 +79,7 @@ namespace Transformations.Audio.Resampler
         /// using the provided input and output <see cref="WaveFormat"/>s.
         /// The span is converted to a float array for internal processing.
         /// </summary>
-        /// <param name="input">Input interleaved audio samples as a <see cref="Span{float}"/>.</param>
+        /// <param name="input">Input interleaved audio samples as a <see cref="Span{T}"/>.</param>
         /// <param name="inFormat">WaveFormat describing the input sample rate and channel count.</param>
         /// <param name="outFormat">WaveFormat describing the desired output sample rate and channel count.</param>
         /// <returns>Resampled interleaved audio samples.</returns>
@@ -89,7 +91,7 @@ namespace Transformations.Audio.Resampler
         /// using the provided input and output <see cref="WaveFormat"/>s.
         /// The memory is converted to a float array for internal processing.
         /// </summary>
-        /// <param name="input">Input interleaved audio samples as a <see cref="Memory{float}"/>.</param>
+        /// <param name="input">Input interleaved audio samples as a <see cref="Memory{T}"/>.</param>
         /// <param name="inFormat">WaveFormat describing the input sample rate and channel count.</param>
         /// <param name="outFormat">WaveFormat describing the desired output sample rate and channel count.</param>
         /// <returns>Resampled interleaved audio samples.</returns>

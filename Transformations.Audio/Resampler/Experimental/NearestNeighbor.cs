@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 using System;
 using System.Threading.Tasks;
 
@@ -12,6 +12,14 @@ namespace Transformations.Audio.Resampler.Experimental
     /// <remarks>Not as good at downsampling as Linear.</remarks>
     public static class NearestNeighbor
     {
+        /// <summary>
+        /// Resamples audio using a pure nearest-neighbor approach.
+        /// </summary>
+        /// <param name="inputData">Input interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate (Hz).</param>
+        /// <param name="outRate">Desired output sample rate (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <returns>Resampled interleaved audio samples.</returns>
         public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         {
             PureNearestNeighborResampler resampler = new PureNearestNeighborResampler();
@@ -25,6 +33,14 @@ namespace Transformations.Audio.Resampler.Experimental
     /// </summary>
     public class PureNearestNeighborResampler : IAudioResampler
     {
+        /// <summary>
+        /// Resamples interleaved float audio using pure nearest-neighbor.
+        /// </summary>
+        /// <param name="inputData">Input interleaved audio samples.</param>
+        /// <param name="inRate">Input sample rate (Hz).</param>
+        /// <param name="outRate">Desired output sample rate (Hz).</param>
+        /// <param name="channels">Number of audio channels.</param>
+        /// <returns>Resampled interleaved audio samples.</returns>
         public float[] Resample(float[] inputData, int inRate, int outRate, int channels)
         {
             // Validate inputs.
@@ -94,6 +110,13 @@ namespace Transformations.Audio.Resampler.Experimental
         //    return smoothed;
         //}
 
+        /// <summary>
+        /// Resamples interleaved float audio using pure nearest-neighbor, reading sample rates from <see cref="WaveFormat"/>s.
+        /// </summary>
+        /// <param name="inputData">Input interleaved audio samples.</param>
+        /// <param name="inFormat">The <see cref="WaveFormat"/> describing the input.</param>
+        /// <param name="outFormat">The <see cref="WaveFormat"/> describing the output.</param>
+        /// <returns>Resampled interleaved audio samples.</returns>
         public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
         {
             return Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels);
