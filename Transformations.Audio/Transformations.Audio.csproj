@@ -6,8 +6,8 @@
     <RootNamespace>Transformations.Audio</RootNamespace>
     <IsPackable>true</IsPackable>
     <PackageId>Transformations.Audio</PackageId>
-    <Description>Audio transformation helpers for .NET, including sample-rate conversion and repeatable resampler fidelity evidence.</Description>
-    <PackageTags>transformations;audio;resampling;resampler;sample-rate;dsp;naudio</PackageTags>
+    <Description>Audio transformation helpers for .NET, including sample-rate conversion, channel downmixing, level analysis, peak limiting, PCM quantization, PCM16 WAV IO, silence trimming, fades, crossfades, and repeatable fidelity evidence.</Description>
+    <PackageTags>transformations;audio;resampling;resampler;sample-rate;downmix;surround;channels;true-peak;normalization;limiter;dynamics;pcm16;dither;quantization;wav;riff;reader;writer;silence;trim;fade;crossfade;concat;dsp;naudio</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

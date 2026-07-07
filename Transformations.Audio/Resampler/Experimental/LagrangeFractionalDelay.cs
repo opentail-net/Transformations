@@ -15,8 +15,9 @@ public static class LagrangeFractionalDelay
 {
     private const int DefaultOrder = 4; // 5-point Lagrange: odd tap count, symmetric around the fit center.
     private const int LowPassHalfWidth = 32;
+    private const double DefaultLowPassRolloff = 0.95;
 
-    private static readonly ConcurrentDictionary<int, double[]> LowPassCache = new();
+    private static readonly ConcurrentDictionary<LowPassKey, double[]> LowPassCache = new();
 
     /// <summary>
     /// Resamples the given audio data using Lagrange fractional delay interpolation (default order 4).
@@ -39,6 +40,27 @@ public static class LagrangeFractionalDelay
     /// <param name="order">The Lagrange polynomial order.</param>
     /// <returns>Resampled interleaved audio samples.</returns>
     public static float[] Resample(float[] inputData, int inRate, int outRate, int channels, int order)
+        => Resample(inputData, inRate, outRate, channels, order, DefaultLowPassRolloff, LowPassHalfWidth);
+
+    /// <summary>
+    /// Resamples the given audio data using Lagrange fractional delay interpolation with tunable anti-alias filtering.
+    /// </summary>
+    /// <param name="inputData">Input interleaved audio samples.</param>
+    /// <param name="inRate">Input sample rate (Hz).</param>
+    /// <param name="outRate">Desired output sample rate (Hz).</param>
+    /// <param name="channels">Number of audio channels.</param>
+    /// <param name="order">The Lagrange polynomial order.</param>
+    /// <param name="lowPassRolloff">Low-pass cutoff multiplier relative to the new Nyquist when downsampling.</param>
+    /// <param name="lowPassHalfWidth">Low-pass FIR half-width used before Lagrange interpolation.</param>
+    /// <returns>Resampled interleaved audio samples.</returns>
+    public static float[] Resample(
+        float[] inputData,
+        int inRate,
+        int outRate,
+        int channels,
+        int order,
+        double lowPassRolloff,
+        int lowPassHalfWidth)
     {
         if (inRate <= 0 || outRate <= 0)
             throw new ArgumentException("Sample rates must be positive.");
@@ -50,6 +72,10 @@ public static class LagrangeFractionalDelay
             throw new ArgumentException("Input data length must be divisible by the number of channels.");
         if (order < 1)
             throw new ArgumentException("Order must be at least 1.");
+        if (lowPassRolloff <= 0 || lowPassRolloff > 1)
+            throw new ArgumentException("Low-pass rolloff must be greater than 0 and less than or equal to 1.");
+        if (lowPassHalfWidth <= 0)
+            throw new ArgumentException("Low-pass half-width must be positive.");
         if (inRate == outRate)
             return (float[])inputData.Clone();
 
@@ -66,9 +92,9 @@ public static class LagrangeFractionalDelay
         // straight into the passband.
         if (outRate < inRate)
         {
-            double cutoff = 0.5 * ratio * 0.95; // a little inside the new Nyquist for headroom
-            int quantizedCutoff = (int)Math.Round(cutoff * 1_000_000);
-            double[] lpKernel = LowPassCache.GetOrAdd(quantizedCutoff, _ => BuildLowPassKernel(cutoff, LowPassHalfWidth));
+            double cutoff = 0.5 * ratio * lowPassRolloff;
+            var key = new LowPassKey(Quantize(cutoff), lowPassHalfWidth);
+            double[] lpKernel = LowPassCache.GetOrAdd(key, _ => BuildLowPassKernel(cutoff, lowPassHalfWidth));
             Parallel.For(0, channels, c => channelData[c] = Convolve(channelData[c], lpKernel));
         }
 
@@ -161,4 +187,9 @@ public static class LagrangeFractionalDelay
         }
         return output;
     }
+
+    private static int Quantize(double value)
+        => (int)Math.Round(value * 1_000_000);
+
+    private readonly record struct LowPassKey(int Cutoff, int HalfWidth);
 }

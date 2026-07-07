@@ -61,14 +61,27 @@ public static class ResamplerFidelitySuite
         // nearest_neighbor on both axes, with no scenario where either was outright best.
         new("lanczos", "Experimental Lanczos", "v1", true, Lanczos.Resample),
         new("cubic", "Experimental Cubic", "v1", true, CubicResamplerEntryPoint.Resample),
+        // Mined from wave-resampler's interpolation + LPF split: cheap zero-phase
+        // Butterworth low-pass around local cubic interpolation, distinct from the
+        // windowed-sinc family and worth measuring as a speed/quality middle route.
+        new("zero_phase_iir_cubic", "Experimental ZeroPhaseIirCubic", "v1", true, ZeroPhaseIirCubic.Resample),
         new("nearest_neighbor", "Experimental NearestNeighbor", "v1", true, NearestNeighbor.Resample),
         // Mined idea: separates anti-alias low-pass filtering from fractional-delay
         // interpolation (Lagrange polynomial) instead of using one combined windowed-sinc
         // kernel. See Resampler/Experimental/LagrangeFractionalDelay.cs for rationale.
         new("lagrange_fd", "Experimental LagrangeFractionalDelay", "v1", true, LagrangeFractionalDelay.Resample),
+        new("lagrange_fd_o6", "Experimental LagrangeFractionalDelay", "v1-o6", true, (input, inRate, outRate, channels) => LagrangeFractionalDelay.Resample(input, inRate, outRate, channels, 6)),
+        new("lagrange_fd_o8", "Experimental LagrangeFractionalDelay", "v1-o8", true, (input, inRate, outRate, channels) => LagrangeFractionalDelay.Resample(input, inRate, outRate, channels, 8)),
+        new("lagrange_fd_o6_r090", "Experimental LagrangeFractionalDelay", "v1-o6-r090", true, (input, inRate, outRate, channels) => LagrangeFractionalDelay.Resample(input, inRate, outRate, channels, 6, 0.90, 32)),
+        new("lagrange_fd_o6_r098", "Experimental LagrangeFractionalDelay", "v1-o6-r098", true, (input, inRate, outRate, channels) => LagrangeFractionalDelay.Resample(input, inRate, outRate, channels, 6, 0.98, 32)),
+        new("lagrange_fd_o6_w48", "Experimental LagrangeFractionalDelay", "v1-o6-w48", true, (input, inRate, outRate, channels) => LagrangeFractionalDelay.Resample(input, inRate, outRate, channels, 6, 0.95, 48)),
+        new("lagrange_fd_o6_r098_w48", "Experimental LagrangeFractionalDelay", "v1-o6-r098-w48", true, (input, inRate, outRate, channels) => LagrangeFractionalDelay.Resample(input, inRate, outRate, channels, 6, 0.98, 48)),
         // filter_bank_sinc, rubato_table_sinc, and adaptive_kaiser_sinc are retired (see
         // Resampler/Experimental/Rejected/README.md): they mined real quarry ideas, but none
         // beat the live sinc/hybrid field strongly enough to justify a suite slot.
+        // Router experiment: ratio-aware sinc everywhere except exact 2:1 downsampling,
+        // where Lagrange order 6 showed a real-like music win with lower elapsed time.
+        new("ratio_aware_lagrange_hybrid", "Experimental RatioAwareLagrangeHybrid", "v1", true, RatioAwareLagrangeHybrid.Resample),
         // Original evidence-driven hybrid: plain sinc for upsampling/near-unity downsampling,
         // sinc_v2 for stronger downsampling where alias risk dominates.
         new("ratio_aware_sinc_hybrid", "Experimental RatioAwareSincHybrid", "v1", true, RatioAwareSincHybrid.Resample),

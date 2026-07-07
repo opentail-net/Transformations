@@ -77,37 +77,49 @@ namespace Transformations.Audio.Resampler
 
             float[] output = new float[outputFrames * channels];
 
-            // Process each output frame in parallel for performance
+            const int parallelFrameThreshold = 16_384;
+            if (outputFrames < parallelFrameThreshold)
+            {
+                for (int i = 0; i < outputFrames; i++)
+                    ResampleFrame(inputData, output, i, ratio, inputFrames, channels);
+
+                return output;
+            }
+
+            // Process larger buffers in parallel for performance.
             Parallel.For(0, outputFrames, i =>
             {
-                double srcPos = i * ratio;
-                int baseIndex = (int)srcPos;
-                double frac = srcPos - baseIndex; // Fractional distance between baseIndex and next sample
-
-                // If we've reached the very end, just repeat the last sample to avoid out-of-bounds access
-                if (baseIndex >= inputFrames - 1)
-                {
-                    for (int ch = 0; ch < channels; ch++)
-                        output[i * channels + ch] = inputData[(inputFrames - 1) * channels + ch];
-                }
-                else
-                {
-                    // Interpolate between baseIndex and baseIndex + 1 for each channel
-                    for (int ch = 0; ch < channels; ch++)
-                    {
-                        int addr1 = baseIndex * channels + ch;
-                        int addr2 = (baseIndex + 1) * channels + ch;
-
-                        float s1 = inputData[addr1];
-                        float s2 = inputData[addr2];
-
-                        // Linear interpolation: (1 - frac) * s1 + frac * s2
-                        output[i * channels + ch] = (float)((1.0 - frac) * s1 + frac * s2);
-                    }
-                }
+                ResampleFrame(inputData, output, i, ratio, inputFrames, channels);
             });
 
             return output;
+        }
+
+        private static void ResampleFrame(float[] inputData, float[] output, int outputFrame, double ratio, int inputFrames, int channels)
+        {
+            double srcPos = outputFrame * ratio;
+            int baseIndex = (int)srcPos;
+            int outputIndex = outputFrame * channels;
+
+            if (baseIndex >= inputFrames - 1)
+            {
+                int lastInputIndex = (inputFrames - 1) * channels;
+                for (int ch = 0; ch < channels; ch++)
+                    output[outputIndex + ch] = inputData[lastInputIndex + ch];
+
+                return;
+            }
+
+            double frac = srcPos - baseIndex;
+            int inputIndex = baseIndex * channels;
+            int nextInputIndex = inputIndex + channels;
+
+            for (int ch = 0; ch < channels; ch++)
+            {
+                float s1 = inputData[inputIndex + ch];
+                float s2 = inputData[nextInputIndex + ch];
+                output[outputIndex + ch] = (float)(s1 + (s2 - s1) * frac);
+            }
         }
     }
 
