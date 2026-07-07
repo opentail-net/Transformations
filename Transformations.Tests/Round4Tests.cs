@@ -365,6 +365,31 @@ public class Round4Tests
         Assert.That(result.Text, Does.Contain("FacadeRoutingTest"));
     }
 
+    [Test]
+    public void EpubExtractor_MissingChapter_AddsWarningAndKeepsReadableChapters()
+    {
+        var bytes = CreateEpubWithMissingChapter();
+        var result = _extractor.GetText("book.epub", bytes);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Contain("Present chapter"));
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerEntryMissing));
+        Assert.That(result.Warnings[0].Source, Is.EqualTo("OEBPS/missing.xhtml"));
+    }
+
+    [Test]
+    public void EpubExtractor_MissingManifest_AddsWarning()
+    {
+        var bytes = CreateEpubWithoutManifest();
+        var result = _extractor.GetText("book.epub", bytes);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Is.Empty);
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerManifestMissing));
+    }
+
     // ── 17. TextChunk provenance ──────────────────────────────────────────────
 
     [Test]
@@ -597,6 +622,69 @@ public class Round4Tests
                         """);
             }
         }
+        return ms.ToArray();
+    }
+
+    private static byte[] CreateEpubWithMissingChapter()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var mimeEntry = zip.CreateEntry("mimetype", CompressionLevel.NoCompression);
+            using (var w = new StreamWriter(mimeEntry.Open()))
+                w.Write("application/epub+zip");
+
+            var containerEntry = zip.CreateEntry("META-INF/container.xml");
+            using (var w = new StreamWriter(containerEntry.Open(), Encoding.UTF8))
+                w.Write("""
+                    <?xml version="1.0"?>
+                    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                      <rootfiles>
+                        <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+                      </rootfiles>
+                    </container>
+                    """);
+
+            var opfEntry = zip.CreateEntry("OEBPS/content.opf");
+            using (var w = new StreamWriter(opfEntry.Open(), Encoding.UTF8))
+                w.Write("""
+                    <?xml version="1.0"?>
+                    <package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+                      <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Test</dc:title></metadata>
+                      <manifest>
+                        <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+                        <item id="ch2" href="missing.xhtml" media-type="application/xhtml+xml"/>
+                      </manifest>
+                      <spine>
+                        <itemref idref="ch1"/>
+                        <itemref idref="ch2"/>
+                      </spine>
+                    </package>
+                    """);
+
+            var chapter = zip.CreateEntry("OEBPS/chapter1.xhtml");
+            using (var w = new StreamWriter(chapter.Open(), Encoding.UTF8))
+                w.Write("""
+                    <?xml version="1.0"?>
+                    <html xmlns="http://www.w3.org/1999/xhtml">
+                    <body><p>Present chapter</p></body>
+                    </html>
+                    """);
+        }
+
+        return ms.ToArray();
+    }
+
+    private static byte[] CreateEpubWithoutManifest()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var mimeEntry = zip.CreateEntry("mimetype", CompressionLevel.NoCompression);
+            using var w = new StreamWriter(mimeEntry.Open());
+            w.Write("application/epub+zip");
+        }
+
         return ms.ToArray();
     }
 

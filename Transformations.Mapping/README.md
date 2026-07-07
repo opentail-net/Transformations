@@ -16,7 +16,7 @@ Runtime mappers like AutoMapper resolve mappings through reflection at startup: 
 ## 📦 Install
 
 ```xml
-<PackageReference Include="Transformations.Mapping" Version="2.0.2" />
+<PackageReference Include="Transformations.Mapping" Version="{{Version}}" />
 ```
 
 The source generator (`Transformations.Mapping.Generator`) is bundled in the package and activated automatically — no separate installation needed.

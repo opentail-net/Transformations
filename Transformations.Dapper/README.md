@@ -16,7 +16,7 @@ Instead of manually catching `SqlException` and writing retry loops everywhere, 
 ## 📦 Install
 
 ```xml
-<PackageReference Include="Transformations.Dapper" Version="2.0.2" />
+<PackageReference Include="Transformations.Dapper" Version="{{Version}}" />
 ```
 
 ---

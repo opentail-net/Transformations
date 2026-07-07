@@ -16,7 +16,7 @@ Despite the rise of ORMs, enterprise architectures regularly drop down to raw AD
 ## 📦 Install
 
 ```xml
-<PackageReference Include="Transformations.Data" Version="2.0.2" />
+<PackageReference Include="Transformations.Data" Version="{{Version}}" />
 ```
 
 ---

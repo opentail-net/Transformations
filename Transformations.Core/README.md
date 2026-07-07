@@ -16,7 +16,7 @@ When building modern .NET services you inevitably need safe type conversion with
 ## 📦 Install
 
 ```xml
-<PackageReference Include="Transformations.Core" Version="2.0.2" />
+<PackageReference Include="Transformations.Core" Version="{{Version}}" />
 ```
 
 **Zero external NuGet dependencies.** Safe for console apps, background services, and libraries where you can't afford an ASP.NET Core pull-in.

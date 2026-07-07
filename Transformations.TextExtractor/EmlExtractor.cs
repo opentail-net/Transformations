@@ -8,6 +8,13 @@ namespace Transformations.Text;
 /// </summary>
 public class EmlExtractor : ITextExtractor
 {
+    private static readonly HashSet<string> PlainTextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".text", ".log", ".out", ".md", ".markdown", ".csv", ".json", ".xml", ".yaml", ".yml",
+        ".cs", ".py", ".js", ".ts", ".cpp", ".h", ".java", ".ps1", ".sh", ".go", ".rs", ".sql",
+        ".rb", ".php", ".swift", ".kt", ".scala", ".fs", ".vb", ".lua", ".r", ".m", ".dart"
+    };
+
     private readonly IReadOnlyList<ITextExtractor>? _innerExtractors;
 
     /// <summary>Basic constructor — extracts body text only.</summary>
@@ -29,7 +36,10 @@ public class EmlExtractor : ITextExtractor
         extension.Equals(".eml", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    /// <inheritdoc />
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var stream = new MemoryStream(fileData);
         var message = MimeMessage.Load(stream);
@@ -65,7 +75,7 @@ public class EmlExtractor : ITextExtractor
         sb.Append(bodyText);
 
         if (_innerExtractors != null)
-            AppendAttachments(message, sb, _innerExtractors);
+            AppendAttachments(message, sb, _innerExtractors, options);
 
         return sb.ToString().Trim();
     }
@@ -73,8 +83,14 @@ public class EmlExtractor : ITextExtractor
     private static void AppendAttachments(
         MimeMessage message,
         StringBuilder sb,
-        IReadOnlyList<ITextExtractor> innerExtractors)
+        IReadOnlyList<ITextExtractor> innerExtractors,
+        ExtractionOptions? options)
     {
+        long totalDecodedBytes = 0;
+        long maxBytes = options?.MaxDecompressedBytes ?? 512L * 1024 * 1024;
+        int maxEntries = options?.MaxContainerEntries ?? 10_000;
+        int processedEntries = 0;
+
         foreach (var entity in message.Attachments)
         {
             if (entity is not MimePart part || part.Content == null) continue;
@@ -82,15 +98,28 @@ public class EmlExtractor : ITextExtractor
             var fileName = part.FileName ?? string.Empty;
             if (string.IsNullOrWhiteSpace(fileName)) continue;
 
+            if (processedEntries >= maxEntries)
+            {
+                Warn(options, ExtractionWarningCodes.ContainerEntryLimit, fileName, $"Stopped after {processedEntries} EML attachments.");
+                break;
+            }
+
+            processedEntries++;
+
             var ext = Path.GetExtension(fileName);
-            var extractor = innerExtractors.FirstOrDefault(e => e.CanHandle(ext) && e is not TxtExtractor);
-            if (extractor == null) continue;
+            var extractor = ResolveProcessor(innerExtractors, ext);
+            if (extractor == null)
+            {
+                Warn(options, ExtractionWarningCodes.ContainerUnsupportedEntry, fileName, $"No extractor is registered for EML attachment extension '{ext}'.");
+                continue;
+            }
 
             try
             {
-                using var ms = new MemoryStream();
-                part.Content.DecodeTo(ms);
-                var attachText = extractor.ExtractText(ms.ToArray());
+                byte[] attachmentBytes = DecodeContentWithLimit(part, maxBytes - totalDecodedBytes, out long decodedBytes);
+                totalDecodedBytes += decodedBytes;
+
+                var attachText = extractor.ExtractText(attachmentBytes, options);
                 if (!string.IsNullOrWhiteSpace(attachText))
                 {
                     sb.AppendLine();
@@ -98,11 +127,28 @@ public class EmlExtractor : ITextExtractor
                     sb.AppendLine(attachText);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip attachments that cannot be extracted
+                var code = ex is InvalidDataException
+                    ? ExtractionWarningCodes.ContainerByteLimit
+                    : ExtractionWarningCodes.ContainerEntryFailed;
+                Warn(options, code, fileName, ex.Message);
             }
         }
+    }
+
+    private static ITextExtractor? ResolveProcessor(IReadOnlyList<ITextExtractor> innerExtractors, string extension)
+        => innerExtractors.FirstOrDefault(e => e.CanHandle(extension) && e is not TxtExtractor)
+            ?? (PlainTextExtensions.Contains(extension)
+                ? innerExtractors.FirstOrDefault(e => e is TxtExtractor)
+                : null);
+
+    private static byte[] DecodeContentWithLimit(MimePart part, long remainingBytes, out long decodedBytes)
+    {
+        using var stream = new LimitedMemoryStream(remainingBytes);
+        part.Content.DecodeTo(stream);
+        decodedBytes = stream.Length;
+        return stream.ToArray();
     }
 
     private static string FormatSenders(MimeMessage message)
@@ -125,5 +171,34 @@ public class EmlExtractor : ITextExtractor
             formatted = formatted.Replace(q.ToString(), string.Empty);
 
         return formatted;
+    }
+
+    private static void Warn(ExtractionOptions? options, string code, string source, string message)
+        => options?.WarningSink?.Invoke(new ExtractionWarning(code, source, message));
+
+    private sealed class LimitedMemoryStream : MemoryStream
+    {
+        private readonly long _maxBytes;
+
+        public LimitedMemoryStream(long maxBytes)
+        {
+            _maxBytes = maxBytes;
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            if (Length + count > _maxBytes)
+                throw new InvalidDataException("EML attachment exceeded the configured decompression byte limit.");
+
+            base.Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            if (Length + buffer.Length > _maxBytes)
+                throw new InvalidDataException("EML attachment exceeded the configured decompression byte limit.");
+
+            base.Write(buffer);
+        }
     }
 }

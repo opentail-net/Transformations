@@ -27,11 +27,34 @@ public class TxtExtractor : ITextExtractor
 
     private static bool IsBinary(byte[] data)
     {
+        if (HasKnownTextBom(data))
+            return false;
+
         int limit = Math.Min(data.Length, 8192);
         for (int i = 0; i < limit; i++)
         {
             if (data[i] == 0) return true;
         }
         return false;
+    }
+
+    private static bool HasKnownTextBom(byte[] data)
+        => HasPrefix(data, Encoding.UTF8.GetPreamble())
+            || HasPrefix(data, Encoding.Unicode.GetPreamble())
+            || HasPrefix(data, Encoding.BigEndianUnicode.GetPreamble())
+            || HasPrefix(data, Encoding.UTF32.GetPreamble());
+
+    private static bool HasPrefix(byte[] data, byte[] prefix)
+    {
+        if (prefix.Length == 0 || data.Length < prefix.Length)
+            return false;
+
+        for (int i = 0; i < prefix.Length; i++)
+        {
+            if (data[i] != prefix[i])
+                return false;
+        }
+
+        return true;
     }
 }

@@ -195,6 +195,9 @@ public class TextExtractor : IDocumentTextExtractor
 
     private ExtractionResult GetTextCore(string fileName, byte[] content, ExtractionOptions? options)
     {
+        var warnings = new List<ExtractionWarning>();
+        var effectiveOptions = WithWarningCapture(options, warnings);
+
         if (content == null || content.Length == 0)
             return ExtractionResult.Failure("File content is empty.", ExtractionErrorKind.Empty);
 
@@ -206,13 +209,13 @@ public class TextExtractor : IDocumentTextExtractor
         var sw = Stopwatch.StartNew();
         try
         {
-            var text = TextNormalizer.Normalize(processor.ExtractText(content, options));
-            if (options?.MaxCharacters is int max && text.Length > max)
+            var text = TextNormalizer.Normalize(processor.ExtractText(content, effectiveOptions));
+            if (effectiveOptions.MaxCharacters is int max && text.Length > max)
                 text = text[..max];
             sw.Stop();
             _logger.LogDebug("Extracted {CharCount} chars from {FileName} in {ElapsedMs}ms",
                 text.Length, fileName, sw.ElapsedMilliseconds);
-            return ExtractionResult.Success(text, processor.GetType().Name, sw.Elapsed);
+            return ExtractionResult.Success(text, processor.GetType().Name, sw.Elapsed, warnings);
         }
         catch (Exception ex)
         {
@@ -226,6 +229,9 @@ public class TextExtractor : IDocumentTextExtractor
 
     private ExtractionMetadataResult GetTextWithMetadataCore(string fileName, byte[] content, ExtractionOptions? options)
     {
+        var warnings = new List<ExtractionWarning>();
+        var effectiveOptions = WithWarningCapture(options, warnings);
+
         if (content == null || content.Length == 0)
             return ExtractionMetadataResult.Failure("File content is empty.", ExtractionErrorKind.Empty);
 
@@ -236,15 +242,20 @@ public class TextExtractor : IDocumentTextExtractor
         var sw = Stopwatch.StartNew();
         try
         {
-            var normalizedText = TextNormalizer.Normalize(processor.ExtractText(content, options));
-            if (options?.MaxCharacters is int max && normalizedText.Length > max)
+            var normalizedText = TextNormalizer.Normalize(processor.ExtractText(content, effectiveOptions));
+            if (effectiveOptions.MaxCharacters is int max && normalizedText.Length > max)
                 normalizedText = normalizedText[..max];
             sw.Stop();
             var metadata = BuildMetadata(fileName, content, normalizedText);
             metadata["extraction.extractor"] = processor.GetType().Name;
             metadata["extraction.durationMs"] = sw.ElapsedMilliseconds.ToString();
+            if (warnings.Count > 0)
+            {
+                metadata["extraction.warningCount"] = warnings.Count.ToString();
+                metadata["extraction.warnings"] = string.Join(" | ", warnings.Select(w => $"{w.Code}:{w.Source}:{w.Message}"));
+            }
             return ExtractionMetadataResult.Success(normalizedText, metadata,
-                processor.GetType().Name, sw.Elapsed);
+                processor.GetType().Name, sw.Elapsed, warnings);
         }
         catch (Exception ex)
         {
@@ -310,6 +321,21 @@ public class TextExtractor : IDocumentTextExtractor
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
         return ms.ToArray();
+    }
+
+    private static ExtractionOptions WithWarningCapture(ExtractionOptions? options, List<ExtractionWarning> warnings)
+    {
+        options ??= ExtractionOptions.Default;
+        var callerSink = options.WarningSink;
+
+        return options with
+        {
+            WarningSink = warning =>
+            {
+                warnings.Add(warning);
+                callerSink?.Invoke(warning);
+            }
+        };
     }
 
     private static async Task<byte[]> ReadStreamAsync(Stream stream, CancellationToken ct)
@@ -648,6 +674,47 @@ public sealed record ExtractionOptions
 
     /// <summary>ZIP/EPUB decompression guard: stop after this many total bytes. Default 512 MB.</summary>
     public long MaxDecompressedBytes { get; init; } = 512L * 1024 * 1024;
+
+    /// <summary>ZIP/EPUB/EML entry guard: stop after this many container entries. Default 10,000.</summary>
+    public int MaxContainerEntries { get; init; } = 10_000;
+
+    /// <summary>Optional callback invoked when extraction skips part of a container or recovers from a non-fatal issue.</summary>
+    public Action<ExtractionWarning>? WarningSink { get; init; }
+}
+
+/// <summary>
+/// Describes a non-fatal extraction issue such as a skipped archive entry, unsupported
+/// attachment, or decompression limit. Warnings indicate partial success.
+/// </summary>
+public sealed record ExtractionWarning(string Code, string Source, string Message);
+
+/// <summary>
+/// Stable warning codes emitted for recoverable, non-fatal extraction issues.
+/// Callers can switch on these constants to decide whether to accept, retry, reject,
+/// or manually review a partially extracted document.
+/// </summary>
+public static class ExtractionWarningCodes
+{
+    /// <summary>A container manifest, such as EPUB META-INF/container.xml, was missing or unreadable.</summary>
+    public const string ContainerManifestMissing = "container.manifestMissing";
+
+    /// <summary>A container spine, manifest, or ordered entry list was empty or unreadable.</summary>
+    public const string ContainerSpineEmpty = "container.spineEmpty";
+
+    /// <summary>A container entry was referenced by metadata but was not present in the container.</summary>
+    public const string ContainerEntryMissing = "container.entryMissing";
+
+    /// <summary>A container had more entries than <see cref="ExtractionOptions.MaxContainerEntries"/> allows.</summary>
+    public const string ContainerEntryLimit = "container.entryLimit";
+
+    /// <summary>An entry was skipped because it would exceed <see cref="ExtractionOptions.MaxDecompressedBytes"/>.</summary>
+    public const string ContainerByteLimit = "container.byteLimit";
+
+    /// <summary>An entry was skipped because no safe extractor is registered for its type.</summary>
+    public const string ContainerUnsupportedEntry = "container.unsupportedEntry";
+
+    /// <summary>An entry was selected for extraction but failed independently of the rest of the document.</summary>
+    public const string ContainerEntryFailed = "container.entryFailed";
 }
 
 /// <summary>
@@ -664,9 +731,13 @@ public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage
     /// <summary>Structured failure category; <see cref="ExtractionErrorKind.None"/> on success.</summary>
     public ExtractionErrorKind ErrorKind { get; init; } = ExtractionErrorKind.None;
 
+    /// <summary>Non-fatal issues encountered during extraction, such as skipped archive entries.</summary>
+    public IReadOnlyList<ExtractionWarning> Warnings { get; init; } = Array.Empty<ExtractionWarning>();
+
     /// <summary>Creates a successful extraction result.</summary>
-    public static ExtractionResult Success(string text, string? extractorName = null, TimeSpan duration = default)
-        => new(true, text, null) { ExtractorName = extractorName, Duration = duration };
+    public static ExtractionResult Success(string text, string? extractorName = null, TimeSpan duration = default,
+        IReadOnlyList<ExtractionWarning>? warnings = null)
+        => new(true, text, null) { ExtractorName = extractorName, Duration = duration, Warnings = warnings ?? Array.Empty<ExtractionWarning>() };
 
     /// <summary>Creates a failed extraction result.</summary>
     public static ExtractionResult Failure(string error,
@@ -690,10 +761,14 @@ public record ExtractionMetadataResult(bool IsSuccess, string Text, Dictionary<s
     /// <summary>Structured failure category; <see cref="ExtractionErrorKind.None"/> on success.</summary>
     public ExtractionErrorKind ErrorKind { get; init; } = ExtractionErrorKind.None;
 
+    /// <summary>Non-fatal issues encountered during extraction, such as skipped archive entries.</summary>
+    public IReadOnlyList<ExtractionWarning> Warnings { get; init; } = Array.Empty<ExtractionWarning>();
+
     /// <summary>Creates a successful metadata extraction result.</summary>
     public static ExtractionMetadataResult Success(string text, Dictionary<string, string> metadata,
-        string? extractorName = null, TimeSpan duration = default)
-        => new(true, text, metadata, null) { ExtractorName = extractorName, Duration = duration };
+        string? extractorName = null, TimeSpan duration = default,
+        IReadOnlyList<ExtractionWarning>? warnings = null)
+        => new(true, text, metadata, null) { ExtractorName = extractorName, Duration = duration, Warnings = warnings ?? Array.Empty<ExtractionWarning>() };
 
     /// <summary>Creates a failed metadata extraction result.</summary>
     public static ExtractionMetadataResult Failure(string error,

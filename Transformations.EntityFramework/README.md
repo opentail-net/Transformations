@@ -16,7 +16,7 @@ EF Core is powerful, but two things require disproportionate effort: handling tr
 ## 📦 Install
 
 ```xml
-<PackageReference Include="Transformations.EntityFramework" Version="2.0.2" />
+<PackageReference Include="Transformations.EntityFramework" Version="{{Version}}" />
 ```
 
 ---

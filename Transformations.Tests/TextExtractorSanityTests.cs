@@ -205,6 +205,38 @@ public class TextExtractorSanityTests
     }
 
     [Test]
+    public void EmlExtractor_UnsupportedAttachment_AddsWarning()
+    {
+        var message = new MimeMessage();
+        message.Subject = "Attachment warning";
+
+        var body = new TextPart("plain") { Text = "Body survives." };
+        var attachment = new MimePart("application", "octet-stream")
+        {
+            Content = new MimeContent(new MemoryStream(new byte[] { 1, 2, 3 })),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64,
+            FileName = "payload.bin"
+        };
+
+        var multipart = new MimeKit.Multipart("mixed");
+        multipart.Add(body);
+        multipart.Add(attachment);
+        message.Body = multipart;
+
+        using var mem = new MemoryStream();
+        message.WriteTo(mem);
+
+        var result = _extractor.GetText("attachment.eml", mem.ToArray());
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Contain("Body survives."));
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerUnsupportedEntry));
+        Assert.That(result.Warnings[0].Source, Is.EqualTo("payload.bin"));
+    }
+
+    [Test]
     public void EmlExtractor_IncludesEssentialMetadata()
     {
         var message = new MimeMessage();
@@ -679,6 +711,151 @@ public class TextExtractorSanityTests
     }
 
     [Test]
+    public void ZipExtractor_UnsupportedEntry_AddsWarningAndKeepsSupportedText()
+    {
+        using var zipMs = new MemoryStream();
+        using (var zip = new ZipArchive(zipMs, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var textEntry = zip.CreateEntry("hello.txt");
+            using (var writer = new StreamWriter(textEntry.Open()))
+                writer.Write("Hello from supported entry");
+
+            var binaryEntry = zip.CreateEntry("payload.bin");
+            using var binary = binaryEntry.Open();
+            binary.Write(new byte[] { 1, 2, 3 });
+        }
+
+        var result = _extractor.GetText("archive.zip", zipMs.ToArray());
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Contain("Hello from supported entry"));
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerUnsupportedEntry));
+        Assert.That(result.Warnings[0].Source, Is.EqualTo("payload.bin"));
+    }
+
+    [Test]
+    public void ZipExtractor_ByteLimit_AddsWarning()
+    {
+        using var zipMs = new MemoryStream();
+        using (var zip = new ZipArchive(zipMs, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = zip.CreateEntry("large.txt");
+            using var writer = new StreamWriter(entry.Open());
+            writer.Write("This text is larger than the configured decompression budget.");
+        }
+
+        var result = _extractor.GetText("archive.zip", zipMs.ToArray(),
+            new ExtractionOptions { MaxDecompressedBytes = 8 });
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerByteLimit));
+    }
+
+    [Test]
+    public void ZipExtractor_EntryLimit_AddsWarningAndStops()
+    {
+        using var zipMs = new MemoryStream();
+        using (var zip = new ZipArchive(zipMs, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            for (int i = 1; i <= 3; i++)
+            {
+                var entry = zip.CreateEntry($"entry{i}.txt");
+                using var writer = new StreamWriter(entry.Open());
+                writer.Write($"Entry {i}");
+            }
+        }
+
+        var result = _extractor.GetText("archive.zip", zipMs.ToArray(),
+            new ExtractionOptions { MaxContainerEntries = 2 });
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Contain("Entry 1"));
+        Assert.That(result.Text, Does.Contain("Entry 2"));
+        Assert.That(result.Text, Does.Not.Contain("Entry 3"));
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerEntryLimit));
+    }
+
+    [Test]
+    public void ZipExtractor_NestedZip_IsReportedAsUnsupportedEntry()
+    {
+        using var innerMs = new MemoryStream();
+        using (var innerZip = new ZipArchive(innerMs, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var innerEntry = innerZip.CreateEntry("inner.txt");
+            using var writer = new StreamWriter(innerEntry.Open());
+            writer.Write("Nested text");
+        }
+
+        using var outerMs = new MemoryStream();
+        using (var outerZip = new ZipArchive(outerMs, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var nested = outerZip.CreateEntry("nested.zip");
+            using var nestedStream = nested.Open();
+            nestedStream.Write(innerMs.ToArray());
+        }
+
+        var result = _extractor.GetText("archive.zip", outerMs.ToArray());
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Not.Contain("Nested text"));
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerUnsupportedEntry));
+        Assert.That(result.Warnings[0].Source, Is.EqualTo("nested.zip"));
+    }
+
+    [Test]
+    public void ZipExtractor_Utf16TextEntry_ExtractsText()
+    {
+        using var zipMs = new MemoryStream();
+        using (var zip = new ZipArchive(zipMs, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = zip.CreateEntry("utf16.txt");
+            using var stream = entry.Open();
+            var bytes = Encoding.Unicode.GetPreamble()
+                .Concat(Encoding.Unicode.GetBytes("Hello UTF-16 archive text"))
+                .ToArray();
+            stream.Write(bytes);
+        }
+
+        var result = _extractor.GetText("archive.zip", zipMs.ToArray());
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Contain("Hello UTF-16 archive text"));
+        Assert.That(result.Warnings, Is.Empty);
+    }
+
+    [Test]
+    public void ZipExtractor_MalformedZip_ReturnsCorruptedFailure()
+    {
+        var result = _extractor.GetText("archive.zip", Encoding.ASCII.GetBytes("PK\x03\x04not a real zip"));
+
+        Assert.That(result.IsSuccess, Is.False);
+        Assert.That(result.ErrorKind, Is.EqualTo(ExtractionErrorKind.Corrupted));
+    }
+
+    [Test]
+    public void GetTextWithMetadata_IncludesWarningMetadata()
+    {
+        using var zipMs = new MemoryStream();
+        using (var zip = new ZipArchive(zipMs, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = zip.CreateEntry("payload.bin");
+            using var stream = entry.Open();
+            stream.Write(new byte[] { 1, 2, 3 });
+        }
+
+        var result = _extractor.GetTextWithMetadata("archive.zip", zipMs.ToArray());
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Metadata["extraction.warningCount"], Is.EqualTo("1"));
+        Assert.That(result.Metadata["extraction.warnings"], Does.Contain(ExtractionWarningCodes.ContainerUnsupportedEntry));
+    }
+
+    [Test]
     public void ExtractionResult_IncludesExtractorNameAndDuration()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("Some text content");
@@ -1049,6 +1226,71 @@ public class TextExtractorSanityTests
         Assert.That(result.Text, Does.Contain("See attached."));
         Assert.That(result.Text, Does.Contain("[Attachment: data.json]"));
         Assert.That(result.Text, Does.Contain("AttachmentContent"));
+    }
+
+    [Test]
+    public void EmlExtractor_AttachmentByteLimit_AddsWarningAndKeepsBody()
+    {
+        var message = new MimeMessage();
+        message.Subject = "Attachment limit";
+
+        var textPart = new TextPart("plain") { Text = "Body still extracts." };
+        var attachment = new MimePart("text", "plain")
+        {
+            Content = new MimeContent(new MemoryStream(Encoding.UTF8.GetBytes("attachment text over budget"))),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64,
+            FileName = "large.txt"
+        };
+
+        var multipart = new MimeKit.Multipart("mixed");
+        multipart.Add(textPart);
+        multipart.Add(attachment);
+        message.Body = multipart;
+
+        using var mem = new MemoryStream();
+        message.WriteTo(mem);
+
+        var result = _extractor.GetText("email.eml", mem.ToArray(),
+            new ExtractionOptions { MaxDecompressedBytes = 4 });
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Contain("Body still extracts."));
+        Assert.That(result.Text, Does.Not.Contain("[Attachment: large.txt]"));
+        Assert.That(result.Warnings, Has.Count.EqualTo(1));
+        Assert.That(result.Warnings[0].Code, Is.EqualTo(ExtractionWarningCodes.ContainerByteLimit));
+        Assert.That(result.Warnings[0].Source, Is.EqualTo("large.txt"));
+    }
+
+    [Test]
+    public void EmlExtractor_Latin1TextAttachment_ExtractsAttachmentText()
+    {
+        var message = new MimeMessage();
+        message.Subject = "Latin1 attachment";
+
+        var textPart = new TextPart("plain") { Text = "See attached." };
+        var attachment = new MimePart("text", "plain")
+        {
+            Content = new MimeContent(new MemoryStream(Encoding.GetEncoding("ISO-8859-1").GetBytes("café résumé"))),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64,
+            FileName = "latin1.txt"
+        };
+
+        var multipart = new MimeKit.Multipart("mixed");
+        multipart.Add(textPart);
+        multipart.Add(attachment);
+        message.Body = multipart;
+
+        using var mem = new MemoryStream();
+        message.WriteTo(mem);
+
+        var result = _extractor.GetText("email.eml", mem.ToArray());
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Does.Contain("[Attachment: latin1.txt]"));
+        Assert.That(result.Text, Does.Contain("caf"));
+        Assert.That(result.Warnings, Is.Empty);
     }
 
     [Test]

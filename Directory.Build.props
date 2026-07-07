@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
 
-	<Version>2.0.4</Version>
+	<Version>2.0.4.2</Version>
 	<LangVersion>latestMajor</LangVersion>
     <Authors>opentail.net, Dmitri Rechetilov</Authors>
 	<Company>opentail.net</Company>
@@ -42,4 +42,18 @@
   <PropertyGroup Condition="'$(DeprecationErrorLevel)' == 'true'">
     <WarningsAsErrors>$(WarningsAsErrors);CS0618;CS0612</WarningsAsErrors>
   </PropertyGroup>
+
+  <!-- Stamp {{Version}} placeholders in the packed README with the current $(Version) so
+       PackageReference examples never go stale when the version is bumped. -->
+  <Target Name="StampReadmeVersion" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true' and Exists('README.md')">
+    <PropertyGroup>
+      <_StampedReadmePath>$(IntermediateOutputPath)README.md</_StampedReadmePath>
+      <_ReadmeContent>$([System.IO.File]::ReadAllText('README.md').Replace('{{Version}}', '$(Version)'))</_ReadmeContent>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_StampedReadmePath)" Lines="$(_ReadmeContent)" Overwrite="true" />
+    <ItemGroup>
+      <None Remove="README.md" />
+      <None Include="$(_StampedReadmePath)" Pack="true" PackagePath="README.md" Visible="false" />
+    </ItemGroup>
+  </Target>
 </Project>

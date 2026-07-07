@@ -40,6 +40,7 @@ public class EpubExtractor : ITextExtractor
     {
         long totalBytes = 0;
         long maxBytes = options?.MaxDecompressedBytes ?? 512L * 1024 * 1024;
+        int maxEntries = options?.MaxContainerEntries ?? 10_000;
         int start = options?.StartPage ?? 1;
         int end = options?.EndPage ?? int.MaxValue;
         int max = options?.MaxPages.HasValue == true ? (start - 1) + options.MaxPages.Value : int.MaxValue;
@@ -50,33 +51,60 @@ public class EpubExtractor : ITextExtractor
 
         // 1. Find the OPF path via META-INF/container.xml
         var opfPath = FindOpfPath(zip);
-        if (opfPath == null) return string.Empty;
+        if (opfPath == null)
+        {
+            Warn(options, ExtractionWarningCodes.ContainerManifestMissing, "META-INF/container.xml", "EPUB package manifest could not be found or read.");
+            return string.Empty;
+        }
 
         // 2. Parse the OPF to get the spine (reading order)
         var spineItems = ParseSpine(zip, opfPath);
+        if (spineItems.Count == 0)
+            Warn(options, ExtractionWarningCodes.ContainerSpineEmpty, opfPath, "EPUB spine was empty or could not be read.");
 
         // 3. Extract text from each spine item in order
         var sb = new StringBuilder();
         int chapterNum = 0;
+        int processedEntries = 0;
 
         foreach (var (href, mediaType) in spineItems)
         {
-            if (!IsHtmlMediaType(mediaType)) continue;
+            if (processedEntries >= maxEntries)
+            {
+                Warn(options, ExtractionWarningCodes.ContainerEntryLimit, href, $"Stopped after {processedEntries} EPUB spine entries.");
+                break;
+            }
+
+            processedEntries++;
+
+            if (!IsHtmlMediaType(mediaType))
+            {
+                Warn(options, ExtractionWarningCodes.ContainerUnsupportedEntry, href, $"Skipped EPUB spine item with media type '{mediaType}'.");
+                continue;
+            }
 
             chapterNum++;
             if (chapterNum < start) continue;
             if (chapterNum > end) break;
 
             var entry = FindEntry(zip, href);
-            if (entry == null) continue;
-            if (totalBytes + entry.Length > maxBytes) break;
+            if (entry == null)
+            {
+                Warn(options, ExtractionWarningCodes.ContainerEntryMissing, href, "EPUB spine item was not found in the archive.");
+                continue;
+            }
+
+            if (totalBytes + entry.Length > maxBytes)
+            {
+                Warn(options, ExtractionWarningCodes.ContainerByteLimit, entry.FullName, $"Skipped EPUB chapter because decompressed bytes would exceed {maxBytes}.");
+                break;
+            }
 
             try
             {
                 using var entryStream = entry.Open();
-                using var entryMs = new MemoryStream();
-                entryStream.CopyTo(entryMs);
-                totalBytes += entryMs.Length;
+                using var entryMs = CopyToMemoryWithLimit(entryStream, maxBytes - totalBytes, out long copiedBytes);
+                totalBytes += copiedBytes;
                 entryMs.Position = 0;
 
                 var text = _htmlExtractor.ExtractFromStream(entryMs, options);
@@ -88,9 +116,9 @@ public class EpubExtractor : ITextExtractor
                     sb.AppendLine();
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip unreadable chapters
+                Warn(options, ExtractionWarningCodes.ContainerEntryFailed, entry.FullName, ex.Message);
             }
         }
 
@@ -164,4 +192,35 @@ public class EpubExtractor : ITextExtractor
     private static bool IsHtmlMediaType(string mediaType) =>
         mediaType.Contains("html", StringComparison.OrdinalIgnoreCase) ||
         mediaType.Contains("xhtml", StringComparison.OrdinalIgnoreCase);
+
+    private static MemoryStream CopyToMemoryWithLimit(Stream source, long remainingBytes, out long copiedBytes)
+    {
+        var destination = new MemoryStream();
+        var buffer = new byte[81920];
+        copiedBytes = 0;
+
+        try
+        {
+            while (true)
+            {
+                int read = source.Read(buffer, 0, buffer.Length);
+                if (read == 0)
+                    return destination;
+
+                if (copiedBytes + read > remainingBytes)
+                    throw new InvalidDataException("EPUB chapter exceeded the configured decompression byte limit.");
+
+                destination.Write(buffer, 0, read);
+                copiedBytes += read;
+            }
+        }
+        catch
+        {
+            destination.Dispose();
+            throw;
+        }
+    }
+
+    private static void Warn(ExtractionOptions? options, string code, string source, string message)
+        => options?.WarningSink?.Invoke(new ExtractionWarning(code, source, message));
 }

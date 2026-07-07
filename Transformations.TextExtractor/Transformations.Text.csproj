@@ -12,7 +12,7 @@
 		<AssemblyName>Transformations.Text</AssemblyName>
 		<RootNamespace>Transformations</RootNamespace>
 		<PackageId>Transformations.Text</PackageId>
-		<Version>2.0.4</Version>
+		<Version>2.0.4.2</Version>
 		<Description>Multi-format text extraction and RAG preparation library for .NET — PDF, DOCX, PPTX, Excel, HTML, Markdown, JSON, YAML, CSV, EML, MSG, ODT, RTF, EPUB, ZIP, and more. Includes RAG chunking with provenance, table-mode control, and a fluent DI builder.</Description>
 		<PackageTags>transformations;text;extraction;rag;pdf;docx;pptx;xlsx;html;markdown;json;yaml;csv;eml;msg;odt;rtf;epub;zip;chunker</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>

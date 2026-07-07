@@ -55,15 +55,15 @@ Pick what you need:
 
 ```xml
 <!-- All-in-one -->
-<PackageReference Include="Transformations" Version="2.0.2" />
+<PackageReference Include="Transformations" Version="{{Version}}" />
 
 <!-- Or pick your slice -->
-<PackageReference Include="Transformations.Core" Version="2.0.2" />
-<PackageReference Include="Transformations.Data" Version="2.0.2" />
-<PackageReference Include="Transformations.Web" Version="2.0.2" />
-<PackageReference Include="Transformations.Dapper" Version="2.0.2" />
-<PackageReference Include="Transformations.EntityFramework" Version="2.0.2" />
-<PackageReference Include="Transformations.Mapping" Version="2.0.2" />
+<PackageReference Include="Transformations.Core" Version="{{Version}}" />
+<PackageReference Include="Transformations.Data" Version="{{Version}}" />
+<PackageReference Include="Transformations.Web" Version="{{Version}}" />
+<PackageReference Include="Transformations.Dapper" Version="{{Version}}" />
+<PackageReference Include="Transformations.EntityFramework" Version="{{Version}}" />
+<PackageReference Include="Transformations.Mapping" Version="{{Version}}" />
 ```
 
 ---

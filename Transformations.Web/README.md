@@ -16,7 +16,7 @@ ASP.NET Core's native APIs for configuration, session, and cookies all deal in u
 ## 📦 Install
 
 ```xml
-<PackageReference Include="Transformations.Web" Version="2.0.2" />
+<PackageReference Include="Transformations.Web" Version="{{Version}}" />
 ```
 
 ---

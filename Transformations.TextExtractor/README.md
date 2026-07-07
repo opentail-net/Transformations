@@ -7,14 +7,14 @@ A comprehensive, first-class text extraction and transformation library for .NET
 - **18 built-in extractors** — PDF, DOCX, PPTX, Excel, HTML, Markdown, CSV, EML, MSG, ODT/ODP, RTF, EPUB, JSON, XML, YAML, log files, source code, and ZIP archives
 - **DI-ready** — `IDocumentTextExtractor` facade interface; register with one call via `AddTextExtractor()`; fluent `TextExtractorBuilder` for fine-grained pipeline control
 - **Async & streaming** — `GetTextAsync` / `GetTextWithMetadataAsync` accept `Stream` directly; `GetTextBatchAsync` parallelises multi-document pipelines
-- **Extraction options** — per-call `ExtractionOptions`: `MaxCharacters`, `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers`, `TableMode`, `MaxDecompressedBytes`
+- **Extraction options** — per-call `ExtractionOptions`: `MaxCharacters`, `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers`, `TableMode`, `MaxDecompressedBytes`, `MaxContainerEntries`, and `WarningSink`
 - **Table rendering modes** — `TableMode.KeyValue` (default), `Markdown` (pipe tables), `Csv`, or `Omit`; applies to DOCX, HTML, Excel, and ODT tables
 - **Content-type sniffing** — magic-byte fallback when the extension is wrong or missing; detects PDF, DOCX/XLSX/PPTX, MSG, HTML, RTF, EML, EPUB, and ZIP families
 - **RAG chunking** — `TextChunker` splits text by characters (word-boundary-aware), sentences, paragraphs, Markdown sections, or token count with configurable overlap; chunks carry `PageNumber?` and `HeadingPath?` provenance metadata
 - **Extensible** — implement `ITextExtractor` and plug in a custom format; or use `TextExtractorBuilder` to add, replace, or disable built-in extractors
 - **Encoding-aware** — all extractors honour BOM and detect encoding from stream headers
 - **ILogger integration** — structured log events (extractor used, char count, duration, failures) via `ILogger<TextExtractor>`; zero-config when logging is wired via DI
-- **Rich result metadata** — `ExtractionResult.ExtractorName` and `.Duration` on every call; format-specific document properties (PDF title/author/page count, DOCX title/author/revision, MSG subject/sender/date, and more)
+- **Rich result metadata** — `ExtractionResult.ExtractorName`, `.Duration`, and `.Warnings` on every call; format-specific document properties (PDF title/author/page count, DOCX title/author/revision, MSG subject/sender/date, and more)
 - **Zero new dependencies for RTF and EPUB** — both formats parsed with BCL only (self-contained RTF state machine; EPUB via `System.IO.Compression` + built-in HTML extractor)
 - **JSON Schema utilities** — validate, list errors, normalize AI-emitted JSON (strips code fences), compare payloads
 - **Markdown structure** — build heading maps, extract sections, normalize, compare
@@ -129,10 +129,10 @@ public class DocumentProcessor(IDocumentTextExtractor extractor)
 | `static DetectFormat(byte[])` | Sniff format from magic bytes; returns extension or `null` |
 | `static CreateDefaultExtractors()` | Build the default extractor pipeline |
 
-**`ExtractionResult`** — `bool IsSuccess`, `string Text`, `ExtractionErrorKind ErrorKind`, `string? ErrorMessage`, `string? ExtractorName`, `TimeSpan Duration`  
-**`ExtractionMetadataResult`** — adds `Dictionary<string, string> Metadata`, `string? ExtractorName`, `TimeSpan Duration`
+**`ExtractionResult`** — `bool IsSuccess`, `string Text`, `ExtractionErrorKind ErrorKind`, `string? ErrorMessage`, `string? ExtractorName`, `TimeSpan Duration`, `IReadOnlyList<ExtractionWarning> Warnings`  
+**`ExtractionMetadataResult`** — adds `Dictionary<string, string> Metadata`, `string? ExtractorName`, `TimeSpan Duration`, `IReadOnlyList<ExtractionWarning> Warnings`
 
-Common metadata keys: `file.name`, `file.extension`, `file.bytes`, `text.length`, `text.lineCount`, `text.wordCount`, `extraction.extractor`, `extraction.durationMs`
+Common metadata keys: `file.name`, `file.extension`, `file.bytes`, `text.length`, `text.lineCount`, `text.wordCount`, `extraction.extractor`, `extraction.durationMs`. If non-fatal container issues occur, metadata also includes `extraction.warningCount` and `extraction.warnings`.
 
 Format-specific metadata:
 - **Markdown** — `markdown.headingCount`, `markdown.sectionCount`, `markdown.headings`
@@ -158,10 +158,49 @@ var options = new ExtractionOptions
     IncludePageMarkers  = true,            // insert [Page N], [Slide N], [Chapter N]
     TableMode           = TableMode.Csv,   // KeyValue | Markdown | Csv | Omit
     MaxDecompressedBytes = 256 * 1024 * 1024, // ZIP bomb guard (default 512 MB)
+    MaxContainerEntries = 5_000,           // archive/attachment guard (default 10,000)
+    WarningSink         = warning => logger.LogWarning(
+        "{Code} while extracting {Source}: {Message}",
+        warning.Code,
+        warning.Source,
+        warning.Message),
 };
 ```
 
 `TableMode` applies to any extractor that produces tables: DOCX, HTML, Excel (`.xlsx`/`.xls`), and ODT.
+
+ZIP, EPUB, and EML attachment extraction can partially succeed. Unsupported entries, skipped chapters, unreadable attachments, and decompression/entry limits are reported as `ExtractionWarning` records instead of being silently swallowed.
+
+### Partial success contract
+
+Extraction has three outcomes:
+
+| Outcome | Result shape | Meaning |
+|---------|--------------|---------|
+| Full success | `IsSuccess == true`, `Warnings.Count == 0` | The selected extractor completed without known skipped content. |
+| Partial success | `IsSuccess == true`, `Warnings.Count > 0` | The top-level document was readable, but some container content was skipped, missing, unsupported, or over a configured limit. |
+| Failure | `IsSuccess == false`, `ErrorKind != None` | The top-level document could not be extracted. `Text` is empty and `ErrorMessage` explains the failure. |
+
+Warnings are recoverable issues. They do not mean the returned text is invalid; they mean it may be incomplete. For ingestion systems, a common policy is to index full successes automatically, index partial successes with an audit flag, and reject or quarantine failures.
+
+Stable warning codes are exposed as `ExtractionWarningCodes` constants:
+
+| Code | Constant | Typical cause |
+|------|----------|---------------|
+| `container.manifestMissing` | `ContainerManifestMissing` | EPUB `META-INF/container.xml` is missing or unreadable. |
+| `container.spineEmpty` | `ContainerSpineEmpty` | EPUB OPF/spine exists but no readable ordered content could be found. |
+| `container.entryMissing` | `ContainerEntryMissing` | EPUB metadata references a chapter that is not present in the archive. |
+| `container.entryLimit` | `ContainerEntryLimit` | ZIP, EPUB, or EML had more entries than `MaxContainerEntries`. |
+| `container.byteLimit` | `ContainerByteLimit` | ZIP, EPUB, or EML attachment extraction would exceed `MaxDecompressedBytes`. |
+| `container.unsupportedEntry` | `ContainerUnsupportedEntry` | ZIP entry or EML attachment has no safe registered extractor. |
+| `container.entryFailed` | `ContainerEntryFailed` | An individual entry was selected for extraction but failed independently of the top-level document. |
+
+Security limits are intentionally conservative and apply before routing content deeper into the pipeline:
+
+- `MaxDecompressedBytes` caps total decompressed ZIP entries, EPUB chapter bytes, and decoded EML attachment bytes.
+- `MaxContainerEntries` caps ZIP entries, EPUB spine items, and EML attachments.
+- Nested ZIPs are not recursively extracted by the default pipeline; they are reported as unsupported entries.
+- Binary-looking unknown files are not extracted via the text fallback inside ZIP/EML containers.
 
 | `TableMode` | Output |
 |-------------|--------|
@@ -316,15 +355,15 @@ var extractor = new TextExtractor(new[] { new WordPerfectExtractor() }.Concat(pi
 | HTML | `.html`, `.htm` | `TableMode` |
 | OpenDocument Text/Presentation | `.odt`, `.odp` | `TableMode` |
 | RTF | `.rtf` | Self-contained parser; no extra dependency |
-| EPUB | `.epub` | ZIP + OPF spine + HTML; `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers` |
+| EPUB | `.epub` | ZIP + OPF spine + HTML; `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers`, `MaxDecompressedBytes`, `MaxContainerEntries` |
 | Markdown | `.md`, `.markdown` | |
 | CSV | `.csv` | |
 | Outlook email | `.msg` | Subject, sender, date |
-| Internet email | `.eml` | Full metadata + attachment text |
+| Internet email | `.eml` | Full metadata + attachment text; unsupported/failed attachments produce warnings |
 | JSON | `.json` | |
 | XML / Config | `.xml`, `.config` | |
 | YAML | `.yaml`, `.yml` | |
-| ZIP archive | `.zip` | Routes each entry through the pipeline; `MaxDecompressedBytes` ZIP-bomb guard |
+| ZIP archive | `.zip` | Routes known entries through the pipeline; `MaxDecompressedBytes` and `MaxContainerEntries` guards |
 | Log / Output | `.log`, `.out` | |
 | Source code | `.cs`, `.py`, `.js`, `.ts`, `.cpp`, `.h`, `.java`, `.ps1`, `.sh`, `.go`, `.rs`, `.sql`, `.rb`, `.php`, `.swift`, `.kt`, `.scala`, `.fs`, `.vb`, `.lua`, `.r`, `.m`, `.dart` | |
 | Plain text (fallback) | any | |
@@ -361,7 +400,9 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 **`ExtractionOptions` expanded:**
 - `MaxPages`, `StartPage`, `EndPage` — page/slide/chapter windowing for PDF, PPTX, EPUB
 - `IncludePageMarkers` — inserts `[Page N]`, `[Slide N]`, `[Chapter N]` markers in DOCX, PDF, PPTX, EPUB output
-- `MaxDecompressedBytes` — ZIP bomb guard (default 512 MB); honoured by `ZipExtractor` and `EpubExtractor`
+- `MaxDecompressedBytes` — ZIP bomb guard (default 512 MB); honoured by `ZipExtractor`, `EpubExtractor`, and EML attachment extraction
+- `MaxContainerEntries` — archive/attachment entry guard (default 10,000); honoured by ZIP, EPUB, and EML attachment extraction
+- `WarningSink` and result `.Warnings` — report non-fatal partial extraction issues such as unsupported entries, missing EPUB chapters, failed attachments, and container limits
 
 **`TableMode` enum** — controls table rendering across all table-capable extractors:
 - `KeyValue` (default) — `Header: Value | ...` key-value rows
