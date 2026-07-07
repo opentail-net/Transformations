@@ -10,6 +10,19 @@ The .NET extension method library that kills boilerplate. Type conversions, stri
 
 ---
 
+## 🆕 What's New in 2.0
+
+- **`Transformations.Mapping`** — compile-time object mapper. Zero reflection, NativeAOT safe, source-generated `ToDto()` / `FromDto()` / `ProjectTo()` methods with `TXMAP0xx` diagnostics that catch unmapped members at build time.
+- **`Transformations.Text`** — multi-format text extraction for RAG pipelines. PDF, DOCX, PPTX, EPUB, RTF, HTML, Markdown, ODT, ZIP and more — with chunking, `TableMode`, and per-chunk provenance (page number, heading path).
+- **`Transformations.Analyzers`** — Roslyn analyzer bundled into the main package. `TX0001` fires on deprecated API calls with a one-click lightbulb fix.
+- **`StringPluralizationExtensions`** — regex-based English pluralization that handles irregulars (`child→children`, `person→people`, `goose→geese`) and standard suffix rules.
+- **`ObjectDelta`** — shallow object diff with `[SkipDelta]` opt-out; useful for audit logging and change detection without reflection overhead at runtime.
+- **`SemanticStringComparer`** — intent-based matching for phone numbers, emails, and other normalised formats where `==` gives the wrong answer.
+- **`DiagnosticsProbe`** — process metrics including optional GPU/VRAM probing; no external dependency.
+- **Deprecation hygiene** — legacy APIs kept under `[Obsolete]` with explicit replacements; `DEPRECATION_POLICY.md` tracks the removal timeline.
+
+---
+
 ## Why This Exists
 
 Every .NET project ends up writing the same utility code. Safe type conversion with fallbacks. String truncation that doesn't break HTML entities. Date arithmetic that handles edge cases. Retry loops with backoff. Pluralization. CSV export. DataRow extraction that doesn't throw on `DBNull`.

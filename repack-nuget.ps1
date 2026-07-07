@@ -24,7 +24,8 @@ try {
         "Transformations.Web/Transformations.Web.csproj",
         "Transformations.Dapper/Transformations.Dapper.csproj",
         "Transformations.EntityFramework/Transformations.EntityFramework.csproj",
-        "Transformations.Mapping/Transformations.Mapping.csproj"
+        "Transformations.Mapping/Transformations.Mapping.csproj",
+        "Transformations.TextExtractor/Transformations.Text.csproj"
     )
 
     foreach ($project in $packProjects) {
@@ -37,3 +38,5 @@ try {
 finally {
     Pop-Location
 }
+
+if ([Environment]::UserInteractive -and -not $env:CI) { Pause }
