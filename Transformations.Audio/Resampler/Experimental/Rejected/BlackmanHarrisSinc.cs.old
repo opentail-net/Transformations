@@ -1,0 +1,161 @@
+// ============================================================================
+// RETIRED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a candidate that was tried and retired,
+// kept specifically so future mining/pruning sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: sinc_v4/v4 - not broken, redundant. Per-scenario comparison
+// against sinc_v3 (2026-07-07) showed sinc_v4 tied sinc_v3 to 2 decimal
+// places on 5 of 7 scenarios, with the other 2 (Alias Stress, its best
+// case) only ~0.1 dB apart (34.37 dB vs 34.27 dB) - never distinctly ahead
+// anywhere. This was already flagged as a risk in this file's original
+// remarks below ("the gap is small enough that its main value is the
+// negative result"). Kept as evidence that, at these rolloff/half-width
+// settings, Blackman-Harris and Kaiser windows are practically
+// interchangeable - a real (if modest) finding, just not one that
+// justifies an ongoing separate A/B candidate once confirmed.
+// ============================================================================
+
+using System.Collections.Concurrent;
+
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// RETIRED - see the file-header banner above and Rejected/README.md before reviving or
+/// deleting this file.
+///
+/// Windowed-sinc resampler using a 4-term Blackman-Harris window in place of the
+/// Hann/raised-cosine/Kaiser windows used by the other sinc candidates.
+/// </summary>
+/// <remarks>
+/// Idea mined from rubato's <c>windows.rs</c> (BlackmanHarris variant) and soxr's window
+/// options. Blackman-Harris trades a slightly wider main lobe for far lower sidelobes
+/// (~-92 dB) than Hann (~-31 dB) or a modest-beta Kaiser window, which should show up as
+/// better broadband/alias suppression at the same kernel half-width.
+/// </remarks>
+public static class BlackmanHarrisSinc
+{
+    private const int DefaultHalfWidth = 48;
+    private const double DefaultRolloff = 0.96;
+
+    private const double A0 = 0.35875;
+    private const double A1 = 0.48829;
+    private const double A2 = 0.14128;
+    private const double A3 = 0.01168;
+
+    private static readonly ConcurrentDictionary<KernelKey, double[]> KernelCache = new();
+
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        => Resample(inputData, inRate, outRate, channels, DefaultHalfWidth, DefaultRolloff);
+
+    public static float[] Resample(
+        float[] inputData,
+        int inRate,
+        int outRate,
+        int channels,
+        int halfWidth,
+        double rolloff)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (halfWidth <= 0)
+            throw new ArgumentException("Kernel half-width must be positive.");
+        if (rolloff <= 0 || rolloff > 1)
+            throw new ArgumentException("Rolloff must be greater than 0 and less than or equal to 1.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        int inputFrames = inputData.Length / channels;
+        int outputFrames = (int)Math.Round(inputFrames * (double)outRate / inRate);
+        var output = new float[outputFrames * channels];
+        double ratio = inRate / (double)outRate;
+        double cutoff = Math.Min(1.0, outRate / (double)inRate) * rolloff;
+
+        Parallel.For(0, outputFrames, outputFrame =>
+        {
+            double sourcePosition = outputFrame * ratio;
+            int center = (int)Math.Floor(sourcePosition);
+            double frac = sourcePosition - center;
+            double[] kernel = KernelCache.GetOrAdd(
+                new KernelKey(halfWidth, Quantize(cutoff), Quantize(frac)),
+                _ => BuildKernel(halfWidth, cutoff, frac));
+
+            for (int channel = 0; channel < channels; channel++)
+            {
+                double sum = 0;
+                double weightSum = 0;
+                for (int tap = 0; tap < kernel.Length; tap++)
+                {
+                    int inputFrame = Clamp(center - halfWidth + tap + 1, 0, inputFrames - 1);
+                    double weight = kernel[tap];
+                    sum += inputData[inputFrame * channels + channel] * weight;
+                    weightSum += weight;
+                }
+
+                output[outputFrame * channels + channel] = (float)(sum / weightSum);
+            }
+        });
+
+        return output;
+    }
+
+    private static double[] BuildKernel(int halfWidth, double cutoff, double frac)
+    {
+        int length = halfWidth * 2;
+        var kernel = new double[length];
+
+        for (int tap = 0; tap < length; tap++)
+        {
+            int offset = tap - halfWidth + 1;
+            double distance = frac - offset;
+            double normalizedDistance = distance / halfWidth;
+            if (Math.Abs(normalizedDistance) > 1)
+                continue;
+
+            kernel[tap] = cutoff * Sinc(cutoff * distance) * BlackmanHarrisWindow(normalizedDistance);
+        }
+
+        return kernel;
+    }
+
+    /// <summary>4-term Blackman-Harris window, parameterized over t in [-1, 1].</summary>
+    private static double BlackmanHarrisWindow(double t)
+    {
+        double x = (t + 1) * 0.5; // remap to [0, 1]
+        return A0
+            - A1 * Math.Cos(2 * Math.PI * x)
+            + A2 * Math.Cos(4 * Math.PI * x)
+            - A3 * Math.Cos(6 * Math.PI * x);
+    }
+
+    private static double Sinc(double x)
+    {
+        if (Math.Abs(x) < 1e-12)
+            return 1.0;
+
+        double angle = Math.PI * x;
+        return Math.Sin(angle) / angle;
+    }
+
+    private static int Clamp(int value, int min, int max)
+        => value < min ? min : value > max ? max : value;
+
+    private static int Quantize(double value)
+        => (int)Math.Round(value * 1_000_000);
+
+    private readonly record struct KernelKey(int HalfWidth, int Cutoff, int Fraction);
+}

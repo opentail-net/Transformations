@@ -1,0 +1,208 @@
+// ============================================================================
+// RETIRED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a candidate that was tried and retired,
+// kept specifically so future mining/pruning sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: polyphase/v1 (2026-07-07) - ported from this repo's own earlier
+// prototype (_previous/TestAudioUI/Resamplers/Polyphase.cs): a cached,
+// per-phase Blackman-Harris windowed-sinc filter bank. Two real bugs were
+// found and fixed before this was a fair test: (1) the original prototype
+// padded/indexed the raw interleaved sample array as if frame index equalled
+// sample index, which reads across channel boundaries for channels > 1; (2)
+// the cutoff-frequency argument passed a raw Hz value into a sinc formula
+// that expects a normalized frequency (cutoffHz / sampleRate), producing a
+// nonsensical kernel. Even after both fixes, it was strictly dominated by
+// every live sinc variant on every scenario - Alias Stress 11.13 dB vs
+// sinc_v2's 41.51 dB; Music 20.26 dB vs sinc's 73.05 dB; Speech 16.27 dB vs
+// sinc_v2's 48.75 dB; Transient 16.36 dB vs sinc's 72.27 dB; even Upsample
+// (no aliasing risk at all) 16.76 dB vs sinc's 360.23 dB. The fixed phase
+// quantization (48 phases at HighQuality) puts a hard ceiling on precision
+// that correct cutoff math alone can't fix - the architecture itself, not
+// just the ported bugs, is the bottleneck.
+// ============================================================================
+
+using System.Collections.Concurrent;
+using System.Numerics;
+
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// RETIRED - see the file-header banner above and Rejected/README.md before reviving
+/// or deleting this file.
+/// </summary>
+public static class Polyphase
+{
+    public enum Quality
+    {
+        Fast,
+        Balanced,
+        HighQuality
+    }
+
+    private static readonly ConcurrentDictionary<(int, int, int, Quality), float[][][]> FilterBankCache = new();
+
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        => Resample(inputData, inRate, outRate, channels, Quality.HighQuality);
+
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels, Quality quality)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData == null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        var (filterOrder, phases) = GetQualitySettings(quality);
+        float ratio = (float)inRate / outRate;
+        int inputFrames = inputData.Length / channels;
+        int outputFrameCount = (int)(inputFrames / ratio);
+        float[] output = new float[outputFrameCount * channels];
+
+        var filterBank = FilterBankCache.GetOrAdd((inRate, outRate, channels, quality),
+            _ =>
+            {
+                // Normalized cutoff (cycles per input sample) - the original prototype passed
+                // a raw Hz value straight into the sinc argument here, where the formula
+                // expects a normalized frequency (cutoffHz / sampleRate). That bug made the
+                // kernel's actual cutoff nonsensical (tens of thousands of "cycles per
+                // sample") rather than the intended ~0.45x-of-Nyquist low-pass.
+                double cutoffFreq = 0.45 * Math.Min(inRate, outRate) / (double)inRate;
+                return GenerateInterleavedFilterBank(phases, filterOrder, cutoffFreq, channels);
+            });
+
+        // Split to per-channel buffers before padding/convolving - the original prototype
+        // padded and indexed the raw interleaved array directly, which for channels > 1
+        // reads across channel boundaries (frame index != sample index once interleaved).
+        float[][] paddedChannels = new float[channels][];
+        for (int ch = 0; ch < channels; ch++)
+        {
+            var channelData = new float[inputFrames];
+            for (int f = 0; f < inputFrames; f++)
+                channelData[f] = inputData[f * channels + ch];
+            paddedChannels[ch] = PreprocessBoundaryReflect(channelData, filterOrder);
+        }
+
+        int totalThreads = Environment.ProcessorCount;
+        int dynamicBlockSize = Math.Max(outputFrameCount / (totalThreads * 4), 512);
+        int totalBlocks = (outputFrameCount + dynamicBlockSize - 1) / dynamicBlockSize;
+
+        Parallel.For(0, totalBlocks, blockIdx =>
+        {
+            int start = blockIdx * dynamicBlockSize;
+            int end = Math.Min(outputFrameCount, start + dynamicBlockSize);
+            int halfFilter = filterOrder / 2;
+
+            for (int i = start; i < end; i++)
+            {
+                float fractionalPosition = i * ratio;
+                int baseIndex = (int)fractionalPosition;
+                float localPhaseOffset = fractionalPosition - baseIndex;
+                int phaseIndex = Math.Min((int)(localPhaseOffset * phases), phases - 1);
+                int startIndex = baseIndex - halfFilter + filterOrder;
+
+                for (int ch = 0; ch < channels; ch++)
+                {
+                    float sum = 0.0f;
+                    var filterCoefficients = filterBank[phaseIndex][ch];
+                    var paddedInput = paddedChannels[ch];
+
+                    int vectorSize = Vector<float>.Count;
+                    int j = 0;
+                    for (; j <= filterOrder - vectorSize; j += vectorSize)
+                    {
+                        var inputVec = new Vector<float>(paddedInput, startIndex + j);
+                        var filterVec = new Vector<float>(filterCoefficients, j);
+                        sum += Vector.Dot(inputVec, filterVec);
+                    }
+                    for (; j < filterOrder; j++)
+                    {
+                        sum += paddedInput[startIndex + j] * filterCoefficients[j];
+                    }
+
+                    output[i * channels + ch] = sum;
+                }
+            }
+        });
+
+        return output;
+    }
+
+    private static (int filterOrder, int phases) GetQualitySettings(Quality quality) => quality switch
+    {
+        Quality.Fast => (24, 12),
+        Quality.Balanced => (48, 24),
+        Quality.HighQuality => (96, 48),
+        _ => throw new ArgumentException("Invalid quality setting.")
+    };
+
+    private static float[] GenerateFractionalDelayFilter(int filterOrder, double cutoffFreq, double phaseOffset)
+    {
+        float[] coefficients = new float[filterOrder];
+        int center = filterOrder / 2;
+
+        for (int i = 0; i < filterOrder; i++)
+        {
+            int n = i - center;
+            double sincVal = (n == 0)
+                ? 2 * cutoffFreq
+                : Math.Sin(2 * Math.PI * cutoffFreq * (n - phaseOffset)) / (n - phaseOffset);
+            double window = 0.42 - 0.5 * Math.Cos(2 * Math.PI * i / filterOrder) + 0.08 * Math.Cos(4 * Math.PI * i / filterOrder);
+            coefficients[i] = (float)(sincVal * window);
+        }
+
+        float sum = coefficients.Sum();
+        for (int i = 0; i < coefficients.Length; i++)
+            coefficients[i] /= sum;
+
+        return coefficients;
+    }
+
+    private static float[][][] GenerateInterleavedFilterBank(int phases, int filterOrder, double cutoffFreq, int channels)
+    {
+        float[][][] filterBank = new float[phases][][];
+        for (int phase = 0; phase < phases; phase++)
+        {
+            double phaseOffset = phase / (double)phases;
+            filterBank[phase] = new float[channels][];
+            for (int ch = 0; ch < channels; ch++)
+            {
+                filterBank[phase][ch] = GenerateFractionalDelayFilter(filterOrder, cutoffFreq, phaseOffset);
+            }
+        }
+        return filterBank;
+    }
+
+    private static float[] PreprocessBoundaryReflect(float[] inputData, int filterOrder)
+    {
+        int paddedLength = inputData.Length + 2 * filterOrder;
+        float[] paddedInput = new float[paddedLength];
+
+        for (int i = 0; i < filterOrder; i++)
+        {
+            paddedInput[i] = inputData[filterOrder - i - 1];
+        }
+
+        Array.Copy(inputData, 0, paddedInput, filterOrder, inputData.Length);
+
+        for (int i = 0; i < filterOrder; i++)
+        {
+            paddedInput[inputData.Length + filterOrder + i] = inputData[inputData.Length - i - 1];
+        }
+
+        return paddedInput;
+    }
+}

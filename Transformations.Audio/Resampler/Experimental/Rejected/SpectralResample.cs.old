@@ -1,0 +1,168 @@
+// ============================================================================
+// REJECTED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a mining candidate that was tried and
+// rejected, kept specifically so future mining sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Renaming it to .cs would put it back in the build; do not do
+// that either unless you are deliberately reviving and re-fixing the idea.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected candidates and why each one was rejected.
+//
+// Rejected: fft_resample/v1 (SpectralResample)
+// Source idea: general "Fourier method" whole-buffer spectral resampling
+// (same technique as SciPy's scipy.signal.resample), mined as the
+// arbitrary-ratio conceptual relative of r8brain-free-src's FFT-based
+// overlap-save block convolution (CDSPBlockConvolver.h) - see
+// audio-resampling-libs/r8brain-free-src.
+//
+// Why rejected: NAudio's FastFourierTransform only supports power-of-two
+// lengths, so both the input and output frame counts get rounded up to their
+// own "next power of two" independently. For very common frame-count pairs
+// (e.g. 48000 and 44100 both round up to 65536) fftSizeIn == fftSizeOut, and
+// the spectrum truncation step becomes a complete no-op: the "resampled"
+// output is silently just the first N samples of the ORIGINAL signal at the
+// ORIGINAL rate, not resampled at all. Confirmed by direct diagnostic (see
+// mining notes / conversation history dated 2026-07-07): a 440 Hz tone
+// resampled 48k -> 44.1k came back with SNR -1.29 dB against the true
+// resampled tone, and the fidelity suite failed every gated scenario
+// (SNR ~0.7-3.4 dB vs the 12 dB gate) for exactly this reason.
+// A normalization bug (wrong FFT/IFFT scale factor) was found and fixed
+// first (NAudio's forward FFT already divides by N; the inverse does not
+// divide again - no manual scale factor is needed at all), but fixing that
+// did not fix the core problem above.
+// Properly fixing this needs an arbitrary-length FFT (e.g. Bluestein/chirp-z)
+// or an overlap-add block design like r8brain's real implementation - out of
+// scope for a "small, readable" port. Worth revisiting only if/when a
+// non-power-of-two or overlap-add FFT approach is brought into the project.
+// ============================================================================
+
+using NAudio.Dsp;
+
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// Whole-buffer Fourier-domain resampler: FFT the signal, truncate or zero-pad the
+/// spectrum to the size implied by the new sample count, then inverse FFT.
+/// </summary>
+/// <remarks>
+/// REJECTED - see the file-header banner above and Rejected/README.md before reviving
+/// or deleting this file.
+///
+/// This is the classic "Fourier method" (the same technique behind SciPy's
+/// <c>scipy.signal.resample</c>) and is conceptually the arbitrary-ratio building block
+/// behind r8brain-free-src's FFT-based overlap-save convolution stage
+/// (<c>CDSPBlockConvolver.h</c>) - though r8brain applies it to short overlapping blocks
+/// with a designed filter kernel, while this applies it to the whole buffer directly,
+/// using spectrum truncation itself as a brick-wall anti-alias filter. That brick-wall
+/// truncation has no transition band, so it trades some Gibbs-ringing/edge artifacts
+/// (the whole-buffer transform implicitly assumes the signal is periodic) for anti-alias
+/// suppression that costs no kernel design at all. A previous, mono-only, broken attempt
+/// at this idea lives alongside this one as FFT.cs.old (also rejected, never wired into
+/// the suite); this was a working, multi-channel rewrite that still failed for a
+/// different, more fundamental reason documented above.
+/// </remarks>
+public static class SpectralResample
+{
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        int inputFrames = inputData.Length / channels;
+        int outputFrames = (int)Math.Round(inputFrames * (double)outRate / inRate);
+        if (outputFrames == 0)
+            return Array.Empty<float>();
+
+        float[][] channelData = SplitChannels(inputData, channels);
+        var resampled = new float[channels][];
+        Parallel.For(0, channels, c => resampled[c] = ResampleChannel(channelData[c], outputFrames));
+
+        return CombineChannels(resampled, channels, outputFrames);
+    }
+
+    private static float[] ResampleChannel(float[] channel, int outputFrames)
+    {
+        int inputFrames = channel.Length;
+        int fftSizeIn = NextPowerOfTwo(inputFrames);
+        int fftSizeOut = NextPowerOfTwo(outputFrames);
+
+        var spectrum = new Complex[fftSizeIn];
+        for (int i = 0; i < inputFrames; i++)
+            spectrum[i].X = channel[i];
+
+        FastFourierTransform.FFT(true, Log2(fftSizeIn), spectrum);
+
+        var newSpectrum = new Complex[fftSizeOut];
+        int half = Math.Min(fftSizeIn, fftSizeOut) / 2;
+        for (int i = 0; i <= half; i++)
+            newSpectrum[i] = spectrum[i];
+        for (int i = 1; i < half; i++)
+            newSpectrum[fftSizeOut - i] = spectrum[fftSizeIn - i];
+
+        FastFourierTransform.FFT(false, Log2(fftSizeOut), newSpectrum);
+
+        // NAudio's forward FFT already divides by the transform length, and its inverse
+        // does not divide again - a same-size forward+inverse round trip reproduces the
+        // input exactly with no manual scaling. Copying the (already-normalized) forward
+        // bins into a differently-sized spectrum and running the raw inverse on that is
+        // exactly the band-limited resampling operation, so no extra scale factor belongs
+        // here at all.
+        var output = new float[outputFrames];
+        for (int i = 0; i < outputFrames; i++)
+            output[i] = newSpectrum[i].X;
+
+        return output;
+    }
+
+    private static int NextPowerOfTwo(int n)
+    {
+        int power = 1;
+        while (power < n)
+            power <<= 1;
+        return power;
+    }
+
+    private static int Log2(int powerOfTwo)
+    {
+        int result = 0;
+        while ((powerOfTwo >>= 1) != 0)
+            result++;
+        return result;
+    }
+
+    private static float[][] SplitChannels(float[] inputData, int channels)
+    {
+        int frames = inputData.Length / channels;
+        var output = new float[channels][];
+        for (int c = 0; c < channels; c++)
+        {
+            output[c] = new float[frames];
+            for (int i = 0; i < frames; i++)
+                output[c][i] = inputData[i * channels + c];
+        }
+        return output;
+    }
+
+    private static float[] CombineChannels(float[][] channelData, int channels, int frames)
+    {
+        var output = new float[frames * channels];
+        for (int i = 0; i < frames; i++)
+        {
+            for (int c = 0; c < channels; c++)
+                output[i * channels + c] = channelData[c][i];
+        }
+        return output;
+    }
+}

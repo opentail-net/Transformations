@@ -1,0 +1,145 @@
+using System.Collections.Concurrent;
+
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// Rubato-style oversampled sinc table with Blackman-Harris-squared windowing.
+/// </summary>
+/// <remarks>
+/// Mined from rubato's make_sincs/calculate_cutoff shape: precompute an oversampled windowed
+/// sinc table, then interpolate between adjacent phase tables at runtime.
+/// </remarks>
+public static class RubatoTableSinc
+{
+    private const int SincLength = 128;
+    private const int OversamplingFactor = 256;
+
+    private static readonly ConcurrentDictionary<int, double[][]> KernelCache = new();
+
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        int inputFrames = inputData.Length / channels;
+        int outputFrames = (int)Math.Round(inputFrames * (double)outRate / inRate);
+        var output = new float[outputFrames * channels];
+        double sampleRatio = inRate / (double)outRate;
+        double cutoff = CalculateBlackmanHarris2Cutoff(SincLength) * Math.Min(1.0, outRate / (double)inRate);
+        double[][] kernels = KernelCache.GetOrAdd(Quantize(cutoff), _ => BuildKernels(cutoff));
+
+        Parallel.For(0, outputFrames, outputFrame =>
+        {
+            double sourcePosition = outputFrame * sampleRatio;
+            int center = (int)Math.Floor(sourcePosition);
+            double frac = sourcePosition - center;
+            double phasePosition = frac * OversamplingFactor;
+            int phase = (int)Math.Floor(phasePosition);
+            double phaseFrac = phasePosition - phase;
+
+            if (phase >= OversamplingFactor)
+            {
+                phase = 0;
+                phaseFrac = 0;
+                center++;
+            }
+
+            int nextPhase = phase + 1;
+            if (nextPhase == OversamplingFactor)
+                nextPhase = 0;
+
+            double[] kernel = kernels[phase];
+            double[] nextKernel = kernels[nextPhase];
+
+            for (int channel = 0; channel < channels; channel++)
+            {
+                double sum = 0;
+                double weightSum = 0;
+
+                for (int tap = 0; tap < SincLength; tap++)
+                {
+                    int inputFrame = Clamp(center + tap - SincLength / 2 + 1, 0, inputFrames - 1);
+                    double weight = kernel[tap] + (nextKernel[tap] - kernel[tap]) * phaseFrac;
+                    sum += inputData[inputFrame * channels + channel] * weight;
+                    weightSum += weight;
+                }
+
+                output[outputFrame * channels + channel] = weightSum == 0 ? 0 : (float)(sum / weightSum);
+            }
+        });
+
+        return output;
+    }
+
+    private static double[][] BuildKernels(double cutoff)
+    {
+        int totalPoints = SincLength * OversamplingFactor;
+        var dense = new double[totalPoints];
+        double sum = 0;
+
+        for (int i = 0; i < totalPoints; i++)
+        {
+            double centered = (i - totalPoints / 2) * cutoff / OversamplingFactor;
+            double value = Sinc(centered) * BlackmanHarrisSquared(i, totalPoints);
+            dense[i] = value;
+            sum += value;
+        }
+
+        sum /= OversamplingFactor;
+        var kernels = new double[OversamplingFactor][];
+
+        for (int phase = 0; phase < OversamplingFactor; phase++)
+            kernels[phase] = new double[SincLength];
+
+        for (int point = 0; point < SincLength; point++)
+        {
+            for (int phase = 0; phase < OversamplingFactor; phase++)
+                kernels[OversamplingFactor - phase - 1][point] = dense[OversamplingFactor * point + phase] / sum;
+        }
+
+        return kernels;
+    }
+
+    private static double CalculateBlackmanHarris2Cutoff(int points)
+    {
+        const double k1 = 13.745202940783823;
+        const double k2 = 121.73532586374934;
+        const double k3 = 5964.163279612051;
+        double n = points;
+        return 1.0 / (k1 / n + k2 / (n * n) + k3 / (n * n * n) + 1.0);
+    }
+
+    private static double BlackmanHarrisSquared(int index, int count)
+    {
+        const double a0 = 0.35875;
+        const double a1 = 0.48829;
+        const double a2 = 0.14128;
+        const double a3 = 0.01168;
+        double phase = 2 * Math.PI * index / count;
+        double window = a0 - a1 * Math.Cos(phase) + a2 * Math.Cos(2 * phase) - a3 * Math.Cos(3 * phase);
+        return window * window;
+    }
+
+    private static double Sinc(double x)
+    {
+        if (Math.Abs(x) < 1e-12)
+            return 1.0;
+
+        double angle = Math.PI * x;
+        return Math.Sin(angle) / angle;
+    }
+
+    private static int Clamp(int value, int min, int max)
+        => value < min ? min : value > max ? max : value;
+
+    private static int Quantize(double value)
+        => (int)Math.Round(value * 1_000_000);
+}

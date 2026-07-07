@@ -1,0 +1,92 @@
+// ============================================================================
+// RETIRED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a candidate that was tried and retired,
+// kept specifically so future mining/pruning sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: wdl_native/v1 (2026-07-07) - ported from this repo's own earlier
+// prototype (_previous/TestAudioUI/Resamplers/Wdl.cs): wraps NAudio's actual
+// built-in WdlResamplingSampleProvider (the real Cockos WDL resampler,
+// already shipped in the NAudio package this project references), intended
+// as a ground-truth comparison against the hand-rolled table-based
+// approximation in WDL_Sinc.cs. Found and fixed a capacity-overflow bug
+// (int overflow in inputData.Length * outRate for large stereo buffers,
+// e.g. 96 kHz stereo, causing an ArgumentOutOfRangeException) introduced
+// during porting. Even after that fix, quality stayed poor and suspicious -
+// identical MSE/SNR/PSNR triples showed up on two unrelated scenarios
+// (Speech and Upsample), pointing to a further usage bug in the
+// ArraySampleProvider/Read() wrapper rather than a real verdict on the
+// underlying WDL algorithm's quality. Retired as "not usable as wired" -
+// getting a fair read on the real algorithm would need more wrapper
+// debugging, which wasn't worth it given wdl_sinc/sinc_v2/sinc_v3 already
+// cover this ground. Do NOT cite this file as evidence that NAudio's actual
+// WDL resampler is low quality - that has not been fairly established.
+// ============================================================================
+
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// RETIRED - see the file-header banner above and Rejected/README.md before reviving
+/// or deleting this file.
+/// </summary>
+public static class WdlNative
+{
+    private sealed class ArraySampleProvider(float[] samples, WaveFormat waveFormat) : ISampleProvider
+    {
+        private int _position;
+
+        public WaveFormat WaveFormat { get; } = waveFormat;
+
+        public int Read(float[] buffer, int offset, int count)
+        {
+            int available = samples.Length - _position;
+            int toCopy = Math.Min(available, count);
+            Array.Copy(samples, _position, buffer, offset, toCopy);
+            _position += toCopy;
+            return toCopy;
+        }
+    }
+
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData == null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        var waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(inRate, channels);
+        var sampleProvider = new ArraySampleProvider(inputData, waveFormat);
+        var resampler = new WdlResamplingSampleProvider(sampleProvider, outRate);
+
+        // No capacity hint: inputData.Length * outRate overflows int for large stereo
+        // buffers well within the fidelity suite's scenario sizes (e.g. 96 kHz stereo).
+        var output = new List<float>();
+        var buffer = new float[channels * 1024];
+
+        int read;
+        while ((read = resampler.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            for (int i = 0; i < read; i++)
+                output.Add(buffer[i]);
+        }
+
+        return output.ToArray();
+    }
+}

@@ -1,0 +1,410 @@
+﻿
+using System.Collections.Concurrent;
+using System.Numerics;
+using NAudio.Wave;
+
+namespace NAudio.Transformations.Resampler
+{
+
+
+    /// <summary>
+    /// Public interface for sinc-based audio resampling with configurable quality.
+    /// </summary>
+    public static class Sinc
+    {
+        private static readonly SincResampler resampler = new SincResampler();
+
+        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels, int kernelHalfWidth = 10)
+            => resampler.Resample(inputData, inRate, outRate, channels, kernelHalfWidth);
+
+        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels, ResampleQuality quality)
+            => resampler.Resample(inputData, inRate, outRate, channels, (int)quality);
+
+        internal static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+            => resampler.Resample(inputData, inRate, outRate, channels, (int)ResampleQuality.Balanced);
+
+        public static float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat, ResampleQuality quality = ResampleQuality.Balanced)
+            => resampler.Resample(inputData, inFormat, outFormat, (int)quality);
+    }
+
+    internal abstract class KernelResamplerBase
+    {
+        protected static readonly ConcurrentDictionary<double, Lazy<double[]>> kernelCache = new();
+
+        public float[] Resample(float[] inputData, int inRate, int outRate, int channels, int kernelHalfWidth)
+        {
+            if (inRate <= 0 || outRate <= 0)
+                throw new ArgumentException("Sample rates must be positive.");
+            if (channels <= 0)
+                throw new ArgumentException("Channel count must be positive.");
+            if (inputData == null || inputData.Length == 0)
+                throw new ArgumentException("Input data cannot be null or empty.");
+            if (inputData.Length % channels != 0)
+                throw new ArgumentException("Input data length must be divisible by the number of channels.");
+
+            float[][] channelData = SplitChannels(inputData, channels);
+            double ratio = (double)outRate / inRate;
+
+            Parallel.For(0, channels, c =>
+            {
+                channelData[c] = ResampleChannel(channelData[c], ratio, kernelHalfWidth);
+            });
+
+            return CombineChannels(channelData, channels);
+        }
+
+        public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat, int kernelHalfWidth)
+        {
+            if (inFormat == null || outFormat == null)
+                throw new ArgumentNullException("Both input and output WaveFormat must be provided.");
+
+            return Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels, kernelHalfWidth);
+        }
+
+        protected abstract float[] ResampleChannel(float[] channel, double ratio, int kernelHalfWidth);
+        protected abstract double ComputeKernelWeight(double x, int L);
+
+        protected double[] ComputeKernel(double frac, int kernelHalfWidth)
+        {
+            int kernelLength = 2 * kernelHalfWidth;
+            double[] weights = new double[kernelLength];
+
+            Parallel.For(0, kernelLength, i =>
+            {
+                int k = i - kernelHalfWidth + 1;
+                weights[i] = ComputeKernelWeight(frac - k, kernelHalfWidth);
+            });
+
+            return weights;
+        }
+
+        protected double ProcessSinc(double x)
+        {
+            if (x == 0)
+                return 1.0;
+            double pix = Math.PI * x;
+            return Math.Sin(pix) / pix;
+        }
+
+        protected double HannWindow(double x, int L)
+        {
+            if (Math.Abs(x) > L)
+                return 0.0;
+            return 0.5 * (1 + Math.Cos(Math.PI * x / L));
+        }
+
+        protected float[][] SplitChannels(float[] inputData, int channels)
+        {
+            int frames = inputData.Length / channels;
+            float[][] output = new float[channels][];
+            for (int c = 0; c < channels; c++)
+            {
+                output[c] = new float[frames];
+                for (int i = 0; i < frames; i++)
+                {
+                    output[c][i] = inputData[i * channels + c];
+                }
+            }
+            return output;
+        }
+
+        protected float[] CombineChannels(float[][] channelData, int channels)
+        {
+            int frames = channelData[0].Length;
+            float[] output = new float[frames * channels];
+            for (int i = 0; i < frames; i++)
+            {
+                for (int c = 0; c < channels; c++)
+                {
+                    output[i * channels + c] = channelData[c][i];
+                }
+            }
+            return output;
+        }
+    }
+
+    internal class SincResampler : KernelResamplerBase, IAudioResampler
+    {
+        /// <summary>
+        /// Resample using default (Balanced) quality.
+        /// </summary>
+        public float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+            => Resample(inputData, inRate, outRate, channels, (int)ResampleQuality.Balanced);
+
+        /// <summary>
+        /// Resample using WaveFormat inputs and default (Balanced) quality.
+        /// </summary>
+        public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
+            => Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels, (int)ResampleQuality.Balanced);
+
+        public float[] Resample(float[] inputData, int inRate, int outRate, int channels, int kernelHalfWidth)
+            => base.Resample(inputData, inRate, outRate, channels, kernelHalfWidth);
+
+        protected override double ComputeKernelWeight(double x, int L)
+            => ProcessSinc(x) * HannWindow(x, L);
+
+        protected override float[] ResampleChannel(float[] channel, double ratio, int kernelHalfWidth)
+        {
+            int inputLength = channel.Length;
+            int outputLength = (int)Math.Round(inputLength * ratio);
+            float[] output = new float[outputLength];
+
+            int pad = kernelHalfWidth + 16;
+            int vectorSize = Vector<float>.Count;
+            int totalPad = (pad + vectorSize - 1) / vectorSize * vectorSize;
+
+            float[] paddedChannel = new float[inputLength + 2 * totalPad];
+            Array.Copy(channel, 0, paddedChannel, totalPad, inputLength);
+
+            for (int i = 0; i < totalPad; i++)
+            {
+                paddedChannel[i] = channel[0];
+                paddedChannel[paddedChannel.Length - 1 - i] = channel[^1];
+            }
+
+            Parallel.For(0, outputLength, i =>
+            {
+                double pos = i / ratio;
+                int n = (int)Math.Floor(pos);
+                double frac = pos - n;
+                double fracKey = Math.Round(frac, 8);
+
+                double[] kernel = kernelCache
+                    .GetOrAdd(fracKey, key =>
+                        new Lazy<double[]>(() => ComputeKernel(key, kernelHalfWidth), true))
+                    .Value;
+
+                int kBase = -kernelHalfWidth + 1;
+                int paddedOffset = n + kBase + totalPad;
+
+                output[i] = (float)AccumulateKernelSum(paddedChannel, paddedOffset, kernel);
+            });
+
+            return output;
+        }
+
+        /// <summary>
+        /// Applies the kernel convolution at a given offset, optionally using unrolled SIMD-style accumulation.
+        /// </summary>
+        protected double AccumulateKernelSum(float[] data, int offset, double[] kernel)
+        {
+            double sum = 0.0;
+            double weightSum = 0.0;
+            int kernelLen = kernel.Length;
+
+            bool safeToUnroll = (kernelLen >= 16) &&
+                                (offset + kernelLen <= data.Length) &&
+                                (offset >= 0);
+
+            int k = 0;
+
+            if (safeToUnroll)
+            {
+                for (; k + 15 < kernelLen; k += 16)
+                {
+                    int idx = offset + k;
+                    for (int j = 0; j < 16; j++)
+                    {
+                        float sample = data[idx + j];
+                        double weight = kernel[k + j];
+                        sum += sample * weight;
+                        weightSum += weight;
+                    }
+                }
+            }
+
+            for (; k < kernelLen; k++)
+            {
+                int index = offset + k;
+                if (index >= 0 && index < data.Length)
+                {
+                    double weight = kernel[k];
+                    sum += data[index] * weight;
+                    weightSum += weight;
+                }
+            }
+
+            return sum / weightSum;
+        }
+    }
+
+}
+
+
+
+
+/*
+
+protected override float[] ResampleChannel(float[] channel, double ratio, int kernelHalfWidth)
+        {
+            int inputLength = channel.Length;
+            int outputLength = (int)Math.Round(inputLength * ratio);
+            float[] output = new float[outputLength];
+
+            int pad = kernelHalfWidth + 16;
+            int vectorSize = Vector<float>.Count;
+            int totalPad = (pad + vectorSize - 1) / vectorSize * vectorSize;
+
+            float[] paddedChannel = new float[inputLength + 2 * totalPad];
+            Array.Copy(channel, 0, paddedChannel, totalPad, inputLength);
+
+            for (int i = 0; i < totalPad; i++)
+            {
+                paddedChannel[i] = channel[0];
+                paddedChannel[paddedChannel.Length - 1 - i] = channel[^1];
+            }
+
+            Parallel.For(0, outputLength, i =>
+            {
+                double pos = i / ratio;
+                int n = (int)Math.Floor(pos);
+                double frac = pos - n;
+                double fracKey = Math.Round(frac, 8);
+
+                double[] kernel = kernelCache
+                    .GetOrAdd(fracKey, key =>
+                        new Lazy<double[]>(() => ComputeKernel(key, kernelHalfWidth), true))
+                    .Value;
+
+                double sum = 0.0;
+                double weightSum = 0.0;
+
+                int kBase = -kernelHalfWidth + 1;
+                int kernelLen = kernel.Length;
+                int paddedOffset = n + kBase + totalPad;
+
+                bool safeToUnroll = (kernelLen >= 16) &&
+                                    (paddedOffset + kernelLen <= paddedChannel.Length) &&
+                                    (paddedOffset >= 0);
+
+                int k = 0;
+                if (safeToUnroll)
+                {
+                    for (; k + 15 < kernelLen; k += 16)
+                    {
+                        int idx = paddedOffset + k;
+                        for (int j = 0; j < 16; j++)
+                        {
+                            sum += paddedChannel[idx + j] * kernel[k + j];
+                            weightSum += kernel[k + j];
+                        }
+                    }
+                }
+
+                for (; k < kernelLen; k++)
+                {
+                    int index = n + kBase + k + totalPad;
+                    if (index >= 0 && index < paddedChannel.Length)
+                    {
+                        double weight = kernel[k];
+                        sum += paddedChannel[index] * weight;
+                        weightSum += weight;
+                    }
+                }
+
+                output[i] = (float)(sum / weightSum);
+            });
+
+            return output;
+        }
+ 
+*/
+
+
+//internal class SincResampler : KernelResamplerBase, IAudioResampler
+//{
+//    public float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+//    {
+//        return Resample(inputData, inRate, outRate, channels, (int)ResampleQuality.Balanced);
+//    }
+
+//    public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
+//    {
+//        return Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels, (int)ResampleQuality.Balanced);
+//    }
+
+//    public float[] Resample(float[] inputData, int inRate, int outRate, int channels, int kernelHalfWidth)
+//    {
+//        return base.Resample(inputData, inRate, outRate, channels, kernelHalfWidth);
+//    }
+//}
+
+
+////internal class SincResampler : KernelResamplerBase
+////{
+////    protected override double ComputeKernelWeight(double x, int L)
+////        => ProcessSinc(x) * HannWindow(x, L);
+
+////    protected override float[] ResampleChannel(float[] channel, double ratio, int kernelHalfWidth)
+////    {
+////        int inputLength = channel.Length;
+////        int outputLength = (int)Math.Round(inputLength * ratio);
+////        float[] output = new float[outputLength];
+
+////        int pad = kernelHalfWidth + 16;
+////        int vectorSize = Vector<float>.Count;
+////        int totalPad = (pad + vectorSize - 1) / vectorSize * vectorSize;
+
+////        float[] paddedChannel = new float[inputLength + 2 * totalPad];
+////        Array.Copy(channel, 0, paddedChannel, totalPad, inputLength);
+
+////        for (int i = 0; i < totalPad; i++)
+////        {
+////            paddedChannel[i] = channel[0];
+////            paddedChannel[paddedChannel.Length - 1 - i] = channel[^1];
+////        }
+
+////        Parallel.For(0, outputLength, i =>
+////        {
+////            double pos = i / ratio;
+////            int n = (int)Math.Floor(pos);
+////            double frac = pos - n;
+////            double fracKey = Math.Round(frac, 8);
+
+////            double[] kernel = kernelCache
+////                .GetOrAdd(fracKey, key =>
+////                    new Lazy<double[]>(() => ComputeKernel(key, kernelHalfWidth), true))
+////                .Value;
+
+////            double sum = 0.0;
+////            double weightSum = 0.0;
+
+////            int kBase = -kernelHalfWidth + 1;
+////            int kernelLen = kernel.Length;
+////            int paddedOffset = n + kBase + totalPad;
+
+////            bool safeToUnroll = (kernelLen >= 16) &&
+////                                (paddedOffset + kernelLen <= paddedChannel.Length) &&
+////                                (paddedOffset >= 0);
+
+////            int k = 0;
+////            if (safeToUnroll)
+////            {
+////                for (; k + 15 < kernelLen; k += 16)
+////                {
+////                    int idx = paddedOffset + k;
+////                    for (int j = 0; j < 16; j++)
+////                    {
+////                        sum += paddedChannel[idx + j] * kernel[k + j];
+////                        weightSum += kernel[k + j];
+////                    }
+////                }
+////            }
+
+////            for (; k < kernelLen; k++)
+////            {
+////                int index = n + kBase + k + totalPad;
+////                if (index >= 0 && index < paddedChannel.Length)
+////                {
+////                    double weight = kernel[k];
+////                    sum += paddedChannel[index] * weight;
+////                    weightSum += weight;
+////                }
+////            }
+
+////            output[i] = (float)(sum / weightSum);
+////        });
+
+////        return output;
+////    }
+////}

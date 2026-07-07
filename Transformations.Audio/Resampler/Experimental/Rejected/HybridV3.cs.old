@@ -1,0 +1,58 @@
+// ============================================================================
+// RETIRED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a candidate that was tried and retired,
+// kept specifically so future mining/pruning sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: hybrid_v3/v3 (2026-07-07) - strictly dominated by hybrid_v2, its
+// direct sibling. Both gate on direction (upsample vs downsample) and share
+// the same downsample leg (sinc_v2); hybrid_v3's only difference was using
+// cheap Linear instead of sinc/v1 for the upsampling leg, on the theory that
+// upsampling has no *aliasing* risk so a simple ramp should be "good enough".
+// That theory was wrong: upsampling still has *interpolation* error, and
+// Linear's straight-line segments are a far cruder fit than a windowed sinc
+// reconstruction. A one-way (no round-trip masking) check found Linear
+// upsampling ~26 dB worse than sinc/v1 against the true signal (21.35 dB vs
+// 47.65 dB). Registered against the full fidelity suite, hybrid_v3 lost to
+// hybrid_v2 on every scenario where the two differ (Speech 21.35 vs 48.70 dB;
+// Music 38.49 vs 70.85 dB; Upsample 23.21 vs 59.03 dB; Transient 23.17 vs
+// 28.85 dB; Sweep 2.99 vs 3.54 dB; Broadband 2.19 vs 2.56 dB) and only tied on
+// Alias Stress, where neither algorithm's upsample leg is exercised. The only
+// thing it won was raw speed (roughly 2-4x faster in that run), which did not
+// justify the fidelity cliff at the buffer sizes the suite exercises.
+// ============================================================================
+
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// RETIRED - see the file-header banner above and Rejected/README.md before reviving
+/// or deleting this file.
+/// </summary>
+public static class HybridV3
+{
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData == null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        return outRate > inRate
+            ? Linear.Resample(inputData, inRate, outRate, channels)
+            : JuliusSinc.Resample(inputData, inRate, outRate, channels);
+    }
+}

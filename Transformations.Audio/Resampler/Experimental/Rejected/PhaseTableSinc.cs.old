@@ -1,0 +1,226 @@
+// ============================================================================
+// RETIRED / SUPERSEDED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a mining candidate that was tried and
+// later superseded, kept specifically so future mining sessions (human or
+// AI) do not waste time re-discovering and re-implementing the same idea
+// from scratch, or wonder why "sinc_v5" disappeared from later reports.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: sinc_v5/v5 (PhaseTableSinc) - unlike the other entries in this
+// folder, this candidate was NOT broken. It was superseded: sinc_v7
+// (SplinePhaseSinc, still live in ../SplinePhaseSinc.cs) does the same job -
+// a small fixed phase table instead of near-exact per-phase computation -
+// but fits a per-tap natural cubic spline across the phase axis instead of
+// blending whole kernels with one shared 4-point Lagrange weight. Measured
+// (2026-07-07): with HALF the stored phases (16 vs this candidate's 32),
+// sinc_v7 tied sinc_v5 on every scenario and beat it by ~10.5 dB SNR on the
+// Music scenario (69.77 dB vs 59.32 dB). Since sinc_v7 had no scenario where
+// it lost, and used fewer resources doing it, keeping both as live A/B
+// candidates stopped teaching anything new - this record exists so the
+// rubato-style "blend whole kernels" technique and the measured comparison
+// against r8brain's "per-tap spline" technique are not lost.
+// ============================================================================
+
+using System.Collections.Concurrent;
+
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// RETIRED/SUPERSEDED by sinc_v7 (SplinePhaseSinc) - see the file-header banner above and
+/// Rejected/README.md before reviving or deleting this file.
+///
+/// Fixed small phase table with cubic Lagrange interpolation across whole neighboring
+/// phase kernels, instead of recomputing (or caching) a kernel per exact fractional phase.
+/// </summary>
+/// <remarks>
+/// Idea mined from rubato's <c>asynchro_sinc.rs</c>: it precomputes only a modest, fixed
+/// number of oversampled phase kernels (rubato calls this the "sinc length" table) and,
+/// for an arbitrary output position, blends the nearest whole kernels via
+/// Nearest/Linear/Quadratic/Cubic interpolation rather than the more common approach
+/// (used by libsamplerate/libresample/resampy/this repo's WDL_Sinc) of linearly
+/// interpolating individual coefficients *within* one kernel, or recomputing an
+/// effectively-exact kernel per phase (as sinc_v2/sinc_v3 do here). This trades a much
+/// smaller precomputed table for a small amount of interpolation error across phases -
+/// worth keeping as evidence of that memory/accuracy tradeoff even where it does not win
+/// outright on fidelity.
+/// </remarks>
+public static class PhaseTableSinc
+{
+    private const int DefaultHalfWidth = 32;
+    private const int DefaultPhaseCount = 32;
+    private const double DefaultRolloff = 0.95;
+    private const double DefaultBeta = 9.0;
+
+    private static readonly ConcurrentDictionary<TableKey, double[][]> TableCache = new();
+
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        => Resample(inputData, inRate, outRate, channels, DefaultHalfWidth, DefaultPhaseCount, DefaultRolloff, DefaultBeta);
+
+    public static float[] Resample(
+        float[] inputData,
+        int inRate,
+        int outRate,
+        int channels,
+        int halfWidth,
+        int phaseCount,
+        double rolloff,
+        double beta)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (halfWidth <= 0)
+            throw new ArgumentException("Kernel half-width must be positive.");
+        if (phaseCount <= 3)
+            throw new ArgumentException("Phase count must be greater than 3 to allow cubic blending.");
+        if (rolloff <= 0 || rolloff > 1)
+            throw new ArgumentException("Rolloff must be greater than 0 and less than or equal to 1.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        int inputFrames = inputData.Length / channels;
+        int outputFrames = (int)Math.Round(inputFrames * (double)outRate / inRate);
+        var output = new float[outputFrames * channels];
+        double ratio = inRate / (double)outRate;
+        double cutoff = Math.Min(1.0, outRate / (double)inRate) * rolloff;
+
+        double[][] phases = TableCache.GetOrAdd(
+            new TableKey(halfWidth, phaseCount, Quantize(cutoff), Quantize(beta)),
+            _ => BuildPhaseTable(halfWidth, phaseCount, cutoff, beta));
+
+        Parallel.For(0, outputFrames, outputFrame =>
+        {
+            double sourcePosition = outputFrame * ratio;
+            int center = (int)Math.Floor(sourcePosition);
+            double frac = sourcePosition - center;
+
+            double phasePosition = frac * phaseCount;
+            int p0 = (int)Math.Floor(phasePosition);
+            double t = phasePosition - p0;
+            double[] kernel = BlendKernels(phases, p0, t, phaseCount, halfWidth);
+
+            for (int channel = 0; channel < channels; channel++)
+            {
+                double sum = 0;
+                double weightSum = 0;
+                for (int tap = 0; tap < kernel.Length; tap++)
+                {
+                    int inputFrame = Clamp(center - halfWidth + tap + 1, 0, inputFrames - 1);
+                    double weight = kernel[tap];
+                    sum += inputData[inputFrame * channels + channel] * weight;
+                    weightSum += weight;
+                }
+
+                output[outputFrame * channels + channel] = (float)(sum / weightSum);
+            }
+        });
+
+        return output;
+    }
+
+    /// <summary>Blends the 4 nearest phase kernels using 4-point Lagrange (cubic) weights.</summary>
+    private static double[] BlendKernels(double[][] phases, int p0, double t, int phaseCount, int halfWidth)
+    {
+        int length = halfWidth * 2;
+        var blended = new double[length];
+
+        double wm1 = -t * (t - 1) * (t - 2) / 6.0;
+        double w0 = (t + 1) * (t - 1) * (t - 2) / 2.0;
+        double w1 = -(t + 1) * t * (t - 2) / 2.0;
+        double w2 = (t + 1) * t * (t - 1) / 6.0;
+
+        // Phase indices never truly wrap (frac < 1 always keeps p0 in range), so the
+        // extremes are clamped rather than wrapped - a minor extrapolation only in the
+        // last 1/phaseCount of the range, consistent with the edge clamping already used
+        // for input frames elsewhere in this codebase.
+        double[] km1 = phases[Clamp(p0 - 1, 0, phaseCount - 1)];
+        double[] k0 = phases[Clamp(p0, 0, phaseCount - 1)];
+        double[] k1 = phases[Clamp(p0 + 1, 0, phaseCount - 1)];
+        double[] k2 = phases[Clamp(p0 + 2, 0, phaseCount - 1)];
+
+        for (int i = 0; i < length; i++)
+            blended[i] = wm1 * km1[i] + w0 * k0[i] + w1 * k1[i] + w2 * k2[i];
+
+        return blended;
+    }
+
+    private static double[][] BuildPhaseTable(int halfWidth, int phaseCount, double cutoff, double beta)
+    {
+        var phases = new double[phaseCount][];
+        double i0Beta = BesselI0(beta);
+
+        Parallel.For(0, phaseCount, phaseIndex =>
+        {
+            double frac = phaseIndex / (double)phaseCount;
+            phases[phaseIndex] = BuildKernel(halfWidth, cutoff, frac, beta, i0Beta);
+        });
+
+        return phases;
+    }
+
+    private static double[] BuildKernel(int halfWidth, double cutoff, double frac, double beta, double i0Beta)
+    {
+        int length = halfWidth * 2;
+        var kernel = new double[length];
+
+        for (int tap = 0; tap < length; tap++)
+        {
+            int offset = tap - halfWidth + 1;
+            double distance = frac - offset;
+            double normalizedDistance = Math.Abs(distance) / halfWidth;
+            if (normalizedDistance > 1)
+                continue;
+
+            double window = BesselI0(beta * Math.Sqrt(1 - normalizedDistance * normalizedDistance)) / i0Beta;
+            kernel[tap] = cutoff * Sinc(cutoff * distance) * window;
+        }
+
+        return kernel;
+    }
+
+    private static double Sinc(double x)
+    {
+        if (Math.Abs(x) < 1e-12)
+            return 1.0;
+
+        double angle = Math.PI * x;
+        return Math.Sin(angle) / angle;
+    }
+
+    private static double BesselI0(double x)
+    {
+        double sum = 1.0;
+        double term = 1.0;
+        double half = x * 0.5;
+
+        for (int k = 1; k <= 32; k++)
+        {
+            term *= (half / k) * (half / k);
+            sum += term;
+            if (term < sum * 1e-16)
+                break;
+        }
+
+        return sum;
+    }
+
+    private static int Clamp(int value, int min, int max)
+        => value < min ? min : value > max ? max : value;
+
+    private static int Quantize(double value)
+        => (int)Math.Round(value * 1_000_000);
+
+    private readonly record struct TableKey(int HalfWidth, int PhaseCount, int Cutoff, int Beta);
+}

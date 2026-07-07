@@ -1,0 +1,194 @@
+﻿// ============================================================================
+// RETIRED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a candidate that was tried and retired,
+// kept specifically so future mining/pruning sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: predictive/v1 - not broken, just dominated. A weighted
+// fidelity+speed composite audit (2026-07-07) covering all 16 registered
+// algorithms found predictive strictly dominated by nearest_neighbor
+// (Rejected/../NearestNeighbor.cs, still live) on BOTH fidelity and speed
+// in every scenario, with no scenario where predictive was outright best
+// against the full field. It has no cited DSP idea or quarry-library
+// provenance behind it either (an ad hoc "blend linear interpolation with
+// forward extrapolation" heuristic) - unlike most retained candidates in
+// this codebase, which are traceable to a specific technique from a named
+// reference library. Pruned to keep the fidelity suite's candidate set to
+// ones that either win somewhere outright or teach a specific, attributable
+// idea.
+// ============================================================================
+
+using NAudio.Wave;
+using System;
+using System.Threading.Tasks;
+
+namespace NAudio.Transformations.Resampler.Experimental
+{
+    /// <summary>
+    /// RETIRED - see the file-header banner above and Rejected/README.md before reviving
+    /// or deleting this file.
+    ///
+    /// Provides a pure nearest–neighbor resampling algorithm.
+    /// This version selects the closest input sample (by rounding) for each output sample,
+    /// avoiding the cost of interpolation entirely.
+    /// </summary>
+    /// <remarks>Not as good at downsampling as Linear.</remarks>
+    public static class Predictive
+    {
+        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        {
+            PredictiveResampler resampler = new PredictiveResampler();
+            return resampler.Resample(inputData, inRate, outRate, channels);
+        }
+    }
+
+    /// <summary>
+    /// A lightweight predictive resampler that blends linear interpolation
+    /// with a simple forward extrapolation based on the previous sample delta.
+    /// </summary>
+    public class PredictiveLiteResampler : IAudioResampler
+    {
+        public float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        {
+            // Validate inputs.
+            if (inRate <= 0 || outRate <= 0)
+                throw new ArgumentException("Sample rates must be positive.");
+            if (channels <= 0)
+                throw new ArgumentException("Channel count must be positive.");
+            if (inputData == null || inputData.Length == 0)
+                throw new ArgumentException("Input data cannot be null or empty.");
+            if (inputData.Length % channels != 0)
+                throw new ArgumentException("Input data length must be divisible by channels.");
+            if (inRate == outRate)
+                return inputData;
+
+            double ratio = (double)inRate / outRate;
+            int inputFrames = inputData.Length / channels;
+            int outputFrames = (int)(inputFrames / ratio);
+            float[] output = new float[outputFrames * channels];
+
+            Parallel.For(0, outputFrames, i =>
+            {
+                double srcPos = i * ratio;
+                int baseIndex = (int)srcPos;
+                double frac = srcPos - baseIndex;
+
+                int nextIndex = baseIndex + 1;
+                int prevIndex = baseIndex - 1;
+
+                if (nextIndex >= inputFrames)
+                    nextIndex = inputFrames - 1;
+                if (prevIndex < 0)
+                    prevIndex = 0;
+
+                for (int ch = 0; ch < channels; ch++)
+                {
+                    int idx0 = baseIndex * channels + ch;
+                    int idx1 = nextIndex * channels + ch;
+                    int idxPrev = prevIndex * channels + ch;
+
+                    float s0 = inputData[idx0];
+                    float s1 = inputData[idx1];
+                    float sPrev = inputData[idxPrev];
+
+                    // Simple linear interpolation.
+                    float interp = (float)((1.0 - frac) * s0 + frac * s1);
+                    // Predict the next sample based on the previous difference.
+                    float predicted = s0 + (s0 - sPrev);
+                    // Blend 70% interpolation and 30% prediction.
+                    float blended = interp * 0.7f + predicted * 0.3f;
+
+                    output[i * channels + ch] = blended;
+                }
+            });
+
+            return output;
+        }
+
+        public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
+        {
+            return Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels);
+        }
+    }
+
+    /// <summary>
+    /// A predictive resampler that uses cubic Hermite interpolation together with
+    /// a predictive (extrapolated) estimate. It then blends the two based on the 
+    /// local signal variance.
+    /// </summary>
+    public class PredictiveResampler : IAudioResampler
+    {
+        public float[] Resample(float[] input, int inRate, int outRate, int channels)
+        {
+            if (inRate == outRate)
+                return input;
+
+            double ratio = (double)inRate / outRate;
+            int inputFrames = input.Length / channels;
+            int outputFrames = (int)(inputFrames / ratio);
+            float[] output = new float[outputFrames * channels];
+
+            Parallel.For(0, outputFrames, i =>
+            {
+                double pos = i * ratio;
+                int baseIdx = (int)pos;
+                double frac = pos - baseIdx;
+
+                for (int ch = 0; ch < channels; ch++)
+                {
+                    // Clamp neighboring indices.
+                    int p0 = Math.Max(0, baseIdx - 1);
+                    int p1 = baseIdx;
+                    int p2 = Math.Min(inputFrames - 1, baseIdx + 1);
+                    int p3 = Math.Min(inputFrames - 1, baseIdx + 2);
+
+                    float y0 = input[p0 * channels + ch];
+                    float y1 = input[p1 * channels + ch];
+                    float y2 = input[p2 * channels + ch];
+                    float y3 = input[p3 * channels + ch];
+
+                    // Compute a predictive estimate based on the local slope.
+                    float slope = y2 - y1;
+                    float predicted = y1 + (float)frac * slope;
+
+                    // Get a cubic Hermite interpolated value.
+                    float cubic = CubicHermite(y0, y1, y2, y3, (float)frac);
+
+                    // Compute a simple measure of local variance.
+                    float var = Math.Abs(y3 - y0) + 1e-5f;
+                    // Blend adaptively: smoother regions trust prediction more.
+                    float blend = Math.Clamp(1.0f - var, 0.2f, 0.8f);
+
+                    output[i * channels + ch] = predicted * blend + cubic * (1f - blend);
+                }
+            });
+
+            return output;
+        }
+
+        private static float CubicHermite(float y0, float y1, float y2, float y3, float t)
+        {
+            float m0 = 0.5f * (y2 - y0);
+            float m1 = 0.5f * (y3 - y1);
+            float t2 = t * t;
+            float t3 = t2 * t;
+            return (2 * t3 - 3 * t2 + 1) * y1 +
+                   (t3 - 2 * t2 + t) * m0 +
+                   (-2 * t3 + 3 * t2) * y2 +
+                   (t3 - t2) * m1;
+        }
+
+        public float[] Resample(float[] input, WaveFormat inFormat, WaveFormat outFormat)
+        {
+            return Resample(input, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels);
+        }
+    }
+}

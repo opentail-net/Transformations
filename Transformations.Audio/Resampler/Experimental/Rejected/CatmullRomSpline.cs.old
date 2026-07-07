@@ -1,0 +1,135 @@
+// ============================================================================
+// RETIRED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a candidate that was tried and retired,
+// kept specifically so future mining/pruning sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: this was `spline`/v1, the original default implementation behind
+// NAudio.Transformations.Resampler.Spline - local Catmull-Rom cubic
+// interpolation (C1-continuous, tangents from 4 neighboring samples). It was
+// promoted out of and replaced by the `natural_cubic_spline` experimental
+// candidate (2026-07-07): a true C2-continuous natural cubic spline (global
+// per-channel tridiagonal solve for second derivatives via the Thomas
+// algorithm, natural zero-curvature boundary conditions), mined from
+// gomplerate's resample.go. The promoted candidate won every gated fidelity
+// scenario by a wide margin - Speech 43.65 dB vs this implementation's
+// 31.08 dB, Music 73.34 dB vs 61.07 dB, Transient 28.49 dB vs 24.99 dB, tied
+// on Upsample - and only gave up a fraction of a dB on the two ungated
+// exploratory scenarios (Sweep, Broadband). `Resampler/Spline.cs` now
+// contains that promoted implementation directly, versioned as `spline`/v2.
+// This file is the preserved v1 implementation for the audit trail.
+//
+// Note: the still-live `Experimental Cubic` candidate (Resampler/Experimental/Cubic.cs)
+// is a numerically near-identical local-cubic technique to this one, so this
+// specific implementation is redundant with a live candidate as well as
+// beaten by the promoted one - there is no scenario where reviving it would
+// teach anything the live field doesn't already cover.
+// ============================================================================
+
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
+using NAudio.Wave;
+
+namespace NAudio.Transformations.Resampler.Experimental
+{
+    /// <summary>
+    /// RETIRED - see the file-header banner above and Rejected/README.md before reviving or
+    /// deleting this file.
+    ///
+    /// Provides audio resampling using cubic spline interpolation (Catmull–Rom).
+    /// This is a middle‑ground approach that offers smooth interpolation with a low computational cost.
+    /// </summary>
+    public class CatmullRomSplineResampler : IAudioResampler
+    {
+        public float[] Resample(float[] inputData, WaveFormat inFormat, WaveFormat outFormat)
+        {
+            if (inFormat == null || outFormat == null)
+                throw new ArgumentNullException("Both input and output WaveFormat must be provided.");
+
+            return Resample(inputData, inFormat.SampleRate, outFormat.SampleRate, inFormat.Channels);
+        }
+
+        public float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        {
+            if (inRate <= 0 || outRate <= 0)
+                throw new ArgumentException("Sample rates must be positive.");
+            if (channels <= 0)
+                throw new ArgumentException("Channel count must be positive.");
+            if (inputData == null || inputData.Length == 0)
+                throw new ArgumentException("Input data cannot be null or empty.");
+            if (inputData.Length % channels != 0)
+                throw new ArgumentException("Input data length must be divisible by the number of channels.");
+
+            if (inRate == outRate)
+                return inputData;
+
+            double ratio = (double)inRate / outRate;
+            int inputFrames = inputData.Length / channels;
+            int outputFrames = (int)(inputFrames / ratio);
+            if (outputFrames == 0)
+                return Array.Empty<float>();
+
+            float[] output = new float[outputFrames * channels];
+
+            Parallel.For(0, outputFrames, i =>
+            {
+                double fractionalPosition = i * ratio;
+                int baseIndex = (int)fractionalPosition;
+
+                for (int ch = 0; ch < channels; ch++)
+                {
+                    output[i * channels + ch] = AccumulateKernel(inputData, baseIndex, fractionalPosition, ch, channels, inputFrames);
+                }
+            });
+
+            return output;
+        }
+
+        /// <summary>
+        /// Accumulates kernel-weighted contributions for a given output sample.
+        /// </summary>
+        private static float AccumulateKernel(float[] inputData, int baseIndex, double fracPos, int ch, int channels, int inputFrames)
+        {
+            float result = 0;
+            float weightSum = 0;
+
+            for (int k = -1; k <= 2; k++)
+            {
+                int sampleIndex = baseIndex + k;
+                sampleIndex = Math.Clamp(sampleIndex, 0, inputFrames - 1);
+
+                float weight = CatmullRomWeight(fracPos - sampleIndex);
+                result += inputData[sampleIndex * channels + ch] * weight;
+                weightSum += weight;
+            }
+
+            return result / Math.Max(weightSum, 1e-8f);
+        }
+
+        /// <summary>
+        /// Calculates the Catmull–Rom weight for a given fractional distance.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static float CatmullRomWeight(double x)
+        {
+            x = Math.Abs(x);
+
+            return x switch
+            {
+                <= 1 => (float)(1.5 * x * x * x - 2.5 * x * x + 1),
+                <= 2 => (float)(-0.5 * x * x * x + 2.5 * x * x - 4 * x + 2),
+                _ => 0
+            };
+        }
+    }
+}

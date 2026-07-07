@@ -1,0 +1,764 @@
+﻿// ============================================================================
+// RETIRED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a candidate that was tried and retired,
+// kept specifically so future mining/pruning sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving it for a specific reason.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected/retired candidates and why each one was removed.
+//
+// Retired: hermite/v1 - not broken, just dominated. A weighted
+// fidelity+speed composite audit (2026-07-07) covering all 16 registered
+// algorithms found hermite strictly dominated by nearest_neighbor
+// (Rejected/../NearestNeighbor.cs, still live) on BOTH fidelity and speed
+// in every scenario, with no scenario where hermite was outright best
+// against the full field (its Sweep tie with spline/cubic was shared, not
+// unique). Cubic Hermite spline is a real, named classical technique, but
+// its niche (local polynomial interpolation) is already better covered
+// here by cubic, spline, and natural_cubic_spline. Note: this file's own
+// prior docstring claimed "no noticeable improvement over linear" - that
+// claim was checked directly against the audit data and found FALSE
+// (e.g. Music: 39.98 dB vs linear's 33.31 dB, a real ~7 dB gain) - hermite
+// was retired for being dominated by nearest_neighbor specifically, not for
+// being no better than linear.
+// ============================================================================
+
+using System;
+using System.Buffers;
+using System.Numerics;
+using System.Threading.Tasks;
+
+namespace NAudio.Transformations.Resampler.Experimental
+{
+    /// <summary>
+    /// RETIRED - see the file-header banner above and Rejected/README.md before reviving
+    /// or deleting this file.
+    /// </summary>
+    public static class Hermite
+    {
+        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        {
+            if (inRate <= 0 || outRate <= 0 || channels <= 0)
+                throw new ArgumentException("Sample rates and channels must be positive.");
+            if (inputData == null || inputData.Length == 0)
+                throw new ArgumentException("Input data cannot be null or empty.");
+            if (inputData.Length % channels != 0)
+                throw new ArgumentException("Input data length must be divisible by channel count.");
+
+            float ratio = (float)inRate / outRate;
+            int inputFrames = inputData.Length / channels;
+            int outputFrames = (int)(inputFrames / ratio);
+
+            if (outputFrames <= 0)
+                return Array.Empty<float>();
+
+            float[] outputBuffer = ArrayPool<float>.Shared.Rent(outputFrames * channels);
+
+            if (channels == 1 && Vector.IsHardwareAccelerated)
+            {
+                ResampleMonoSIMD(inputData, outputBuffer, inputFrames, outputFrames, ratio);
+            }
+            else
+            {
+                ResampleStandard(inputData, outputBuffer, inputFrames, outputFrames, ratio, channels);
+            }
+
+            float[] finalOutput = new float[outputFrames * channels];
+            Array.Copy(outputBuffer, finalOutput, finalOutput.Length);
+            ArrayPool<float>.Shared.Return(outputBuffer, clearArray: true);
+
+            return finalOutput;
+        }
+
+        private static void ResampleStandard(float[] input, float[] output, int inputFrames, int outputFrames, float ratio, int channels)
+        {
+            Parallel.For(0, outputFrames, i =>
+            {
+                float fracPos = i * ratio;
+                int baseIndex = (int)fracPos;
+                float t = fracPos - baseIndex;
+
+                float t2 = t * t;
+                float t3 = t2 * t;
+
+                float h00 = 2 * t3 - 3 * t2 + 1;
+                float h10 = t3 - 2 * t2 + t;
+                float h01 = -2 * t3 + 3 * t2;
+                float h11 = t3 - t2;
+
+                for (int ch = 0; ch < channels; ch++)
+                {
+                    int clamped0 = Math.Clamp(baseIndex - 1, 0, inputFrames - 1);
+                    int clamped1 = Math.Clamp(baseIndex, 0, inputFrames - 1);
+                    int clamped2 = Math.Clamp(baseIndex + 1, 0, inputFrames - 1);
+                    int clamped3 = Math.Clamp(baseIndex + 2, 0, inputFrames - 1);
+
+                    float y0 = input[clamped0 * channels + ch];
+                    float y1 = input[clamped1 * channels + ch];
+                    float y2 = input[clamped2 * channels + ch];
+                    float y3 = input[clamped3 * channels + ch];
+
+                    //float m0 = 0.5f * (y2 - y0);
+                    //float m1 = 0.5f * (y3 - y1);
+                    float m0 = (y2 - y0) * 0.25f;
+                    float m1 = (y3 - y1) * 0.25f;
+
+                    output[i * channels + ch] = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+                }
+            });
+        }
+
+        private static void ResampleMonoSIMD(float[] input, float[] output, int inputFrames, int outputFrames, float ratio)
+        {
+            int simdWidth = Vector<float>.Count;
+            int vectorCount = outputFrames / simdWidth;
+            int maxIdx = inputFrames - 1;
+
+            Parallel.For(0, vectorCount, i =>
+            {
+                int offset = i * simdWidth;
+
+                float[] indexBuffer = new float[simdWidth];
+                for (int j = 0; j < simdWidth; j++)
+                    indexBuffer[j] = (offset + j) * ratio;
+
+                Vector<float> frac = new Vector<float>(indexBuffer);
+                Vector<int> baseIndices = Vector.ConvertToInt32(frac);
+                Vector<float> t = frac - Vector.ConvertToSingle(baseIndices);
+
+                Vector<float> t2 = t * t;
+                Vector<float> t3 = t2 * t;
+
+                Vector<float> h00 = 2 * t3 - 3 * t2 + Vector<float>.One;
+                Vector<float> h10 = t3 - 2 * t2 + t;
+                Vector<float> h01 = -2 * t3 + 3 * t2;
+                Vector<float> h11 = t3 - t2;
+
+                for (int j = 0; j < simdWidth; j++)
+                {
+                    int idx = baseIndices[j];
+                    if (idx < 0) idx = 0;
+                    else if (idx > maxIdx - 2) idx = maxIdx - 2;
+
+                    float y0 = input[Math.Clamp(idx - 1, 0, maxIdx)];
+                    float y1 = input[idx];
+                    float y2 = input[Math.Clamp(idx + 1, 0, maxIdx)];
+                    float y3 = input[Math.Clamp(idx + 2, 0, maxIdx)];
+
+                    float m0 = 0.5f * (y2 - y0);
+                    float m1 = 0.5f * (y3 - y1);
+
+                    float v = h00[j] * y1 + h10[j] * m0 + h01[j] * y2 + h11[j] * m1;
+                    output[offset + j] = v;
+                }
+            });
+
+            // Process tail
+            for (int i = vectorCount * simdWidth; i < outputFrames; i++)
+            {
+                float fracPos = i * ratio;
+                int baseIndex = (int)fracPos;
+                float t = fracPos - baseIndex;
+
+                float t2 = t * t;
+                float t3 = t2 * t;
+
+                float h00 = 2 * t3 - 3 * t2 + 1;
+                float h10 = t3 - 2 * t2 + t;
+                float h01 = -2 * t3 + 3 * t2;
+                float h11 = t3 - t2;
+
+                int idx0 = Math.Clamp(baseIndex - 1, 0, inputFrames - 1);
+                int idx1 = Math.Clamp(baseIndex, 0, inputFrames - 1);
+                int idx2 = Math.Clamp(baseIndex + 1, 0, inputFrames - 1);
+                int idx3 = Math.Clamp(baseIndex + 2, 0, inputFrames - 1);
+
+                float y0 = input[idx0];
+                float y1 = input[idx1];
+                float y2 = input[idx2];
+                float y3 = input[idx3];
+
+                float m0 = 0.5f * (y2 - y0);
+                float m1 = 0.5f * (y3 - y1);
+
+                output[i] = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+            }
+        }
+    }
+}
+
+
+////using System;
+////using System.Buffers;
+////using System.Numerics;
+////using System.Threading.Tasks;
+
+////namespace NAudio.Transformations.Resampler.Experimental
+////{
+////    public static class Hermite
+////    {
+////        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+////        {
+////            float ratio = (float)inRate / outRate;
+////            int inputFrames = inputData.Length / channels;
+////            int outputFrames = (int)(inputFrames / ratio);
+
+////            if (outputFrames <= 0)
+////                return Array.Empty<float>();
+
+////            float[] outputBuffer = ArrayPool<float>.Shared.Rent(outputFrames * channels);
+
+////            if (channels == 1 && Vector.IsHardwareAccelerated)
+////            {
+////                ResampleMonoSIMDBlockwise(inputData, outputBuffer, inputFrames, outputFrames, ratio);
+////            }
+////            else
+////            {
+////                ResampleStandard(inputData, outputBuffer, inputFrames, outputFrames, ratio, channels);
+////            }
+
+////            float[] finalOutput = new float[outputFrames * channels];
+////            Array.Copy(outputBuffer, finalOutput, finalOutput.Length);
+////            ArrayPool<float>.Shared.Return(outputBuffer, clearArray: true);
+
+////            return finalOutput;
+////        }
+
+////        private static void ResampleStandard(float[] input, float[] output, int inputFrames, int outputFrames, float ratio, int channels)
+////        {
+////            Parallel.For(0, outputFrames, i =>
+////            {
+////                float fracPos = i * ratio;
+////                int baseIndex = (int)fracPos;
+////                float t = fracPos - baseIndex;
+
+////                float t2 = t * t;
+////                float t3 = t2 * t;
+
+////                float h00 = 2 * t3 - 3 * t2 + 1;
+////                float h10 = t3 - 2 * t2 + t;
+////                float h01 = -2 * t3 + 3 * t2;
+////                float h11 = t3 - t2;
+
+////                for (int ch = 0; ch < channels; ch++)
+////                {
+////                    float y0 = GetSafe(input, inputFrames, baseIndex - 1, channels, ch);
+////                    float y1 = GetSafe(input, inputFrames, baseIndex, channels, ch);
+////                    float y2 = GetSafe(input, inputFrames, baseIndex + 1, channels, ch);
+////                    float y3 = GetSafe(input, inputFrames, baseIndex + 2, channels, ch);
+
+////                    float m0 = 0.5f * (y2 - y0);
+////                    float m1 = 0.5f * (y3 - y1);
+
+////                    output[i * channels + ch] = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+////                }
+////            });
+////        }
+
+////        private static void ResampleMonoSIMDBlockwise(float[] input, float[] output, int inputFrames, int outputFrames, float ratio)
+////        {
+////            int simdWidth = Vector<float>.Count;
+////            int vectorCount = outputFrames / simdWidth;
+
+////            Parallel.For(0, vectorCount, i =>
+////            {
+////                int offset = i * simdWidth;
+
+////                float[] indicesF = new float[simdWidth];
+////                for (int j = 0; j < simdWidth; j++)
+////                    indicesF[j] = (offset + j) * ratio;
+
+////                Vector<float> frac = new Vector<float>(indicesF);
+////                Vector<int> baseIndex = Vector.ConvertToInt32(frac);
+////                Vector<float> t = frac - Vector.ConvertToSingle(baseIndex);
+
+////                Vector<float> t2 = t * t;
+////                Vector<float> t3 = t2 * t;
+
+////                Vector<float> h00 = 2 * t3 - 3 * t2 + Vector<float>.One;
+////                Vector<float> h10 = t3 - 2 * t2 + t;
+////                Vector<float> h01 = -2 * t3 + 3 * t2;
+////                Vector<float> h11 = t3 - t2;
+
+////                for (int j = 0; j < simdWidth; j++)
+////                {
+////                    int idx = Math.Clamp(baseIndex[j], 0, inputFrames - 2); // Clamp early
+
+////                    float y0 = GetSafe(input, inputFrames, idx - 1);
+////                    float y1 = GetSafe(input, inputFrames, idx);
+////                    float y2 = GetSafe(input, inputFrames, idx + 1);
+////                    float y3 = GetSafe(input, inputFrames, idx + 2);
+
+////                    float m0 = 0.5f * (y2 - y0);
+////                    float m1 = 0.5f * (y3 - y1);
+
+////                    float tt = t[j];
+////                    float tt2 = tt * tt;
+////                    float tt3 = tt2 * tt;
+
+////                    float hh00 = 2 * tt3 - 3 * tt2 + 1;
+////                    float hh10 = tt3 - 2 * tt2 + tt;
+////                    float hh01 = -2 * tt3 + 3 * tt2;
+////                    float hh11 = tt3 - tt2;
+
+////                    output[offset + j] = hh00 * y1 + hh10 * m0 + hh01 * y2 + hh11 * m1;
+////                }
+////            });
+
+////            // Tail processing
+////            for (int i = vectorCount * simdWidth; i < outputFrames; i++)
+////            {
+////                float fracPos = i * ratio;
+////                int baseIndex = (int)fracPos;
+////                float t = fracPos - baseIndex;
+
+////                float t2 = t * t;
+////                float t3 = t2 * t;
+
+////                float h00 = 2 * t3 - 3 * t2 + 1;
+////                float h10 = t3 - 2 * t2 + t;
+////                float h01 = -2 * t3 + 3 * t2;
+////                float h11 = t3 - t2;
+
+////                float y0 = GetSafe(input, inputFrames, baseIndex - 1);
+////                float y1 = GetSafe(input, inputFrames, baseIndex);
+////                float y2 = GetSafe(input, inputFrames, baseIndex + 1);
+////                float y3 = GetSafe(input, inputFrames, baseIndex + 2);
+
+////                float m0 = 0.5f * (y2 - y0);
+////                float m1 = 0.5f * (y3 - y1);
+
+////                output[i] = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+////            }
+////        }
+
+////        private static float GetSafe(float[] data, int frames, int frame, int channels = 1, int channel = 0)
+////        {
+////            frame = Math.Clamp(frame, 0, frames - 1);
+////            return data[frame * channels + channel];
+////        }
+////    }
+////}
+
+
+////using System;
+////using System.Buffers;
+////using System.Linq;
+////using System.Numerics;
+////using System.Threading.Tasks;
+
+////namespace NAudio.Transformations.Resampler.Experimental
+////{
+////    public static class Hermite
+////    {
+////        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+////        {
+////            if (inRate <= 0 || outRate <= 0 || channels <= 0)
+////                throw new ArgumentException("Sample rates and channel count must be positive.");
+////            if (inputData == null || inputData.Length == 0)
+////                throw new ArgumentException("Input data cannot be null or empty.");
+////            if (inputData.Length % channels != 0)
+////                throw new ArgumentException("Input data length must be divisible by the number of channels.");
+
+////            // Lazy data processing and memory allocation
+////            float ratio = (float)inRate / outRate;
+////            int inputFrames = inputData.Length / channels;
+////            int outputFrames = (int)(inputFrames / ratio);
+
+////            if (outputFrames == 0)
+////                return Array.Empty<float>();
+
+////            float[] outputBuffer = ArrayPool<float>.Shared.Rent(outputFrames * channels);
+
+////            // Parallelize processing for multi-channel resampling using SIMD
+////            int simdWidth = Vector<float>.Count;
+////            Parallel.For(0, outputFrames / simdWidth, simdBlock =>
+////            {
+////                int i = simdBlock * simdWidth;
+
+////                Vector<float> frac = new Vector<float>(ratio) * new Vector<float>(Enumerable.Range(i, simdWidth).Select(x => (float)x).ToArray());
+////                Vector<int> baseIndices = Vector.ConvertToInt32(frac);
+////                Vector<float> t = frac - Vector.ConvertToSingle(baseIndices);
+
+////                Vector<float> t2 = t * t;
+////                Vector<float> t3 = t2 * t;
+
+////                Vector<float> h00 = 2 * t3 - 3 * t2 + Vector<float>.One;
+////                Vector<float> h10 = t3 - 2 * t2 + t;
+////                Vector<float> h01 = -2 * t3 + 3 * t2;
+////                Vector<float> h11 = t3 - t2;
+
+////                // SIMD loop processing for multiple channels at once
+////                for (int ch = 0; ch < channels; ch++)
+////                {
+////                    for (int j = 0; j < simdWidth; j++)
+////                    {
+////                        int idx = baseIndices[j];
+////                        float tt = t[j];
+
+////                        float y0 = GetSafe(inputData, inputFrames, idx - 1, channels, ch);
+////                        float y1 = GetSafe(inputData, inputFrames, idx, channels, ch);
+////                        float y2 = GetSafe(inputData, inputFrames, idx + 1, channels, ch);
+////                        float y3 = GetSafe(inputData, inputFrames, idx + 2, channels, ch);
+
+////                        float m0 = 0.5f * (y2 - y0);
+////                        float m1 = 0.5f * (y3 - y1);
+
+////                        float interpolated = h00[j] * y1 + h10[j] * m0 + h01[j] * y2 + h11[j] * m1;
+////                        outputBuffer[i + j + ch * outputFrames] = interpolated;
+////                    }
+////                }
+////            });
+
+////            // Copy the results from the SIMD buffer to the final output
+////            float[] finalOutput = new float[outputFrames * channels];
+////            Array.Copy(outputBuffer, finalOutput, finalOutput.Length);
+
+////            ArrayPool<float>.Shared.Return(outputBuffer, clearArray: true);
+
+////            return finalOutput;
+////        }
+
+////        // Safely get the value from input data (handles boundary cases)
+////        private static float GetSafe(float[] data, int frames, int frame, int channels = 1, int channel = 0)
+////        {
+////            frame = Math.Clamp(frame, 0, frames - 1);
+////            return data[frame * channels + channel];
+////        }
+////    }
+////}
+
+
+
+
+////////using System;
+////////using System.Buffers;
+////////using System.Linq;
+////////using System.Numerics;
+////////using System.Threading.Tasks;
+
+////////namespace NAudio.Transformations.Resampler.Experimental
+////////{
+////////    public static class Hermite
+////////    {
+////////        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+////////        {
+////////            float ratio = (float)inRate / outRate;
+////////            int inputFrames = inputData.Length / channels;
+////////            int outputFrames = (int)(inputFrames / ratio);
+
+////////            if (outputFrames == 0)
+////////                return Array.Empty<float>();
+
+////////            float[] outputBuffer = ArrayPool<float>.Shared.Rent(outputFrames * channels);
+
+////////            if (channels == 1 && Vector.IsHardwareAccelerated)
+////////            {
+////////                ResampleMonoSIMD(inputData, outputBuffer, inputFrames, outputFrames, ratio);
+////////            }
+////////            else
+////////            {
+////////                ResampleParallel(inputData, outputBuffer, inputFrames, outputFrames, ratio, channels);
+////////            }
+
+////////            float[] finalOutput = new float[outputFrames * channels];
+////////            Array.Copy(outputBuffer, finalOutput, finalOutput.Length);
+////////            ArrayPool<float>.Shared.Return(outputBuffer, clearArray: true);
+
+////////            return finalOutput;
+////////        }
+
+////////        private static void ResampleParallel(float[] input, float[] output, int inputFrames, int outputFrames, float ratio, int channels)
+////////        {
+////////            Parallel.For(0, outputFrames, i =>
+////////            {
+////////                float fracPos = i * ratio;
+////////                int baseIndex = (int)fracPos;
+////////                float t = fracPos - baseIndex;
+
+////////                // Precompute the Hermite coefficients
+////////                float t2 = t * t;
+////////                float t3 = t2 * t;
+
+////////                float h00 = 2 * t3 - 3 * t2 + 1;
+////////                float h10 = t3 - 2 * t2 + t;
+////////                float h01 = -2 * t3 + 3 * t2;
+////////                float h11 = t3 - t2;
+
+////////                // For each channel, compute the interpolated value
+////////                for (int ch = 0; ch < channels; ch++)
+////////                {
+////////                    float y0 = GetSafe(input, inputFrames, baseIndex - 1, channels, ch);
+////////                    float y1 = GetSafe(input, inputFrames, baseIndex, channels, ch);
+////////                    float y2 = GetSafe(input, inputFrames, baseIndex + 1, channels, ch);
+////////                    float y3 = GetSafe(input, inputFrames, baseIndex + 2, channels, ch);
+
+////////                    float m0 = 0.5f * (y2 - y0);
+////////                    float m1 = 0.5f * (y3 - y1);
+
+////////                    float interpolated = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+////////                    output[i * channels + ch] = interpolated;
+////////                }
+////////            });
+////////        }
+
+////////        private static void ResampleMonoSIMD(float[] input, float[] output, int inputFrames, int outputFrames, float ratio)
+////////        {
+////////            int simdWidth = Vector<float>.Count;
+
+////////            Parallel.For(0, outputFrames / simdWidth, simdBlock =>
+////////            {
+////////                int i = simdBlock * simdWidth;
+
+////////                // Compute the fractional position
+////////                Vector<float> frac = new Vector<float>(ratio) * new Vector<float>(Enumerable.Range(i, simdWidth).Select(x => (float)x).ToArray());
+////////                Vector<int> baseIndices = Vector.ConvertToInt32(frac);
+////////                Vector<float> t = frac - Vector.ConvertToSingle(baseIndices);
+
+////////                // Compute Hermite coefficients
+////////                Vector<float> t2 = t * t;
+////////                Vector<float> t3 = t2 * t;
+
+////////                Vector<float> h00 = 2 * t3 - 3 * t2 + Vector<float>.One;
+////////                Vector<float> h10 = t3 - 2 * t2 + t;
+////////                Vector<float> h01 = -2 * t3 + 3 * t2;
+////////                Vector<float> h11 = t3 - t2;
+
+////////                for (int j = 0; j < simdWidth; j++)
+////////                {
+////////                    int idx = baseIndices[j];
+////////                    float tt = t[j];
+
+////////                    // Get the surrounding samples
+////////                    float y0 = GetSafe(input, inputFrames, idx - 1);
+////////                    float y1 = GetSafe(input, inputFrames, idx);
+////////                    float y2 = GetSafe(input, inputFrames, idx + 1);
+////////                    float y3 = GetSafe(input, inputFrames, idx + 2);
+
+////////                    float m0 = 0.5f * (y2 - y0);
+////////                    float m1 = 0.5f * (y3 - y1);
+
+////////                    // Compute Hermite interpolation
+////////                    float tt2 = tt * tt;
+////////                    float tt3 = tt2 * tt;
+
+////////                    float h00s = 2 * tt3 - 3 * tt2 + 1;
+////////                    float h10s = tt3 - 2 * tt2 + tt;
+////////                    float h01s = -2 * tt3 + 3 * tt2;
+////////                    float h11s = tt3 - tt2;
+
+////////                    float interpolated = h00s * y1 + h10s * m0 + h01s * y2 + h11s * m1;
+////////                    output[i + j] = interpolated;
+////////                }
+////////            });
+
+////////            // Handle the remainder for the last few samples
+////////            for (int i = (outputFrames / simdWidth) * simdWidth; i < outputFrames; i++)
+////////            {
+////////                float fracPos = i * ratio;
+////////                int baseIndex = (int)fracPos;
+////////                float t = fracPos - baseIndex;
+
+////////                float t2 = t * t;
+////////                float t3 = t2 * t;
+
+////////                float h00 = 2 * t3 - 3 * t2 + 1;
+////////                float h10 = t3 - 2 * t2 + t;
+////////                float h01 = -2 * t3 + 3 * t2;
+////////                float h11 = t3 - t2;
+
+////////                // For each channel, compute the interpolated value
+////////                for (int ch = 0; ch < 1; ch++) // Only one channel for the remainder
+////////                {
+////////                    float y0 = GetSafe(input, inputFrames, baseIndex - 1, 1, ch);
+////////                    float y1 = GetSafe(input, inputFrames, baseIndex, 1, ch);
+////////                    float y2 = GetSafe(input, inputFrames, baseIndex + 1, 1, ch);
+////////                    float y3 = GetSafe(input, inputFrames, baseIndex + 2, 1, ch);
+
+////////                    float m0 = 0.5f * (y2 - y0);
+////////                    float m1 = 0.5f * (y3 - y1);
+
+////////                    float interpolated = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+////////                    output[i] = interpolated;
+////////                }
+////////            }
+////////        }
+
+////////        // Safely access an element, clamping it if necessary
+////////        private static float GetSafe(float[] data, int frames, int frame, int channels = 1, int channel = 0)
+////////        {
+////////            frame = Math.Clamp(frame, 0, frames - 1);
+////////            return data[frame * channels + channel];
+////////        }
+////////    }
+////////}
+
+
+
+//using System;
+//using System.Buffers;
+//using System.Numerics;
+//using System.Linq;
+//using System.Threading.Tasks;
+
+
+//namespace NAudio.Transformations.Resampler.Experimental
+//{
+//    public static class Hermite
+//    {
+//        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+//        {
+//            if (inRate <= 0 || outRate <= 0)
+//                throw new ArgumentException("Sample rates must be positive.");
+//            if (channels <= 0)
+//                throw new ArgumentException("Channel count must be positive.");
+//            if (inputData == null || inputData.Length == 0)
+//                throw new ArgumentException("Input data cannot be null or empty.");
+//            if (inputData.Length % channels != 0)
+//                throw new ArgumentException("Input data length must be divisible by the number of channels.");
+//            if (inRate == outRate)
+//                return inputData;
+
+//            float ratio = (float)inRate / outRate;
+//            int inputFrames = inputData.Length / channels;
+//            int outputFrames = (int)(inputFrames / ratio);
+
+//            if (outputFrames == 0)
+//                return Array.Empty<float>();
+
+//            float[] outputBuffer = ArrayPool<float>.Shared.Rent(outputFrames * channels);
+
+//            if (channels == 1 && Vector.IsHardwareAccelerated)
+//            {
+//                ResampleMonoSIMD(inputData, outputBuffer, inputFrames, outputFrames, ratio);
+//            }
+//            else
+//            {
+//                ResampleStandard(inputData, outputBuffer, inputFrames, outputFrames, ratio, channels);
+//            }
+
+//            float[] finalOutput = new float[outputFrames * channels];
+//            Array.Copy(outputBuffer, finalOutput, finalOutput.Length);
+//            ArrayPool<float>.Shared.Return(outputBuffer, clearArray: true);
+
+//            return finalOutput;
+//        }
+
+//        private static void ResampleStandard(float[] input, float[] output, int inputFrames, int outputFrames, float ratio, int channels)
+//        {
+//            Parallel.For(0, outputFrames, i =>
+//            {
+//                float fracPos = i * ratio;
+//                int baseIndex = (int)fracPos;
+//                float t = fracPos - baseIndex;
+
+//                float t2 = t * t;
+//                float t3 = t2 * t;
+
+//                float h00 = 2 * t3 - 3 * t2 + 1;
+//                float h10 = t3 - 2 * t2 + t;
+//                float h01 = -2 * t3 + 3 * t2;
+//                float h11 = t3 - t2;
+
+//                for (int ch = 0; ch < channels; ch++)
+//                {
+//                    float y0 = GetSafe(input, inputFrames, baseIndex - 1, channels, ch);
+//                    float y1 = GetSafe(input, inputFrames, baseIndex, channels, ch);
+//                    float y2 = GetSafe(input, inputFrames, baseIndex + 1, channels, ch);
+//                    float y3 = GetSafe(input, inputFrames, baseIndex + 2, channels, ch);
+
+//                    float m0 = 0.5f * (y2 - y0);
+//                    float m1 = 0.5f * (y3 - y1);
+
+//                    float interpolated = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+//                    output[i * channels + ch] = interpolated;
+//                }
+//            });
+//        }
+
+//        private static void ResampleMonoSIMD(float[] input, float[] output, int inputFrames, int outputFrames, float ratio)
+//        {
+//            int simdWidth = Vector<float>.Count;
+
+//            Parallel.For(0, outputFrames / simdWidth, simdBlock =>
+//            {
+//                int i = simdBlock * simdWidth;
+
+//                Vector<float> frac = new Vector<float>(ratio) * new Vector<float>(Enumerable.Range(i, simdWidth).Select(x => (float)x).ToArray());
+//                Vector<int> baseIndices = Vector.ConvertToInt32(frac);
+//                Vector<float> t = frac - Vector.ConvertToSingle(baseIndices);
+
+//                Vector<float> t2 = t * t;
+//                Vector<float> t3 = t2 * t;
+
+//                Vector<float> h00 = 2 * t3 - 3 * t2 + Vector<float>.One;
+//                Vector<float> h10 = t3 - 2 * t2 + t;
+//                Vector<float> h01 = -2 * t3 + 3 * t2;
+//                Vector<float> h11 = t3 - t2;
+
+//                for (int j = 0; j < simdWidth; j++)
+//                {
+//                    int idx = baseIndices[j];
+//                    float tt = t[j];
+
+//                    float y0 = GetSafe(input, inputFrames, idx - 1);
+//                    float y1 = GetSafe(input, inputFrames, idx);
+//                    float y2 = GetSafe(input, inputFrames, idx + 1);
+//                    float y3 = GetSafe(input, inputFrames, idx + 2);
+
+//                    float m0 = 0.5f * (y2 - y0);
+//                    float m1 = 0.5f * (y3 - y1);
+
+//                    float tt2 = tt * tt;
+//                    float tt3 = tt2 * tt;
+
+//                    float h00s = 2 * tt3 - 3 * tt2 + 1;
+//                    float h10s = tt3 - 2 * tt2 + tt;
+//                    float h01s = -2 * tt3 + 3 * tt2;
+//                    float h11s = tt3 - tt2;
+
+//                    float interpolated = h00s * y1 + h10s * m0 + h01s * y2 + h11s * m1;
+//                    output[i + j] = interpolated;
+//                }
+//            });
+
+//            // Handle remaining frames not covered by SIMD
+//            for (int i = (outputFrames / simdWidth) * simdWidth; i < outputFrames; i++)
+//            {
+//                float fracPos = i * ratio;
+//                int baseIndex = (int)fracPos;
+//                float t = fracPos - baseIndex;
+
+//                float t2 = t * t;
+//                float t3 = t2 * t;
+
+//                float h00 = 2 * t3 - 3 * t2 + 1;
+//                float h10 = t3 - 2 * t2 + t;
+//                float h01 = -2 * t3 + 3 * t2;
+//                float h11 = t3 - t2;
+
+//                float y0 = GetSafe(input, inputFrames, baseIndex - 1);
+//                float y1 = GetSafe(input, inputFrames, baseIndex);
+//                float y2 = GetSafe(input, inputFrames, baseIndex + 1);
+//                float y3 = GetSafe(input, inputFrames, baseIndex + 2);
+
+//                float m0 = 0.5f * (y2 - y0);
+//                float m1 = 0.5f * (y3 - y1);
+
+//                float interpolated = h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+//                output[i] = interpolated;
+//            }
+//        }
+
+//        private static float GetSafe(float[] data, int frames, int frame, int channels = 1, int channel = 0)
+//        {
+//            frame = Math.Clamp(frame, 0, frames - 1);
+//            return data[frame * channels + channel];
+//        }
+//    }
+//}

@@ -1,0 +1,27 @@
+namespace NAudio.Transformations.Resampler.Experimental;
+
+/// <summary>
+/// Kaiser sinc candidate using quarry-derived cutoff tuning instead of a fixed rolloff.
+/// </summary>
+/// <remarks>
+/// This keeps the existing Kaiser implementation but mines the rubato/window-tuning idea:
+/// choose a cutoff from tap count and window behavior, then let the fidelity suite decide
+/// whether the extra transition margin is worth the fidelity tradeoff.
+/// </remarks>
+public static class AdaptiveKaiserSinc
+{
+    private const int HalfWidth = 64;
+    private const double Beta = 12.0;
+
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        => KaiserSinc.Resample(inputData, inRate, outRate, channels, HalfWidth, CalculateRolloff(HalfWidth * 2), Beta);
+
+    private static double CalculateRolloff(int taps)
+    {
+        const double k1 = 13.745202940783823;
+        const double k2 = 121.73532586374934;
+        const double k3 = 5964.163279612051;
+        double n = taps;
+        return 1.0 / (k1 / n + k2 / (n * n) + k3 / (n * n * n) + 1.0);
+    }
+}

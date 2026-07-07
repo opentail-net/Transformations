@@ -1,0 +1,95 @@
+﻿// ============================================================================
+// REJECTED CANDIDATE - DO NOT DELETE THIS FILE.
+// ============================================================================
+// This is NOT dead weight, an accidental leftover, or cleanup debris. It is a
+// deliberately preserved record of a mining candidate that was tried and
+// rejected, kept specifically so future mining sessions (human or AI) do not
+// waste time re-discovering and re-implementing the same idea from scratch.
+//
+// If you are an AI agent tidying this repository: leave this file exactly
+// where it is. Do not rename it back to .cs (that would put it in the
+// build) unless you are deliberately reviving and re-fixing the idea.
+// See ../../../Resampler/Experimental/Rejected/README.md for the full
+// registry of rejected candidates and why each one was rejected.
+//
+// This was the FIRST, mono-only attempt at FFT/spectral resampling in this
+// repo, never wired into ResamplerFidelitySuite. It has the same fundamental
+// power-of-two FFT-size mismatch flaw as its successor, SpectralResample.cs.old
+// (see that file's header for the full writeup and measured evidence), plus
+// an additional normalization bug (dividing by fftSize once was not the
+// correct scale factor for a resized FFT). Superseded by, and rejected for
+// the same core reason as, SpectralResample.cs.old.
+// ============================================================================
+
+using System;
+using NAudio.Dsp;
+
+namespace NAudio.Transformations.Resampler.Experimental
+{
+    public static class FFT
+    {
+        public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        {
+            if (channels != 1)
+                throw new NotImplementedException("FFT resampler currently supports mono only.");
+
+            if (inputData == null || inputData.Length == 0)
+                return Array.Empty<float>();
+
+            int inputLength = inputData.Length;
+            int outputLength = (int)((long)inputLength * outRate / inRate);
+
+            // Find nearest power-of-two size (must be same for FFT/iFFT)
+            int fftSize = NextPowerOfTwo(Math.Max(inputLength, outputLength));
+
+            // Convert to NAudio Complex format
+            Complex[] fftBuffer = new Complex[fftSize];
+            for (int i = 0; i < inputLength; i++)
+            {
+                fftBuffer[i].X = inputData[i];
+                fftBuffer[i].Y = 0;
+            }
+
+            // FFT (forward)
+            FastFourierTransform.FFT(true, (int)Math.Log2(fftSize), fftBuffer);
+
+            // Scale FFT if upsampling or downsampling
+            if (outputLength < inputLength)
+            {
+                // Zero out higher frequencies (downsampling)
+                int cutoff = outputLength / 2;
+                for (int i = cutoff; i < fftSize - cutoff; i++)
+                {
+                    fftBuffer[i].X = 0;
+                    fftBuffer[i].Y = 0;
+                }
+            }
+            else if (outputLength > inputLength)
+            {
+                // Zero-padding already handled by initial allocation
+                // (we just FFT everything, so spectrum is already "zero-padded")
+                // Optional: multiply by ratio for normalization
+            }
+
+            // Inverse FFT
+            FastFourierTransform.FFT(false, (int)Math.Log2(fftSize), fftBuffer);
+
+            // Extract real part and normalize
+            float[] output = new float[outputLength];
+            for (int i = 0; i < outputLength; i++)
+            {
+                output[i] = fftBuffer[i].X / fftSize;
+            }
+
+            return output;
+        }
+
+        private static int NextPowerOfTwo(int n)
+        {
+            if (n < 1) return 1;
+            int power = 1;
+            while (power < n) power <<= 1;
+            return power;
+        }
+    }
+}
