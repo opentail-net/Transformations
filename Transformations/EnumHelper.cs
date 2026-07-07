@@ -71,7 +71,7 @@ namespace Transformations
 
         /// <summary>
         /// Gets the <see cref="DescriptionAttribute"/> text for the specified enum value
-        /// using <see cref="Attribute.GetCustomAttribute"/>.
+        /// using <see cref="Attribute.GetCustomAttribute(System.Reflection.MemberInfo, Type)"/>.
         /// </summary>
         /// <typeparam name="T">The enum type.</typeparam>
         /// <param name="currentEnum">The current enum value.</param>

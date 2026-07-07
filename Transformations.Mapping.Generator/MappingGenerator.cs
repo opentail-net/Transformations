@@ -105,6 +105,10 @@ namespace Transformations.Mapping.Generator
             isEnabledByDefault: true,
             description: "A MapProperty converter must be statically resolvable so generated mapping code remains reflection-free.");
 
+        /// <summary>
+        /// Initializes the source generator, registering syntax nodes and generating mappings.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
             var mapToDeclarations = context.SyntaxProvider

@@ -5,7 +5,7 @@ using Transformations;
 namespace Transformations.Dapper
 {
     /// <summary>
-    /// Dapper extension methods with built-in transient fault retry via <see cref="Resilience.RetryAsync{T}"/>.
+    /// Dapper extension methods with built-in transient fault retry via <see cref="Resilience.RetryAsync{T}(Func{Task{T}}, int, TimeSpan, CancellationToken)"/>.
     /// </summary>
     public static class DapperResilienceExtensions
     {

@@ -49,7 +49,7 @@ namespace Transformations.EntityFramework
     /// for entities that have been Added, Modified, or Deleted.
     /// </summary>
     /// <remarks>
-    /// Call <see cref="GetAuditEntries"/> <strong>before</strong> <c>SaveChangesAsync</c> to capture
+    /// Call <see cref="GetAuditEntries(DbContext)"/> <strong>before</strong> <c>SaveChangesAsync</c> to capture
     /// pending changes. After save, the ChangeTracker resets entity states.
     /// </remarks>
     public static class ChangeTrackerAuditExtensions
