@@ -1,7 +1,7 @@
-﻿using NAudio.Transformations.Resampler;
+﻿using Transformations.Audio.Resampler;
 using System.Diagnostics;
 
-namespace NAudio.Transformations.Testing
+namespace Transformations.Audio.Testing
 {
     public static class ResamplerBenchmark
     {

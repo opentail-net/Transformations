@@ -1,4 +1,4 @@
-using NAudio.Transformations.Fidelity;
+using Transformations.Audio.Fidelity;
 
 static IEnumerable<string> ReadOptions(string[] args, string name)
 {

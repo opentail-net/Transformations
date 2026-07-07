@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Cascades cheap fixed-coefficient half-band FIR halving/doubling stages to absorb as

@@ -1,4 +1,4 @@
-﻿namespace NAudio.Transformations.Resampler
+﻿namespace Transformations.Audio.Resampler
 {
     //public enum ResamplerQuality
     //{

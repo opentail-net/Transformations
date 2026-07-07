@@ -13,7 +13,7 @@
 // registry of rejected/retired candidates and why each one was removed.
 //
 // Retired: this was `spline`/v1, the original default implementation behind
-// NAudio.Transformations.Resampler.Spline - local Catmull-Rom cubic
+// Transformations.Audio.Resampler.Spline - local Catmull-Rom cubic
 // interpolation (C1-continuous, tangents from 4 neighboring samples). It was
 // promoted out of and replaced by the `natural_cubic_spline` experimental
 // candidate (2026-07-07): a true C2-continuous natural cubic spline (global
@@ -40,7 +40,7 @@ using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 using NAudio.Wave;
 
-namespace NAudio.Transformations.Resampler.Experimental
+namespace Transformations.Audio.Resampler.Experimental
 {
     /// <summary>
     /// RETIRED - see the file-header banner above and Rejected/README.md before reviving or

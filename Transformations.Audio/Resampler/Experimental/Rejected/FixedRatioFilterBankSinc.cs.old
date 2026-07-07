@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// audio-resampler-style fixed-ratio sinc filter bank mined as a separate A/B candidate.

@@ -2,7 +2,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace NAudio.Transformations.Resampler.Experimental
+namespace Transformations.Audio.Resampler.Experimental
 {
     /// <summary>
     /// Provides a pure nearest–neighbor resampling algorithm.
@@ -104,7 +104,7 @@ namespace NAudio.Transformations.Resampler.Experimental
 
 ////using NAudio.Wave;
 
-////namespace NAudio.Transformations.Resampler.Experimental
+////namespace Transformations.Audio.Resampler.Experimental
 ////{
 ////    /// <summary>
 ////    /// Provides a pure nearest–neighbor resampling algorithm.
@@ -176,7 +176,7 @@ namespace NAudio.Transformations.Resampler.Experimental
 ////////using NAudio.Wave;
 ////////using System.Buffers;
 
-////////namespace NAudio.Transformations.Resampler.Experimental
+////////namespace Transformations.Audio.Resampler.Experimental
 ////////{
 ////////    public static class NearestNeighbor
 ////////    {
@@ -405,7 +405,7 @@ namespace NAudio.Transformations.Resampler.Experimental
 //////using System.Threading.Channels;
 //////using System.Threading.Tasks;
 
-//////namespace NAudio.Transformations.Resampler.Experimental
+//////namespace Transformations.Audio.Resampler.Experimental
 //////{
 //////    public static class NearestNeighbor
 //////    {

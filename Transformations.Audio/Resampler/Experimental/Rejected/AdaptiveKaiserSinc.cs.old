@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Kaiser sinc candidate using quarry-derived cutoff tuning instead of a fixed rolloff.

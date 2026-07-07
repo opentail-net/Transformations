@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Transformations.Audio\NAudio.Transformations.csproj" />
+    <ProjectReference Include="..\Transformations.Audio\Transformations.Audio.csproj" />
   </ItemGroup>
 
 </Project>

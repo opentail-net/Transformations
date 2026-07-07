@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Fidelity;
+namespace Transformations.Audio.Fidelity;
 
 /// <summary>Result for one algorithm under one fidelity scenario.</summary>
 public sealed record ResamplerFidelityResult(

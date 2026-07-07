@@ -1,4 +1,4 @@
-using NAudio.Transformations.Fidelity;
+using Transformations.Audio.Fidelity;
 using NUnit.Framework;
 
 namespace Transformations.Audio.Tests.Fidelity;

@@ -30,7 +30,7 @@
 
 using System.Collections.Concurrent;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// RETIRED/SUPERSEDED by sinc_v7 (SplinePhaseSinc) - see the file-header banner above and

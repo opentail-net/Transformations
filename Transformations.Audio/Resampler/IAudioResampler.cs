@@ -1,6 +1,6 @@
 ﻿using NAudio.Wave;
 
-namespace NAudio.Transformations.Resampler
+namespace Transformations.Audio.Resampler
 {
     /// <summary>
     /// Interface for resampling audio data.

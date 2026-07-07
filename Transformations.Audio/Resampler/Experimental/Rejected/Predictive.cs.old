@@ -30,7 +30,7 @@ using NAudio.Wave;
 using System;
 using System.Threading.Tasks;
 
-namespace NAudio.Transformations.Resampler.Experimental
+namespace Transformations.Audio.Resampler.Experimental
 {
     /// <summary>
     /// RETIRED - see the file-header banner above and Rejected/README.md before reviving

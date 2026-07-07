@@ -22,7 +22,7 @@ Depends only on [`NAudio`](https://www.nuget.org/packages/NAudio) (for `WaveForm
 ## 🚀 Quick start
 
 ```csharp
-using NAudio.Transformations.Resampler;
+using Transformations.Audio.Resampler;
 
 float[] input = GetSamples(); // interleaved PCM, e.g. from a WAV file
 float[] output = Sinc.Resample(input, inRate: 48000, outRate: 44100, channels: 2);
@@ -37,7 +37,7 @@ float[] output = Sinc.Resample(input, inFormat, outFormat);
 Extension-method form, including `Span<float>`/`Memory<float>` overloads:
 
 ```csharp
-using NAudio.Transformations.Resampler;
+using Transformations.Audio.Resampler;
 
 float[] output = input.ResampleLinear(48000, 44100, channels: 2);
 ```

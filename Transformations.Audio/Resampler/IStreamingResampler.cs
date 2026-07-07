@@ -1,6 +1,6 @@
 ﻿using NAudio.Wave;
 
-namespace NAudio.Transformations.Resampler
+namespace Transformations.Audio.Resampler
 {
     /// <summary>
     /// Interface for resamplers that operate in streaming (ISampleProvider) mode.

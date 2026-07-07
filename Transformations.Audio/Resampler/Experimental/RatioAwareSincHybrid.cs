@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Original evidence-driven hybrid: plain sinc when alias risk is low, alias-aware sinc otherwise.

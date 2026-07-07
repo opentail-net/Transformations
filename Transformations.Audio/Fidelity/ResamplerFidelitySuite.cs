@@ -3,10 +3,10 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using NAudio.Transformations.Resampler;
-using NAudio.Transformations.Resampler.Experimental;
+using Transformations.Audio.Resampler;
+using Transformations.Audio.Resampler.Experimental;
 
-namespace NAudio.Transformations.Fidelity;
+namespace Transformations.Audio.Fidelity;
 
 /// <summary>
 /// Repeatable fidelity evidence for resamplers. The suite generates deterministic test

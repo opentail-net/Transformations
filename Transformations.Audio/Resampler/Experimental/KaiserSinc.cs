@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Kaiser-windowed band-limited sinc candidate, added separately for A/B testing.

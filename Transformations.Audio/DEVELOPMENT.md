@@ -5,7 +5,7 @@ Audio transformation helpers for .NET. The current focus is sample-rate conversi
 ## Build
 
 ```powershell
-dotnet build C:\Git\Transformations2\Transformations2\Transformations.Audio\NAudio.Transformations.csproj
+dotnet build C:\Git\Transformations2\Transformations2\Transformations.Audio\Transformations.Audio.csproj
 ```
 
 The library currently targets `net8.0` and `net10.0`.

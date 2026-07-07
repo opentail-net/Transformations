@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Fidelity;
+namespace Transformations.Audio.Fidelity;
 
 /// <summary>Deterministic signal shape used by a fidelity scenario.</summary>
 public enum FidelitySignalProfile

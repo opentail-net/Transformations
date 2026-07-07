@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Numerics;
 using NAudio.Wave;
 
-namespace NAudio.Transformations.Resampler
+namespace Transformations.Audio.Resampler
 {
 
 

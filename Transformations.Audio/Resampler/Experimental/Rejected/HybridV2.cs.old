@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// hybrid/v1 gates on absolute sample rate (Sinc above 44.1 kHz, Linear below). This gates

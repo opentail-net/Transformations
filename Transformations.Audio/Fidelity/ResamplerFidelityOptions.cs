@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Fidelity;
+namespace Transformations.Audio.Fidelity;
 
 /// <summary>
 /// Controls pass/fail thresholds for the repeatable resampler fidelity suite.

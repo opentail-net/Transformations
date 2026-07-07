@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 
-namespace NAudio.Transformations.Resampler.Experimental
+namespace Transformations.Audio.Resampler.Experimental
 {
     public static class WDL_Sinc
     {

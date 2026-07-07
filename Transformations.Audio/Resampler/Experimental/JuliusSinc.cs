@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Julius-style low-pass windowed sinc resampler, added as a separate candidate for A/B testing.

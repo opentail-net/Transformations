@@ -42,7 +42,7 @@
 
 using NAudio.Dsp;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Whole-buffer Fourier-domain resampler: FFT the signal, truncate or zero-pad the

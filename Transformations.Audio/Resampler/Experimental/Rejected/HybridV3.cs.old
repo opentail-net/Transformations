@@ -30,7 +30,7 @@
 // justify the fidelity cliff at the buffer sizes the suite exercises.
 // ============================================================================
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// RETIRED - see the file-header banner above and Rejected/README.md before reviving

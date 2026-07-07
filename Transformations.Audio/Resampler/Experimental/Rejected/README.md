@@ -160,7 +160,7 @@ for the build to stay clean.
 ### `spline` / v1 - `CatmullRomSpline.cs.old` (retired/superseded by promotion, not broken)
 
 - **Source idea**: no cited quarry source - the original default implementation
-  behind `NAudio.Transformations.Resampler.Spline`, predating this repo's
+  behind `Transformations.Audio.Resampler.Spline`, predating this repo's
   mining-loop effort. Local Catmull-Rom cubic interpolation (C1-continuous,
   tangents from 4 neighboring samples).
 - **Why retired**: this is the mirror image of the usual entry in this file -

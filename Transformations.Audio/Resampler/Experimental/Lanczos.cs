@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
-namespace NAudio.Transformations.Resampler.Experimental
+namespace Transformations.Audio.Resampler.Experimental
 {
     public static class Lanczos
     {
@@ -118,7 +118,7 @@ namespace NAudio.Transformations.Resampler.Experimental
 
 ////////using System.Buffers;
 
-////////namespace NAudio.Transformations.Resampler.Experimental
+////////namespace Transformations.Audio.Resampler.Experimental
 ////////{
 ////////    public static class Lanczos
 ////////    {
@@ -214,7 +214,7 @@ namespace NAudio.Transformations.Resampler.Experimental
 
 ////using System.Buffers;
 
-////namespace NAudio.Transformations.Resampler.Experimental
+////namespace Transformations.Audio.Resampler.Experimental
 ////{
 ////    public static class Lanczos
 ////    {

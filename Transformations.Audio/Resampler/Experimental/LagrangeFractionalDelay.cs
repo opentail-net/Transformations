@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Splits resampling into two independent stages - an explicit anti-alias low-pass filter

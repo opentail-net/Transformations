@@ -1,4 +1,4 @@
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Resampy/libresample-style right-wing windowed-sinc lookup with per-tap linear interpolation.

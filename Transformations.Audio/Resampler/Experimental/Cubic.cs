@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
-namespace NAudio.Transformations.Resampler.Experimental
+namespace Transformations.Audio.Resampler.Experimental
 {
     /// <summary>
     /// A cubic interpolation resampler (Mitchell-Netravali/Catmull–Rom style).
@@ -175,7 +175,7 @@ namespace NAudio.Transformations.Resampler.Experimental
 //using System.Runtime.CompilerServices;
 //using System.Threading.Tasks;
 
-//namespace NAudio.Transformations.Resampler.Experimental
+//namespace Transformations.Audio.Resampler.Experimental
 //{
 //    /// <summary>
 //    /// A cubic interpolation resampler (Mitchell-Netravali/Catmull–Rom style).
@@ -355,7 +355,7 @@ namespace NAudio.Transformations.Resampler.Experimental
 //////using System.Numerics;
 //////using System.Threading.Tasks;
 
-//////namespace NAudio.Transformations.Resampler.Experimental
+//////namespace Transformations.Audio.Resampler.Experimental
 //////{
 //////    /// <summary>
 //////    /// A cubic interpolation resampler (Mitchell-Netravali style).

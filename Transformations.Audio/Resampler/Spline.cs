@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using NAudio.Wave;
 
-namespace NAudio.Transformations.Resampler
+namespace Transformations.Audio.Resampler
 {
     /// <summary>
     /// </summary>

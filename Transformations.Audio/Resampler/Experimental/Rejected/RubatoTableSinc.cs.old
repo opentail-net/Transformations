@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// Rubato-style oversampled sinc table with Blackman-Harris-squared windowing.

@@ -48,13 +48,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Mapping.Ben
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Analyzers.CodeFixes", "Transformations.Analyzers.CodeFixes\Transformations.Analyzers.CodeFixes.csproj", "{482B3480-4939-4336-A5CB-FF5534A01491}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Transformations.Audio", "Transformations.Audio", "{D3A49D91-D4E1-1611-5ED1-DBA2C1F8DEF6}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NAudio.Transformations", "Transformations.Audio\NAudio.Transformations.csproj", "{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Audio.Tests", "Transformations.Audio.Tests\Transformations.Audio.Tests.csproj", "{2E37F048-2E0D-4B42-84EC-75ED26B7E0E6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Audio.Fidelity", "Transformations.Audio.Fidelity\Transformations.Audio.Fidelity.csproj", "{C16015D9-8AD5-435C-9620-38EB5082F8A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Audio", "Transformations.Audio\Transformations.Audio.csproj", "{125919FC-A664-48C5-87E7-CDC8AFC0A921}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -270,18 +268,6 @@ Global
 		{482B3480-4939-4336-A5CB-FF5534A01491}.Release|x64.Build.0 = Release|Any CPU
 		{482B3480-4939-4336-A5CB-FF5534A01491}.Release|x86.ActiveCfg = Release|Any CPU
 		{482B3480-4939-4336-A5CB-FF5534A01491}.Release|x86.Build.0 = Release|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Debug|x64.Build.0 = Debug|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Debug|x86.Build.0 = Debug|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Release|x64.ActiveCfg = Release|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Release|x64.Build.0 = Release|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Release|x86.ActiveCfg = Release|Any CPU
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9}.Release|x86.Build.0 = Release|Any CPU
 		{2E37F048-2E0D-4B42-84EC-75ED26B7E0E6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2E37F048-2E0D-4B42-84EC-75ED26B7E0E6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2E37F048-2E0D-4B42-84EC-75ED26B7E0E6}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -306,12 +292,21 @@ Global
 		{C16015D9-8AD5-435C-9620-38EB5082F8A2}.Release|x64.Build.0 = Release|Any CPU
 		{C16015D9-8AD5-435C-9620-38EB5082F8A2}.Release|x86.ActiveCfg = Release|Any CPU
 		{C16015D9-8AD5-435C-9620-38EB5082F8A2}.Release|x86.Build.0 = Release|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Debug|x64.Build.0 = Debug|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Debug|x86.Build.0 = Debug|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|Any CPU.Build.0 = Release|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x64.ActiveCfg = Release|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x64.Build.0 = Release|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x86.ActiveCfg = Release|Any CPU
+		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{EEAA8F49-318B-4DC4-8C31-69BE6961FBB9} = {D3A49D91-D4E1-1611-5ED1-DBA2C1F8DEF6}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {13E52504-5DFC-40C1-96D6-19D81A5F3C4B}

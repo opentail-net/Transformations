@@ -1,6 +1,6 @@
 ﻿using NAudio.Wave;
 
-namespace NAudio.Transformations.Resampler
+namespace Transformations.Audio.Resampler
 {
     /// <summary>
     /// Provides a basic linear interpolation resampler for interleaved multi-channel audio.

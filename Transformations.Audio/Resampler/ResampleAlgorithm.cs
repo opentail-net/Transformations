@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace NAudio.Transformations.Resampler
+namespace Transformations.Audio.Resampler
 {
     public enum ResampleAlgorithm
     {

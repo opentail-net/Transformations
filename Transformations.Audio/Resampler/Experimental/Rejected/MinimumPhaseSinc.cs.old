@@ -47,7 +47,7 @@
 using System.Collections.Concurrent;
 using NAudio.Dsp;
 
-namespace NAudio.Transformations.Resampler.Experimental;
+namespace Transformations.Audio.Resampler.Experimental;
 
 /// <summary>
 /// REJECTED - see the file-header banner above and Rejected/README.md before reviving or
