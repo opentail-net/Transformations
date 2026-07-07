@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 
-namespace Transformations.Audio.Resampler.Experimental;
+namespace Transformations.Audio.Resampler;
 
 /// <summary>
-/// Kaiser-windowed band-limited sinc candidate, added separately for A/B testing.
+/// Kaiser-windowed band-limited sinc resampler. Backs the promoted sinc_v3 algorithm.
 /// </summary>
 public static class KaiserSinc
 {

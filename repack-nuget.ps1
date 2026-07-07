@@ -25,7 +25,8 @@ try {
         "Transformations.Dapper/Transformations.Dapper.csproj",
         "Transformations.EntityFramework/Transformations.EntityFramework.csproj",
         "Transformations.Mapping/Transformations.Mapping.csproj",
-        "Transformations.TextExtractor/Transformations.Text.csproj"
+        "Transformations.TextExtractor/Transformations.Text.csproj",
+        "Transformations.Audio/Transformations.Audio.csproj"
     )
 
     foreach ($project in $packProjects) {

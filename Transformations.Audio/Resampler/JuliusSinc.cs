@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 
-namespace Transformations.Audio.Resampler.Experimental;
+namespace Transformations.Audio.Resampler;
 
 /// <summary>
-/// Julius-style low-pass windowed sinc resampler, added as a separate candidate for A/B testing.
+/// Julius-style low-pass windowed sinc resampler. Backs the promoted sinc_v2 algorithm.
 /// </summary>
 public static class JuliusSinc
 {
