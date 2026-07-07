@@ -1,0 +1,484 @@
+using NAudio.Wave;
+
+namespace Transformations.Audio.Resampler.Experimental;
+
+/// <summary>
+/// Polyphase Kaiser-windowed sinc resampler with a pre-built phase table.
+/// Supports both whole-buffer and streaming (chunk-by-chunk) operation.
+/// </summary>
+/// <remarks>
+/// <para>
+/// At construction time a polyphase filter bank is built: <see cref="PhaseCount"/> Kaiser-windowed
+/// sinc kernels are pre-computed, each representing a different sub-sample fractional phase.
+/// At runtime, each output sample is computed by selecting the two nearest phase kernels and
+/// linearly interpolating between them — no per-sample Math.Sin or Math.Exp calls, and no
+/// kernel cache lookup.
+/// </para>
+/// <para>
+/// The cutoff is automatically lowered to <c>min(1, outRate/inRate) × rolloff</c> for
+/// downsampling, so the anti-alias filter scales with the rate ratio exactly like
+/// <see cref="KaiserSinc"/> does.
+/// </para>
+/// <para>
+/// In streaming mode the resampler maintains a per-channel ring buffer (history) of the most
+/// recent <see cref="HalfWidth"/> × 2 input frames, so chunks can be fed one at a time without
+/// discontinuities at chunk boundaries. The whole-buffer overload is a thin wrapper that feeds
+/// all input at once, and exists so the algorithm can be registered in the fidelity suite for
+/// comparison against the rest of the sinc family.
+/// </para>
+/// </remarks>
+public sealed class PolyphaseStreamingSinc : IStreamingResampler
+{
+    /// <summary>Default number of pre-built phase kernels.</summary>
+    public const int DefaultPhaseCount = 512;
+
+    /// <summary>Default kernel half-width (taps = HalfWidth × 2).</summary>
+    public const int DefaultHalfWidth = 48;
+
+    /// <summary>Default Kaiser beta parameter.</summary>
+    public const double DefaultBeta = 12.0;
+
+    /// <summary>Default rolloff factor (proportion of Nyquist at which the LP filter is applied).</summary>
+    public const double DefaultRolloff = 0.96;
+
+    private readonly double[][] _phases;   // [phaseCount + 1][halfWidth*2] — pre-built kernels
+    private readonly int _phaseCount;
+    private readonly int _halfWidth;
+    private readonly double _ratio;        // inRate / outRate — source samples per output sample
+    private readonly int _inRate;
+    private readonly int _outRate;
+    private readonly int _channels;
+
+    // Streaming state: ring buffer per channel + fractional accumulator.
+    private readonly float[][] _history;   // [channels][halfWidth*2] circular buffer of recent input frames
+    private readonly int[] _histPos;       // write position per channel in the ring buffer
+    private double _phase;                 // fractional accumulator: sub-sample position within the current input frame
+    private bool _primed;
+    private ISampleProvider? _source;
+
+    /// <inheritdoc/>
+    public int InputSampleRate => _inRate;
+
+    /// <inheritdoc/>
+    public int OutputSampleRate => _outRate;
+
+    /// <inheritdoc/>
+    public int Channels => _channels;
+
+    /// <inheritdoc/>
+    public WaveFormat WaveFormat { get; }
+
+    /// <summary>
+    /// Gets the number of pre-built phase kernels.
+    /// </summary>
+    public int PhaseCount => _phaseCount;
+
+    /// <summary>
+    /// Gets the kernel half-width (each kernel has <c>HalfWidth × 2</c> taps).
+    /// </summary>
+    public int HalfWidth => _halfWidth;
+
+    /// <summary>
+    /// Initialises the polyphase table for the given rate pair.
+    /// </summary>
+    /// <param name="inRate">Input sample rate in Hz.</param>
+    /// <param name="outRate">Output sample rate in Hz.</param>
+    /// <param name="channels">Number of interleaved channels.</param>
+    /// <param name="source">Optional streaming source for NAudio <see cref="ISampleProvider"/> mode.</param>
+    /// <param name="phaseCount">Number of pre-built phase kernels. Higher values reduce interpolation error.</param>
+    /// <param name="halfWidth">Kernel half-width. More taps → sharper filter, higher cost.</param>
+    /// <param name="beta">Kaiser window beta. Higher values → better stop-band, wider transition.</param>
+    /// <param name="rolloff">Anti-alias rolloff fraction of Nyquist. Applied when downsampling.</param>
+    public PolyphaseStreamingSinc(
+        int inRate,
+        int outRate,
+        int channels,
+        ISampleProvider? source = null,
+        int phaseCount = DefaultPhaseCount,
+        int halfWidth = DefaultHalfWidth,
+        double beta = DefaultBeta,
+        double rolloff = DefaultRolloff)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(inRate, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(outRate, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(channels, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(phaseCount, 2);
+        ArgumentOutOfRangeException.ThrowIfLessThan(halfWidth, 1);
+
+        _inRate = inRate;
+        _outRate = outRate;
+        _channels = channels;
+        _phaseCount = phaseCount;
+        _halfWidth = halfWidth;
+        _ratio = (double)inRate / outRate;
+        _source = source;
+
+        WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(outRate, channels);
+
+        // Anti-alias cutoff: scale Nyquist down when downsampling, then apply rolloff.
+        var cutoff = Math.Min(1.0, (double)outRate / inRate) * rolloff;
+        _phases = BuildPhaseTable(phaseCount, halfWidth, cutoff, beta);
+
+        // History ring buffers: one per channel, length = kernel tap count.
+        var tapCount = halfWidth * 2;
+        _history = new float[channels][];
+        _histPos = new int[channels];
+        for (var ch = 0; ch < channels; ch++)
+        {
+            _history[ch] = new float[tapCount];
+        }
+
+        Reset();
+    }
+
+    // -------------------------------------------------------------------------
+    // Whole-buffer API — thin wrapper for fidelity suite registration.
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Convenience factory that resamples a complete interleaved buffer using default parameters.
+    /// Suitable for use as a fidelity suite delegate.
+    /// </summary>
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        var resampler = new PolyphaseStreamingSinc(inRate, outRate, channels);
+        return resampler.ProcessBuffer(inputData);
+    }
+
+    // -------------------------------------------------------------------------
+    // Streaming API — ISampleProvider.
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Sets or replaces the input source for streaming mode.
+    /// </summary>
+    public void SetSource(ISampleProvider source) => _source = source;
+
+    /// <inheritdoc/>
+    public int Read(float[] buffer, int offset, int count)
+    {
+        if (_source is null)
+            throw new InvalidOperationException("No source has been set. Call SetSource before reading.");
+
+        if (!_primed)
+        {
+            PrimeFromSource();
+        }
+
+        var outputFrames = count / _channels;
+        var tempFrame = new float[_channels];
+        var written = 0;
+
+        while (written < outputFrames)
+        {
+            // Generate output frames using current history state
+            while (_phase < 1.0 && written < outputFrames)
+            {
+                InterpolateFrame(buffer, offset + written * _channels, _phase);
+                written++;
+                _phase += _ratio;
+            }
+
+            // If we still need to write more output, we must advance the history by reading a frame
+            if (written < outputFrames)
+            {
+                _phase -= 1.0;
+                var read = _source.Read(tempFrame, 0, _channels);
+                if (read == 0)
+                {
+                    // Source ended. Push the last known sample to flush.
+                    for (var ch = 0; ch < _channels; ch++)
+                    {
+                        var lastIdx = (_histPos[ch] - 1 + _history[ch].Length) % _history[ch].Length;
+                        var lastVal = _history[ch][lastIdx];
+                        _history[ch][_histPos[ch]] = lastVal;
+                        _histPos[ch] = (_histPos[ch] + 1) % _history[ch].Length;
+                    }
+                }
+                else
+                {
+                    PushFrameDirect(tempFrame);
+                }
+            }
+        }
+
+        return written * _channels;
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal processing.
+    // -------------------------------------------------------------------------
+
+    private void PrimeFromSource()
+    {
+        if (_source == null)
+            throw new InvalidOperationException("No source has been set.");
+
+        var tempBuffer = new float[_halfWidth * _channels];
+        var read = _source.Read(tempBuffer, 0, tempBuffer.Length);
+        var readFrames = read / _channels;
+
+        if (readFrames == 0)
+        {
+            _primed = true;
+            return;
+        }
+
+        // Fill past & center with the first frame
+        for (var ch = 0; ch < _channels; ch++)
+        {
+            var firstVal = tempBuffer[ch];
+            for (var i = 0; i < _halfWidth; i++)
+            {
+                _history[ch][i] = firstVal;
+            }
+        }
+
+        // Fill future with read frames, pad remaining with the last read frame
+        for (var i = 1; i <= _halfWidth; i++)
+        {
+            var frameIdx = Math.Min(i, readFrames - 1);
+            var baseOffset = frameIdx * _channels;
+            for (var ch = 0; ch < _channels; ch++)
+            {
+                _history[ch][_halfWidth - 1 + i] = tempBuffer[baseOffset + ch];
+            }
+        }
+
+        _histPos.AsSpan().Clear();
+        _phase = 0.0;
+        _primed = true;
+    }
+
+    /// <summary>
+    /// Processes a complete interleaved float buffer and returns the resampled output.
+    /// Resets the streaming state before processing so this produces a consistent result
+    /// regardless of prior Read() calls.
+    /// </summary>
+    private float[] ProcessBuffer(float[] inputData)
+    {
+        Reset();
+
+        var inputFrames = inputData.Length / _channels;
+        var outputFrames = (int)Math.Round(inputFrames * (double)_outRate / _inRate);
+        var output = new float[outputFrames * _channels];
+
+        if (inputFrames == 0)
+            return output;
+
+        // Prime the history buffer
+        // Past & Center (tap 0 to halfWidth - 1) get inputData[0..channels-1]
+        for (var ch = 0; ch < _channels; ch++)
+        {
+            var firstVal = inputData[ch];
+            for (var i = 0; i < _halfWidth; i++)
+            {
+                _history[ch][i] = firstVal;
+            }
+        }
+
+        // Future (tap halfWidth to 2 * halfWidth - 1) get inputData[1..halfWidth]
+        for (var i = 1; i <= _halfWidth; i++)
+        {
+            var frameIdx = Math.Min(i, inputFrames - 1);
+            var baseOffset = frameIdx * _channels;
+            for (var ch = 0; ch < _channels; ch++)
+            {
+                _history[ch][_halfWidth - 1 + i] = inputData[baseOffset + ch];
+            }
+        }
+
+        _histPos.AsSpan().Clear();
+        _phase = 0.0;
+        _primed = true;
+
+        var written = 0;
+        var nextInputFrame = _halfWidth + 1;
+
+        while (written < outputFrames)
+        {
+            // Generate as many output frames as possible with the current history
+            while (_phase < 1.0 && written < outputFrames)
+            {
+                InterpolateFrame(output, written * _channels, _phase);
+                written++;
+                _phase += _ratio;
+            }
+
+            // Push next frame
+            if (written < outputFrames)
+            {
+                _phase -= 1.0;
+                if (nextInputFrame < inputFrames)
+                {
+                    PushFrame(inputData, nextInputFrame);
+                    nextInputFrame++;
+                }
+                else
+                {
+                    var lastOffset = (inputFrames - 1) * _channels;
+                    for (var ch = 0; ch < _channels; ch++)
+                    {
+                        _history[ch][_histPos[ch]] = inputData[lastOffset + ch];
+                        _histPos[ch] = (_histPos[ch] + 1) % _history[ch].Length;
+                    }
+                }
+            }
+        }
+
+        return output;
+    }
+
+    /// <summary>Resets streaming state (history and phase accumulator).</summary>
+    public void Reset()
+    {
+        for (var ch = 0; ch < _channels; ch++)
+        {
+            Array.Clear(_history[ch]);
+            _histPos[ch] = 0;
+        }
+
+        _phase = 0.0;
+        _primed = false;
+    }
+
+    /// <summary>
+    /// Pushes one interleaved frame from <paramref name="data"/> at <paramref name="frameIndex"/>
+    /// into the per-channel history ring buffers.
+    /// </summary>
+    private void PushFrame(float[] data, int frameIndex)
+    {
+        var baseOffset = frameIndex * _channels;
+        for (var ch = 0; ch < _channels; ch++)
+        {
+            _history[ch][_histPos[ch]] = data[baseOffset + ch];
+            _histPos[ch] = (_histPos[ch] + 1) % _history[ch].Length;
+        }
+    }
+
+    private void PushFrameDirect(float[] frame)
+    {
+        for (var ch = 0; ch < _channels; ch++)
+        {
+            _history[ch][_histPos[ch]] = frame[ch];
+            _histPos[ch] = (_histPos[ch] + 1) % _history[ch].Length;
+        }
+    }
+
+    /// <summary>
+    /// Interpolates one output frame at fractional phase <paramref name="frac"/> into
+    /// <paramref name="output"/> at <paramref name="offset"/>.
+    /// </summary>
+    private void InterpolateFrame(float[] output, int offset, double frac)
+    {
+        var phasePos = frac * _phaseCount;
+        var phaseIndex = (int)phasePos;
+        var t = phasePos - phaseIndex;
+
+        if (phaseIndex >= _phaseCount - 1)
+        {
+            phaseIndex = _phaseCount - 1;
+            t = 0.0;
+        }
+
+        var k0 = _phases[phaseIndex];
+        var k1 = _phases[phaseIndex + 1];
+        var tapCount = k0.Length;
+
+        for (var ch = 0; ch < _channels; ch++)
+        {
+            var hist = _history[ch];
+            var histLen = hist.Length;
+            var writePos = _histPos[ch]; // next write position = oldest slot
+
+            double sum = 0.0;
+            double weightSum = 0.0;
+
+            for (var tap = 0; tap < tapCount; tap++)
+            {
+                var sampleIndex = (writePos + tap) % histLen;
+                var w = k0[tap] + (k1[tap] - k0[tap]) * t;
+                sum += hist[sampleIndex] * w;
+                weightSum += w;
+            }
+
+            output[offset + ch] = weightSum == 0.0 ? 0f : (float)(sum / weightSum);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase table construction.
+    // -------------------------------------------------------------------------
+
+    private static double[][] BuildPhaseTable(int phaseCount, int halfWidth, double cutoff, double beta)
+    {
+        var tapCount = halfWidth * 2;
+        var phases = new double[phaseCount + 1][];
+
+        Parallel.For(0, phaseCount + 1, phaseIndex =>
+        {
+            var frac = phaseIndex / (double)phaseCount;
+            phases[phaseIndex] = BuildKernel(halfWidth, tapCount, cutoff, frac, beta);
+        });
+
+        return phases;
+    }
+
+    private static double[] BuildKernel(int halfWidth, int tapCount, double cutoff, double frac, double beta)
+    {
+        var kernel = new double[tapCount];
+        var i0Beta = BesselI0(beta);
+
+        for (var tap = 0; tap < tapCount; tap++)
+        {
+            var offset = tap - halfWidth + 1;
+            var distance = frac - offset;
+
+            var normalizedDistance = Math.Abs(distance) / halfWidth;
+            if (normalizedDistance > 1.0)
+                continue;
+
+            var window = BesselI0(beta * Math.Sqrt(1.0 - normalizedDistance * normalizedDistance)) / i0Beta;
+            kernel[tap] = cutoff * Sinc(cutoff * distance) * window;
+        }
+
+        return kernel;
+    }
+
+    private static double Sinc(double x)
+    {
+        if (Math.Abs(x) < 1e-12)
+            return 1.0;
+
+        var angle = Math.PI * x;
+        return Math.Sin(angle) / angle;
+    }
+
+    private static double BesselI0(double x)
+    {
+        var sum = 1.0;
+        var term = 1.0;
+        var half = x * 0.5;
+
+        for (var k = 1; k <= 32; k++)
+        {
+            term *= (half / k) * (half / k);
+            sum += term;
+            if (term < sum * 1e-16)
+                break;
+        }
+
+        return sum;
+    }
+}

@@ -37,7 +37,12 @@ public static class ResamplerFidelitySuite
         // every currently-gated scenario by large margins whenever the signal has no
         // energy that would fold at the new Nyquist.
         new("sinc_v2", "Sinc", "v2", false, JuliusSinc.Resample),
-        new("sinc_v3", "Sinc", "v3", false, KaiserSinc.Resample),
+        new("nuttall_sinc", "NuttallSinc", "v1", false, NuttallSinc.Resample),
+        // sinc_v3 (KaiserSinc / v3) is retired (2026-07-07): strictly dominated by nuttall_sinc
+        // on both alias suppression (+0.55 dB SNR on Alias Stress) and speed (24 ms vs 26 ms),
+        // plus nuttall_sinc uses a simpler 4-term cosine-sum window evaluation instead of
+        // KaiserSinc's modified Bessel function (I0) power-series. Moved to
+        // Resampler/Experimental/Rejected/KaiserSinc.cs.old.
         new("right_wing_sinc", "RightWingSinc", "v1", true, RightWingSinc.Resample),
         // sinc_v4 through sinc_v7 are all retired (see
         // Resampler/Experimental/Rejected/README.md): sinc_v6 was a rejected minimum-phase
@@ -82,9 +87,28 @@ public static class ResamplerFidelitySuite
         // Router experiment: ratio-aware sinc everywhere except exact 2:1 downsampling,
         // where Lagrange order 6 showed a real-like music win with lower elapsed time.
         new("ratio_aware_lagrange_hybrid", "Experimental RatioAwareLagrangeHybrid", "v1", true, RatioAwareLagrangeHybrid.Resample),
-        // Original evidence-driven hybrid: plain sinc for upsampling/near-unity downsampling,
-        // sinc_v2 for stronger downsampling where alias risk dominates.
-        new("ratio_aware_sinc_hybrid", "Experimental RatioAwareSincHybrid", "v1", true, RatioAwareSincHybrid.Resample),
+        // ratio_aware_sinc_hybrid (v1) is retired (see Resampler/Experimental/Rejected/README.md):
+        // superseded by the superior multi-stage hybrid router sinc_v10 (SincV10).
+        new("sinc_v10", "Experimental SincV10", "v1", true, SincV10.Resample),
+        // sinc_v11 (v1) is retired (2026-07-07) - strictly dominated by sinc_v12 (order 5 Lanczos)
+        // on both quality and speed. Moved to Resampler/Experimental/Rejected/SincV11.cs.old.
+        // sinc_v12 (v1) is retired (2026-07-07) - strictly dominated by sinc_v13 (order 6 Lanczos
+        // + Farrow) on both quality and speed. Moved to Resampler/Experimental/Rejected/SincV12.cs.old.
+        new("sinc_v13", "Experimental SincV13", "v1", true, SincV13.Resample),
+        new("sinc_v14", "Experimental SincV14", "v1", true, SincV14.Resample),
+        new("cubic_farrow", "Experimental CubicFarrow", "v1", true, FarrowResampler.Resample),
+        // bspline (v1), tcb_spline (v1), newton_poly (v1), and nuttall_farrow (v1) are retired
+        // (see Resampler/Experimental/Rejected/README.md): bspline, tcb_spline, and newton_poly
+        // failed multiple gated scenarios due to lack of stop-band filter sharpness;
+        // nuttall_farrow was strictly dominated by cubic_farrow (Kaiser window fit).
+        // thiran_iir (v1) is retired (see Resampler/Experimental/Rejected/README.md):
+        // failed every gated scenario (getting negative SNR around -1.3 to -2.1 dB) due to
+        // IIR phase dispersion (frequency-dependent group delay) which decorrelates the
+        // signal from the reference. Moved to Rejected/ThiranResampler.cs.old.
+        // polyphase_streaming_sinc (sinc_v8 / v8-v2) is retired (see
+        // Resampler/Experimental/Rejected/README.md): matched sinc_v3's quality (tied SNR to 2
+        // decimal places) but retired because it is slower (175ms vs 51ms) and not better for
+        // offline whole-buffer use cases. Moved to Rejected/PolyphaseStreamingSinc.cs.old.
         // polyphase and wdl_native are retired (see Resampler/Experimental/Rejected/README.md):
         // both ported from this repo's own _previous/TestAudioUI prototype code. polyphase
         // (cached per-phase windowed-sinc filter bank) was strictly dominated by every live
@@ -123,10 +147,10 @@ public static class ResamplerFidelitySuite
                 string id = "ratio_aware_threshold_" + thresholdText.Replace(".", "", StringComparison.Ordinal);
                 return new AlgorithmSpec(
                     id,
-                    "Experimental RatioAwareSincHybrid",
+                    "Experimental SincV10",
                     "v1",
                     true,
-                    (input, inRate, outRate, channels) => RatioAwareSincHybrid.Resample(input, inRate, outRate, channels, threshold));
+                    (input, inRate, outRate, channels) => SincV10.Resample(input, inRate, outRate, channels, threshold));
             })
             .ToArray();
 

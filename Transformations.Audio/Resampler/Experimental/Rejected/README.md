@@ -352,3 +352,132 @@ for the build to stay clean.
 - **What would need to change to revive it**: tune the cutoff/beta/tap count as
   a new `sinc_v3` successor, not just swap one formula in. Keep future tuning
   attempts separately versioned.
+
+### `sinc_v8` / v8 - `PolyphaseStreamingSinc.cs.old` (retired, matched sinc_v3 quality but slower offline)
+
+- **Source idea**: rubato's `asynchro_sinc.rs` streaming model — precompute a
+  polyphase Kaiser-windowed sinc table (512 phase kernels by default), then
+  linearly interpolate between adjacent phase kernels per output sample using a
+  per-channel ring-buffer history, enabling true chunk-by-chunk stateful
+  `IStreamingResampler` operation without discontinuities at chunk boundaries.
+  Distinct from prior table-based candidates: rate-aware anti-alias cutoff
+  (fixing the `rubato_table_sinc/v1` failure on Alias Stress), linear
+  inter-phase interpolation (not Lagrange/spline blending), and a streaming
+  ring-buffer history model that no prior candidate attempted.
+- **Why retired**: 
+  - **v1**: Had a structural bug in the ring-buffer/accumulator logic resulting in a group delay shift of `halfWidth` samples, leading to negative SNR (-4 to -5 dB) across all scenarios.
+  - **v2**: Solved the group delay shift by introducing a priming/pre-filling mechanism. In the fidelity suite, v2 achieved **exact quality parity with `sinc_v3`** (matching SNR to 2 decimal places: 34.27 dB on Alias Stress, 48.71 dB on Speech, 28.52 dB on Transient).
+  - **Final Retirement**: While quality parity was achieved, the sequential implementation in the whole-buffer benchmark is slower (175 ms vs `sinc_v3`'s 51 ms) because it is single-threaded (to simulate a real-time streaming pipeline), whereas `sinc_v3` processes the output in parallel. Since it does not exceed the quality of `sinc_v3` for offline batch processing, it was retired to `Experimental/Rejected/`.
+- **What would need to change to revive it**: If an active need for a stateful, real-time chunk-by-chunk `ISampleProvider` resampler emerges in the library, this code is fully verified, mathematically correct, and ready to be promoted as a stable class.
+
+### `thiran_iir` / v1 - `ThiranResampler.cs.old` (retired, phase dispersion failure)
+
+- **Source idea**: 3rd-order Thiran IIR allpass filter for fractional delay
+  interpolation combined with a 4th-order Butterworth low-pass filter (for
+  anti-aliasing). Mined as a classical low-complexity IIR variable fractional
+  delay technique from digital filter design literature.
+- **Why retired**: Failed every single gated scenario in the fidelity suite
+  (Music: -2.10 dB; Speech: -1.95 dB; Sweep: -1.89 dB; Upsample: -1.38 dB).
+  While Thiran allpass filters have a perfectly flat magnitude response ($0$ dB
+  attenuation), they introduce a frequency-dependent group delay (phase
+  dispersion). Because the fidelity suite uses correlation-based SNR/MSE against
+  linear-phase references, this non-linear phase distortion results in near-zero or
+  negative SNR, rendering it unusable for the suite's criteria.
+- **What would need to change to revive it**: IIR-based resampling is inherently
+  non-linear phase. To pass correlation benchmarks, it would require a
+  forward-backward zero-phase design (which requires whole-buffer processing
+  and eliminates its low-complexity, real-time streaming advantage), or the
+  fidelity suite would have to be updated to support non-correlation-based perceptual
+  metrics.
+
+### `bspline` / v1 - `BSplineResampler.cs.old` (retired, low stop-band rejection)
+
+- **Source idea**: 3rd-order Cubic B-Spline fractional delay interpolation
+  combined with a 4th-order Butterworth low-pass filter (for downsampling).
+- **Why retired**: Failed multiple gated scenarios in the fidelity suite
+  (Speech: 2.82 dB vs 12 dB threshold, Upsample: 2.82 dB vs 12 dB threshold).
+  B-Splines act as a strong smoothing filter, resulting in significant high-frequency
+  attenuation (pass-band droop) and insufficient stop-band rejection.
+- **What would need to change to revive it**: Increase the order of the spline or
+  use a pre-filter designed to boost high frequencies to counteract the B-spline
+  droop.
+
+### `tcb_spline` / v1 - `TcbSplineResampler.cs.old` (retired, low filter sharpness)
+
+- **Source idea**: Kochanek-Bartels (TCB) Hermite spline with high tension (T=0.5,
+  C=0, B=0) to prevent ringing, combined with a 4th-order Butterworth lowpass filter.
+- **Why retired**: Failed multiple gated scenarios in the fidelity suite
+  (Speech: 2.05 dB, Upsample: 2.05 dB). The high tension did not provide enough
+  filter sharpness to pass the tests.
+- **What would need to change to revive it**: Optimize Tension, Continuity, and
+  Bias parameters systematically, or couple it with a steeper anti-aliasing filter.
+
+### `newton_poly` / v1 - `NewtonResampler.cs.old` (retired, poor downsampling)
+
+- **Source idea**: 4th-order Newton divided-difference polynomial interpolation
+  on a 5-point local window, combined with a 4th-order Butterworth low-pass filter.
+- **Why retired**: Failed multiple gated scenarios (Speech: 1.77 dB, Upsample: 1.77 dB).
+  Newton polynomial interpolation behaves similarly to Lagrange without custom
+  anti-alias windowing, resulting in high error rates.
+- **What would need to change to revive it**: Use a higher-order polynomial or a
+  steeper anti-aliasing filter.
+
+### `nuttall_farrow` / v1 - `NuttallFarrowResampler.cs.old` (retired, dominated by cubic_farrow)
+
+- **Source idea**: Cubic Farrow structure least-squares fit over a Nuttall-windowed
+  sinc filter.
+- **Why retired**: Strictly dominated by `cubic_farrow` (Kaiser window) on almost all
+  scenarios (Broadband: 2.48 dB vs 2.49 dB; Music: 70.20 dB vs 70.12 dB but lost
+  on all other scenarios; Speech: 48.63 dB vs 48.64 dB).
+- **What would need to change to revive it**: Adjust the rolloff or fit parameters,
+  but the Kaiser window fit remains mathematically superior for the Farrow polynomial.
+
+### `sinc_v3` / v3 - `KaiserSinc.cs.old` (retired, strictly dominated by NuttallSinc)
+
+- **Source idea**: Kaiser-windowed sinc resampler. Promoted to a live, non-experimental
+  resampler on 2026-07-07, and retired later that day.
+- **Why retired**: Strictly dominated by `nuttall_sinc` (NuttallSinc) on both
+  anti-alias suppression (+0.55 dB SNR on the strict Alias Stress benchmark: 34.82 dB
+  vs 34.27 dB) and execution speed (24 ms vs 26 ms). In addition, `nuttall_sinc`
+  uses a simple, closed-form 4-term cosine-sum window function rather than
+  `sinc_v3`'s modified Bessel function ($I_0$) power-series evaluation, making it
+  conceptually simpler and cheaper to compute on cache misses.
+- **What would need to change to revive it**: There is no mathematical reason to
+  revive it since the Nuttall windowed sinc filter is superior across all axes.
+
+### `ratio_aware_sinc_hybrid` / v1 - `RatioAwareSincHybrid.cs.old` (retired, superseded by SincV10)
+
+- **Source idea**: Two-way hybrid router selecting Sinc (v1) for upsampling and
+  sinc_v2 (JuliusSinc) for downsampling.
+- **Why retired**: Superseded by the superior three-way hybrid router `sinc_v10`
+  (SincV10). `sinc_v10` achieves higher quality on Broadband (+0.05 dB) and Sweep
+  (+0.08 dB) while running nearly **twice as fast** (17 ms vs 31 ms) by utilizing
+  `NuttallSinc` for moderate downsampling.
+- **What would need to change to revive it**: The multi-stage routing logic of
+  `sinc_v10` renders this simpler two-stage hybrid obsolete.
+
+### `sinc_v11` / v1 - `SincV11.cs.old` (retired, dominated by sinc_v12)
+
+- **Source idea**: Sinc hybrid router incorporating Lanczos (order 3) for large
+  upsampling ratios ($\ge 1.5$x) to improve speed.
+- **Why retired**: Strictly dominated by `sinc_v12` and `sinc_v13` on both quality
+  and speed. Upgrading Lanczos to order 5 in `sinc_v12` dramatically recovered
+  quality with identical speed.
+- **What would need to change to revive it**: The higher-order Lanczos-5 and Lanczos-6
+  hybrids render this version obsolete.
+
+### `sinc_v12` / v1 - `SincV12.cs.old` (retired, dominated by sinc_v13)
+
+- **Source idea**: Sinc hybrid router incorporating Lanczos (order 5) for large
+  upsampling ratios ($\ge 1.5$x).
+- **Why retired**: Strictly dominated by `sinc_v13` (order 6 Lanczos + Cubic Farrow)
+  on both quality and speed. `sinc_v13` achieves significantly higher quality in
+  speech downsampling (+1.64 dB SNR) and upsampling (+4.30 dB SNR) while running
+  noticeably faster (e.g. 4 ms vs 10 ms on Speech) due to the Cubic Farrow downsampler.
+- **What would need to change to revive it**: The combination of order-6 Lanczos and
+  polynomial Farrow interpolation in `sinc_v13` is strictly superior.
+
+
+
+
+

@@ -29,6 +29,6 @@ public static class RatioAwareLagrangeHybrid
         if (inRate == outRate * 2 || outRate == inRate * 2)
             return LagrangeFractionalDelay.Resample(inputData, inRate, outRate, channels, 6, 0.98, 48);
 
-        return RatioAwareSincHybrid.Resample(inputData, inRate, outRate, channels);
+        return SincV10.Resample(inputData, inRate, outRate, channels);
     }
 }

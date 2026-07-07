@@ -1,0 +1,168 @@
+namespace Transformations.Audio.Resampler.Experimental;
+
+/// <summary>
+/// Kochanek-Bartels (TCB) Hermite spline resampler allowing control over Tension, Continuity, and Bias
+/// combined with a 4th-order Butterworth lowpass filter.
+/// </summary>
+public static class TcbSplineResampler
+{
+    private const double DefaultRolloff = 0.90;
+    private const double DefaultTension = 0.5; // High tension to prevent overshoot
+    private const double DefaultContinuity = 0.0;
+    private const double DefaultBias = 0.0;
+
+    /// <summary>
+    /// Resamples the given interleaved audio data using a TCB Spline structure with default settings.
+    /// </summary>
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        => Resample(inputData, inRate, outRate, channels, DefaultRolloff, DefaultTension, DefaultContinuity, DefaultBias);
+
+    /// <summary>
+    /// Resamples the given interleaved audio data using a TCB Spline structure with custom settings.
+    /// </summary>
+    public static float[] Resample(
+        float[] inputData,
+        int inRate,
+        int outRate,
+        int channels,
+        double rolloff,
+        double tension,
+        double continuity,
+        double bias)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        int inputFrames = inputData.Length / channels;
+        int outputFrames = (int)Math.Round(inputFrames * (double)outRate / inRate);
+        var output = new float[outputFrames * channels];
+        double ratio = inRate / (double)outRate;
+        double cutoff = Math.Min(1.0, outRate / (double)inRate) * rolloff;
+
+        float[] filteredData = inputData;
+        if (cutoff < 0.99)
+        {
+            filteredData = ApplyButterworthLowPass(inputData, channels, cutoff);
+        }
+
+        // TCB Tangent scaling factors
+        double f0 = (1.0 - tension) * (1.0 + continuity) * (1.0 + bias) * 0.5;
+        double f1 = (1.0 - tension) * (1.0 - continuity) * (1.0 - bias) * 0.5;
+        double f2 = (1.0 - tension) * (1.0 - continuity) * (1.0 + bias) * 0.5;
+        double f3 = (1.0 - tension) * (1.0 + continuity) * (1.0 - bias) * 0.5;
+
+        Parallel.For(0, outputFrames, outputFrame =>
+        {
+            double sourcePosition = outputFrame * ratio;
+            int center = (int)Math.Floor(sourcePosition);
+            double d = sourcePosition - center;
+
+            double d2 = d * d;
+            double d3 = d2 * d;
+
+            // Hermite basis functions
+            double h00 = 2.0 * d3 - 3.0 * d2 + 1.0;
+            double h10 = d3 - 2.0 * d2 + d;
+            double h01 = -2.0 * d3 + 3.0 * d2;
+            double h11 = d3 - d2;
+
+            for (int channel = 0; channel < channels; channel++)
+            {
+                int idxM1 = Clamp(center - 1, 0, inputFrames - 1);
+                int idx0  = Clamp(center, 0, inputFrames - 1);
+                int idx1  = Clamp(center + 1, 0, inputFrames - 1);
+                int idx2  = Clamp(center + 2, 0, inputFrames - 1);
+
+                double pM1 = filteredData[idxM1 * channels + channel];
+                double p0  = filteredData[idx0 * channels + channel];
+                double p1  = filteredData[idx1 * channels + channel];
+                double p2  = filteredData[idx2 * channels + channel];
+
+                // Compute incoming and outgoing tangents
+                double tangent0 = f0 * (p0 - pM1) + f1 * (p1 - p0);
+                double tangent1 = f2 * (p1 - p0) + f3 * (p2 - p1);
+
+                double result = h00 * p0 + h10 * tangent0 + h01 * p1 + h11 * tangent1;
+                output[outputFrame * channels + channel] = (float)result;
+            }
+        });
+
+        return output;
+    }
+
+    private static float[] ApplyButterworthLowPass(float[] data, int channels, double cutoff)
+    {
+        int frames = data.Length / channels;
+        var output = new float[data.Length];
+
+        double q1 = 0.54119610;
+        double q2 = 1.30656296;
+
+        var section1 = GetBiquadCoefficients(cutoff, q1);
+        var section2 = GetBiquadCoefficients(cutoff, q2);
+
+        for (int ch = 0; ch < channels; ch++)
+        {
+            double x1_1 = 0.0, x2_1 = 0.0, y1_1 = 0.0, y2_1 = 0.0;
+            double x1_2 = 0.0, x2_2 = 0.0, y1_2 = 0.0, y2_2 = 0.0;
+
+            for (int i = 0; i < frames; i++)
+            {
+                double x = data[i * channels + ch];
+
+                double y_s1 = (section1.b0 * x + section1.b1 * x1_1 + section1.b2 * x2_1
+                              - section1.a1 * y1_1 - section1.a2 * y2_1);
+                x2_1 = x1_1;
+                x1_1 = x;
+                y2_1 = y1_1;
+                y1_1 = y_s1;
+
+                double y_s2 = (section2.b0 * y_s1 + section2.b1 * x1_2 + section2.b2 * x2_2
+                              - section2.a1 * y1_2 - section2.a2 * y2_2);
+                x2_2 = x1_2;
+                x1_2 = y_s1;
+                y2_2 = y1_2;
+                y1_2 = y_s2;
+
+                output[i * channels + ch] = (float)y_s2;
+            }
+        }
+
+        return output;
+    }
+
+    private static BiquadCoeffs GetBiquadCoefficients(double cutoff, double Q)
+    {
+        double K = Math.Tan(Math.PI * cutoff / 2.0);
+        double D = K * K + K / Q + 1.0;
+
+        return new BiquadCoeffs
+        {
+            b0 = K * K / D,
+            b1 = 2.0 * K * K / D,
+            b2 = K * K / D,
+            a1 = 2.0 * (K * K - 1.0) / D,
+            a2 = (K * K - K / Q + 1.0) / D
+        };
+    }
+
+    private static int Clamp(int value, int min, int max)
+        => value < min ? min : value > max ? max : value;
+
+    private struct BiquadCoeffs
+    {
+        public double b0;
+        public double b1;
+        public double b2;
+        public double a1;
+        public double a2;
+    }
+}

@@ -1,0 +1,109 @@
+using NAudio.Wave;
+using NUnit.Framework;
+using Transformations.Audio.Resampler.Experimental;
+
+namespace Transformations.Audio.Tests.Resampler;
+
+[TestFixture]
+public sealed class PolyphaseStreamingSincTests
+{
+    [Test]
+    public void Resample_whole_buffer_matches_streaming_read()
+    {
+        // Create random input signal
+        var random = new Random(12345);
+        int inputLength = 1000;
+        int inRate = 48_000;
+        int outRate = 44_100;
+        int channels = 2;
+
+        float[] inputData = new float[inputLength * channels];
+        for (int i = 0; i < inputData.Length; i++)
+        {
+            inputData[i] = (float)(random.NextDouble() * 2.0 - 1.0);
+        }
+
+        // Run whole-buffer resampler
+        float[] wholeBufferOutput = PolyphaseStreamingSinc.Resample(inputData, inRate, outRate, channels);
+
+        // Run streaming resampler chunk-by-chunk
+        var source = new MockSampleProvider(inputData, inRate, channels);
+        var streamingResampler = new PolyphaseStreamingSinc(inRate, outRate, channels, source);
+
+        var streamingOutputList = new List<float>();
+        float[] chunk = new float[256 * channels]; // chunk size
+
+        int read;
+        while ((read = streamingResampler.Read(chunk, 0, chunk.Length)) > 0)
+        {
+            for (int i = 0; i < read; i++)
+            {
+                streamingOutputList.Add(chunk[i]);
+            }
+        }
+
+        float[] streamingOutput = streamingOutputList.ToArray();
+
+        // The streaming output length should match the whole-buffer output length
+        Assert.That(streamingOutput.Length, Is.EqualTo(wholeBufferOutput.Length));
+
+        // The samples should match exactly
+        for (int i = 0; i < wholeBufferOutput.Length; i++)
+        {
+            Assert.That(streamingOutput[i], Is.EqualTo(wholeBufferOutput[i]).Within(1e-6f));
+        }
+    }
+
+    [Test]
+    public void Reset_clears_streaming_history_and_phase()
+    {
+        var inputData = new float[200];
+        var source = new MockSampleProvider(inputData, 48_000, 1);
+        var resampler = new PolyphaseStreamingSinc(48_000, 32_000, 1, source);
+
+        var firstOutput = new float[50];
+        var read1 = resampler.Read(firstOutput, 0, 50);
+        Assert.That(read1, Is.GreaterThan(0));
+
+        resampler.Reset();
+
+        var secondOutput = new float[50];
+        // After Reset(), the history is silent, so reading zero input should produce silence
+        var emptySource = new MockSampleProvider(new float[100], 48_000, 1);
+        resampler.SetSource(emptySource);
+
+        var read2 = resampler.Read(secondOutput, 0, 50);
+        Assert.That(read2, Is.GreaterThan(0));
+
+        foreach (var sample in secondOutput)
+        {
+            Assert.That(sample, Is.EqualTo(0f).Within(1e-6f));
+        }
+    }
+
+    private sealed class MockSampleProvider : ISampleProvider
+    {
+        private readonly float[] _data;
+        private int _position;
+
+        public MockSampleProvider(float[] data, int sampleRate, int channels)
+        {
+            _data = data;
+            WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
+        }
+
+        public WaveFormat WaveFormat { get; }
+
+        public int Read(float[] buffer, int offset, int count)
+        {
+            int available = _data.Length - _position;
+            int toRead = Math.Min(available, count);
+            if (toRead <= 0)
+                return 0;
+
+            Array.Copy(_data, _position, buffer, offset, toRead);
+            _position += toRead;
+            return toRead;
+        }
+    }
+}

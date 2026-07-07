@@ -3,7 +3,7 @@ namespace Transformations.Audio.Resampler.Experimental;
 /// <summary>
 /// Cascades cheap fixed-coefficient half-band FIR halving/doubling stages to absorb as
 /// much of the power-of-two part of a rate change as possible, then falls back to a
-/// single windowed-sinc fractional stage (<see cref="KaiserSinc"/>) for whatever ratio
+/// single windowed-sinc fractional stage (<see cref="NuttallSinc"/>) for whatever ratio
 /// remains.
 /// </summary>
 /// <remarks>
@@ -69,7 +69,7 @@ public static class HalfBandCascade
 
         return curRate == outRate
             ? combined
-            : KaiserSinc.Resample(combined, curRate, outRate, channels, FinalHalfWidth, FinalRolloff, DefaultBeta);
+            : NuttallSinc.Resample(combined, curRate, outRate, channels, FinalHalfWidth, FinalRolloff);
     }
 
     private static double[] HalfBandDecimate(double[] channel)

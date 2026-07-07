@@ -1,0 +1,54 @@
+using NUnit.Framework;
+using Transformations.Audio.Resampler.Experimental;
+using Transformations.Audio.Analysis;
+
+namespace Transformations.Audio.Tests.Resampler;
+
+[TestFixture]
+public sealed class FiveNewResamplersTests
+{
+    [Test]
+    public void BSplineResampler_smoke_test()
+    {
+        float[] silence = new float[480];
+        var output = BSplineResampler.Resample(silence, 48_000, 44_100, 1);
+        Assert.That(output.Length, Is.EqualTo(441));
+        Assert.That(AudioLevels.MeasureSamplePeak(output), Is.EqualTo(0.0).Within(1e-6));
+    }
+
+    [Test]
+    public void TcbSplineResampler_smoke_test()
+    {
+        float[] silence = new float[480];
+        var output = TcbSplineResampler.Resample(silence, 48_000, 44_100, 1);
+        Assert.That(output.Length, Is.EqualTo(441));
+        Assert.That(AudioLevels.MeasureSamplePeak(output), Is.EqualTo(0.0).Within(1e-6));
+    }
+
+    [Test]
+    public void NuttallSincResampler_smoke_test()
+    {
+        float[] silence = new float[480];
+        var output = NuttallSincResampler.Resample(silence, 48_000, 44_100, 1);
+        Assert.That(output.Length, Is.EqualTo(441));
+        Assert.That(AudioLevels.MeasureSamplePeak(output), Is.EqualTo(0.0).Within(1e-6));
+    }
+
+    [Test]
+    public void NewtonResampler_smoke_test()
+    {
+        float[] silence = new float[480];
+        var output = NewtonResampler.Resample(silence, 48_000, 44_100, 1);
+        Assert.That(output.Length, Is.EqualTo(441));
+        Assert.That(AudioLevels.MeasureSamplePeak(output), Is.EqualTo(0.0).Within(1e-6));
+    }
+
+    [Test]
+    public void NuttallFarrowResampler_smoke_test()
+    {
+        float[] silence = new float[480];
+        var output = NuttallFarrowResampler.Resample(silence, 48_000, 44_100, 1);
+        Assert.That(output.Length, Is.EqualTo(441));
+        Assert.That(AudioLevels.MeasureSamplePeak(output), Is.EqualTo(0.0).Within(1e-6));
+    }
+}

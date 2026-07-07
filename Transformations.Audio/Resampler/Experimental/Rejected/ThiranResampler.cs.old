@@ -1,0 +1,196 @@
+namespace Transformations.Audio.Resampler.Experimental;
+
+/// <summary>
+/// IIR resampler using a 4th-order Butterworth low-pass filter (for anti-aliasing)
+/// and a 3rd-order Thiran allpass filter for fractional-delay interpolation.
+/// </summary>
+public static class ThiranResampler
+{
+    private const double DefaultRolloff = 0.90; // Butterworth transition is wider, use a conservative rolloff
+    private const int WindowSize = 24;          // Thiran transient decay window size
+
+    /// <summary>
+    /// Resamples the given interleaved audio data using a Thiran IIR structure with default settings.
+    /// </summary>
+    /// <param name="inputData">Interleaved input audio samples.</param>
+    /// <param name="inRate">Input sample rate in Hz.</param>
+    /// <param name="outRate">Output sample rate in Hz.</param>
+    /// <param name="channels">Number of channels.</param>
+    /// <returns>Resampled audio buffer.</returns>
+    public static float[] Resample(float[] inputData, int inRate, int outRate, int channels)
+        => Resample(inputData, inRate, outRate, channels, DefaultRolloff);
+
+    /// <summary>
+    /// Resamples the given interleaved audio data using a Thiran IIR structure with custom settings.
+    /// </summary>
+    /// <param name="inputData">Interleaved input audio samples.</param>
+    /// <param name="inRate">Input sample rate in Hz.</param>
+    /// <param name="outRate">Output sample rate in Hz.</param>
+    /// <param name="channels">Number of channels.</param>
+    /// <param name="rolloff">Anti-alias Butterworth filter rolloff factor.</param>
+    /// <returns>Resampled audio buffer.</returns>
+    public static float[] Resample(
+        float[] inputData,
+        int inRate,
+        int outRate,
+        int channels,
+        double rolloff)
+    {
+        if (inRate <= 0 || outRate <= 0)
+            throw new ArgumentException("Sample rates must be positive.");
+        if (channels <= 0)
+            throw new ArgumentException("Channel count must be positive.");
+        if (inputData is null || inputData.Length == 0)
+            throw new ArgumentException("Input data cannot be null or empty.");
+        if (inputData.Length % channels != 0)
+            throw new ArgumentException("Input data length must be divisible by the number of channels.");
+        if (inRate == outRate)
+            return (float[])inputData.Clone();
+
+        int inputFrames = inputData.Length / channels;
+        int outputFrames = (int)Math.Round(inputFrames * (double)outRate / inRate);
+        var output = new float[outputFrames * channels];
+        double ratio = inRate / (double)outRate;
+        double cutoff = Math.Min(1.0, outRate / (double)inRate) * rolloff;
+
+        // Apply 4th-order Butterworth low-pass filter to the entire buffer first if we are downsampling or filtering
+        float[] filteredData = inputData;
+        if (cutoff < 0.99)
+        {
+            filteredData = ApplyButterworthLowPass(inputData, channels, cutoff);
+        }
+
+        Parallel.For(0, outputFrames, outputFrame =>
+        {
+            double sourcePosition = outputFrame * ratio;
+            int center = (int)Math.Floor(sourcePosition);
+            double frac = sourcePosition - center;
+
+            // Thiran target delay: we add a delay of 2 samples to make it stable (target delay in [2, 3))
+            double D = 2.0 + frac;
+
+            // Compute 3rd-order Thiran allpass coefficients:
+            // a1 = -3 * (D - 2) / (D + 1)
+            // a2 = 3 * (D - 2) * (D - 1) / ((D + 1) * (D + 2))
+            // a3 = - (D - 2) * (D - 1) * D / ((D + 1) * (D + 2) * (D + 3))
+            double a1 = -3.0 * (D - 2.0) / (D + 1.0);
+            double a2 = 3.0 * (D - 2.0) * (D - 1.0) / ((D + 1.0) * (D + 2.0));
+            double a3 = -(D - 2.0) * (D - 1.0) * D / ((D + 1.0) * (D + 2.0) * (D + 3.0));
+
+            for (int channel = 0; channel < channels; channel++)
+            {
+                // Run Thiran difference equation over a window of the last WindowSize samples
+                // to decay the transient response of the IIR filter.
+                // Difference equation: y[m] = -a1*y[m-1] - a2*y[m-2] - a3*y[m-3] + a3*x[m] + a2*x[m-1] + a1*x[m-2] + x[m-3]
+                double y1 = 0.0, y2 = 0.0, y3 = 0.0;
+                double x1 = 0.0, x2 = 0.0, x3 = 0.0;
+
+                double outVal = 0.0;
+
+                for (int m = 0; m <= WindowSize; m++)
+                {
+                    int inputFrame = center - WindowSize + m;
+                    inputFrame = Clamp(inputFrame, 0, inputFrames - 1);
+                    double x = filteredData[inputFrame * channels + channel];
+
+                    double y = -a1 * y1 - a2 * y2 - a3 * y3 + a3 * x + a2 * x1 + a1 * x2 + x3;
+
+                    // Shift states
+                    x3 = x2;
+                    x2 = x1;
+                    x1 = x;
+
+                    y3 = y2;
+                    y2 = y1;
+                    y1 = y;
+
+                    if (m == WindowSize)
+                    {
+                        outVal = y;
+                    }
+                }
+
+                output[outputFrame * channels + channel] = (float)outVal;
+            }
+        });
+
+        return output;
+    }
+
+    private static float[] ApplyButterworthLowPass(float[] data, int channels, double cutoff)
+    {
+        int frames = data.Length / channels;
+        var output = new float[data.Length];
+
+        // 4th-order Butterworth lowpass using 2 biquad sections
+        double q1 = 0.54119610;
+        double q2 = 1.30656296;
+
+        var section1 = GetBiquadCoefficients(cutoff, q1);
+        var section2 = GetBiquadCoefficients(cutoff, q2);
+
+        // Process each channel independently
+        for (int ch = 0; ch < channels; ch++)
+        {
+            // Biquad 1 state
+            double x1_1 = 0.0, x2_1 = 0.0;
+            double y1_1 = 0.0, y2_1 = 0.0;
+
+            // Biquad 2 state
+            double x1_2 = 0.0, x2_2 = 0.0;
+            double y1_2 = 0.0, y2_2 = 0.0;
+
+            for (int i = 0; i < frames; i++)
+            {
+                double x = data[i * channels + ch];
+
+                // Section 1
+                double y_s1 = (section1.b0 * x + section1.b1 * x1_1 + section1.b2 * x2_1
+                              - section1.a1 * y1_1 - section1.a2 * y2_1);
+                x2_1 = x1_1;
+                x1_1 = x;
+                y2_1 = y1_1;
+                y1_1 = y_s1;
+
+                // Section 2
+                double y_s2 = (section2.b0 * y_s1 + section2.b1 * x1_2 + section2.b2 * x2_2
+                              - section2.a1 * y1_2 - section2.a2 * y2_2);
+                x2_2 = x1_2;
+                x1_2 = y_s1;
+                y2_2 = y1_2;
+                y1_2 = y_s2;
+
+                output[i * channels + ch] = (float)y_s2;
+            }
+        }
+
+        return output;
+    }
+
+    private static BiquadCoeffs GetBiquadCoefficients(double cutoff, double Q)
+    {
+        double K = Math.Tan(Math.PI * cutoff / 2.0);
+        double D = K * K + K / Q + 1.0;
+
+        return new BiquadCoeffs
+        {
+            b0 = K * K / D,
+            b1 = 2.0 * K * K / D,
+            b2 = K * K / D,
+            a1 = 2.0 * (K * K - 1.0) / D,
+            a2 = (K * K - K / Q + 1.0) / D
+        };
+    }
+
+    private static int Clamp(int value, int min, int max)
+        => value < min ? min : value > max ? max : value;
+
+    private struct BiquadCoeffs
+    {
+        public double b0;
+        public double b1;
+        public double b2;
+        public double a1;
+        public double a2;
+    }
+}
