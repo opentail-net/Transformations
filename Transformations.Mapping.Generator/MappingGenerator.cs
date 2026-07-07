@@ -19,6 +19,7 @@ namespace Transformations.Mapping.Generator
     public sealed class MappingGenerator : IIncrementalGenerator
     {
         private const string MapToAttributeFullName = "Transformations.Mapping.MapToAttribute`1";
+        private const string MapFromAttributeFullName = "Transformations.Mapping.MapFromAttribute`1";
         private const string IgnoreMapAttributeFullName = "Transformations.Mapping.IgnoreMapAttribute";
         private const string MapPropertyAttributeFullName = "Transformations.Mapping.MapPropertyAttribute";
         private const string UnmappedMembersAsErrorsProperty = "build_property.TransformationsMappingUnmappedMembersAsErrors";
@@ -106,120 +107,153 @@ namespace Transformations.Mapping.Generator
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
-            // Collect classes that have at least one [MapTo<T>] attribute.
-            var classDeclarations = context.SyntaxProvider
+            var mapToDeclarations = context.SyntaxProvider
                 .ForAttributeWithMetadataName(
                     MapToAttributeFullName,
                     predicate: static (node, _) => node is ClassDeclarationSyntax,
-                    transform: static (ctx, ct) => GetMappingModel(ctx, ct))
-                .Where(static m => m is not null)
-                .Select(static (m, _) => m!);
+                    transform: static (ctx, ct) => GetMappingModels(ctx, ct, false))
+                .SelectMany(static (models, _) => models);
+
+            var mapFromDeclarations = context.SyntaxProvider
+                .ForAttributeWithMetadataName(
+                    MapFromAttributeFullName,
+                    predicate: static (node, _) => node is ClassDeclarationSyntax,
+                    transform: static (ctx, ct) => GetMappingModels(ctx, ct, true))
+                .SelectMany(static (models, _) => models);
 
             var config = context.AnalyzerConfigOptionsProvider
                 .Select(static (provider, _) => MappingGeneratorConfig.From(provider.GlobalOptions));
 
-            context.RegisterSourceOutput(classDeclarations.Collect().Combine(config),
+            var allDeclarations = mapToDeclarations.Collect()
+                .Combine(mapFromDeclarations.Collect())
+                .Select(static (pair, _) => pair.Left.AddRange(pair.Right));
+
+            context.RegisterSourceOutput(allDeclarations.Combine(config),
                 static (spc, input) => GenerateCode(spc, input.Left, input.Right));
         }
 
-        private static MappingModel? GetMappingModel(
+        private static IEnumerable<MappingModel> GetMappingModels(
             GeneratorAttributeSyntaxContext context,
-            CancellationToken ct)
+            CancellationToken ct,
+            bool isMapFrom)
         {
-            if (context.TargetSymbol is not INamedTypeSymbol sourceType)
+            if (context.TargetSymbol is not INamedTypeSymbol decoratedType)
             {
-                return null;
+                yield break;
             }
 
             var classDecl = context.TargetNode as ClassDeclarationSyntax;
             if (classDecl == null)
             {
-                return null;
+                yield break;
             }
 
-            string sourceNamespace = sourceType.ContainingNamespace.IsGlobalNamespace
+            string sourceNamespace = decoratedType.ContainingNamespace.IsGlobalNamespace
                 ? string.Empty
-                : sourceType.ContainingNamespace.ToDisplayString();
+                : decoratedType.ContainingNamespace.ToDisplayString();
 
-            var diagnostics = new List<Diagnostic>();
-
-            // Check partial
-            bool isPartial = classDecl.Modifiers.Any(SyntaxKind.PartialKeyword);
-            if (!isPartial)
+            if (!isMapFrom)
             {
-                diagnostics.Add(Diagnostic.Create(
-                    MissingPartialSourceType,
-                    sourceType.Locations.FirstOrDefault() ?? Location.None,
-                    sourceType.Name));
+                // MapTo: One source (decoratedType), multiple targets
+                var diagnostics = new List<Diagnostic>();
+                var targets = new List<TargetMapping>();
 
-                return CreateInvalidMappingModel(sourceType, sourceNamespace, diagnostics);
-            }
-
-            // Collect all [MapTo<T>] targets
-            var targets = new List<TargetMapping>();
-
-            foreach (AttributeData attr in sourceType.GetAttributes())
-            {
-                ct.ThrowIfCancellationRequested();
-
-                if (attr.AttributeClass is not INamedTypeSymbol attrType)
+                foreach (AttributeData attr in decoratedType.GetAttributes())
                 {
-                    continue;
+                    ct.ThrowIfCancellationRequested();
+
+                    if (attr.AttributeClass is not INamedTypeSymbol attrType) continue;
+                    if (!IsMapToAttribute(attrType) || attrType.TypeArguments.Length != 1) continue;
+
+                    var targetType = attrType.TypeArguments[0] as INamedTypeSymbol;
+                    if (targetType == null) continue;
+
+                    var propertyMappings = BuildPropertyMappings(decoratedType, targetType, diagnostics, ct);
+                    var mappedTargetPropertyNames = new HashSet<string>(propertyMappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal);
+                    var unmappedTargetProperties = GetPublicSettableProperties(targetType)
+                        .Where(p => !mappedTargetPropertyNames.Contains(p.Name))
+                        .Select(p => p.Name)
+                        .ToList();
+
+                    targets.Add(new TargetMapping(
+                        targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        targetType.Name,
+                        propertyMappings,
+                        unmappedTargetProperties));
                 }
 
-                if (!IsMapToAttribute(attrType))
+                if (targets.Count > 0)
                 {
-                    continue;
+                    var containingTypes = GetContainingTypes(decoratedType, diagnostics);
+                    if (containingTypes == null)
+                    {
+                        yield return CreateInvalidMappingModel(decoratedType, sourceNamespace, diagnostics);
+                    }
+                    else
+                    {
+                        yield return new MappingModel(
+                            decoratedType.Name,
+                            GetSourceDeclarationName(decoratedType),
+                            GetSourceMetadataName(decoratedType),
+                            GetSourceTypeParameterNames(decoratedType),
+                            containingTypes,
+                            sourceNamespace,
+                            decoratedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            decoratedType.Locations.FirstOrDefault() ?? Location.None,
+                            diagnostics,
+                            targets,
+                            decoratedType.IsValueType);
+                    }
                 }
-
-                if (attrType.TypeArguments.Length != 1)
-                {
-                    continue;
-                }
-
-                var targetType = attrType.TypeArguments[0] as INamedTypeSymbol;
-                if (targetType == null)
-                {
-                    continue;
-                }
-
-                var propertyMappings = BuildPropertyMappings(sourceType, targetType, diagnostics, ct);
-                var mappedTargetPropertyNames = new HashSet<string>(propertyMappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal);
-                var unmappedTargetProperties = GetPublicSettableProperties(targetType)
-                    .Where(p => !mappedTargetPropertyNames.Contains(p.Name))
-                    .Select(p => p.Name)
-                    .ToList();
-
-                targets.Add(new TargetMapping(
-                    targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    targetType.Name,
-                    propertyMappings,
-                    unmappedTargetProperties));
             }
-
-            if (targets.Count == 0)
+            else
             {
-                return null;
-            }
+                // MapFrom: Multiple sources, one target (decoratedType)
+                foreach (AttributeData attr in decoratedType.GetAttributes())
+                {
+                    ct.ThrowIfCancellationRequested();
 
-            var containingTypes = GetContainingTypes(sourceType, diagnostics);
-            if (containingTypes == null)
-            {
-                return CreateInvalidMappingModel(sourceType, sourceNamespace, diagnostics);
-            }
+                    if (attr.AttributeClass is not INamedTypeSymbol attrType) continue;
+                    if (!IsMapFromAttribute(attrType) || attrType.TypeArguments.Length != 1) continue;
 
-            return new MappingModel(
-                sourceType.Name,
-                GetSourceDeclarationName(sourceType),
-                GetSourceMetadataName(sourceType),
-                GetSourceTypeParameterNames(sourceType),
-                containingTypes,
-                sourceNamespace,
-                sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                sourceType.Locations.FirstOrDefault() ?? Location.None,
-                diagnostics,
-                targets);
+                    var sourceType = attrType.TypeArguments[0] as INamedTypeSymbol;
+                    if (sourceType == null) continue;
+
+                    var diagnostics = new List<Diagnostic>();
+                    var propertyMappings = BuildPropertyMappings(sourceType, decoratedType, diagnostics, ct);
+                    var mappedTargetPropertyNames = new HashSet<string>(propertyMappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal);
+                    var unmappedTargetProperties = GetPublicSettableProperties(decoratedType)
+                        .Where(p => !mappedTargetPropertyNames.Contains(p.Name))
+                        .Select(p => p.Name)
+                        .ToList();
+
+                    var targetMapping = new TargetMapping(
+                        decoratedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        decoratedType.Name,
+                        propertyMappings,
+                        unmappedTargetProperties);
+
+                    // For MapFrom, the extension methods live in the namespace of the DTO (decoratedType)
+                    // and we don't need containing types because we generate a completely separate static class.
+                    var containingTypes = new List<TypeDeclarationModel>();
+
+                    yield return new MappingModel(
+                        sourceType.Name,
+                        GetSourceDeclarationName(sourceType),
+                        GetSourceMetadataName(sourceType),
+                        GetSourceTypeParameterNames(sourceType),
+                        containingTypes,
+                        sourceNamespace, // Use the DTO's namespace to avoid scoping issues
+                        sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        sourceType.Locations.FirstOrDefault() ?? Location.None,
+                        diagnostics,
+                        new List<TargetMapping> { targetMapping },
+                        sourceType.IsValueType);
+                }
+            }
         }
+
+        // Ensure CreateInvalidMappingModel logic works if called from GetMappingModels.
 
         private static MappingModel CreateInvalidMappingModel(INamedTypeSymbol sourceType, string sourceNamespace, List<Diagnostic> diagnostics)
         {
@@ -233,7 +267,8 @@ namespace Transformations.Mapping.Generator
                 sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 sourceType.Locations.FirstOrDefault() ?? Location.None,
                 diagnostics,
-                new List<TargetMapping>());
+                new List<TargetMapping>(),
+                sourceType.IsValueType);
         }
 
         private static List<TypeDeclarationModel>? GetContainingTypes(INamedTypeSymbol sourceType, List<Diagnostic> diagnostics)
@@ -323,13 +358,16 @@ namespace Transformations.Mapping.Generator
 
         private static bool IsMapToAttribute(INamedTypeSymbol attrType)
         {
-            if (!attrType.IsGenericType)
-            {
-                return false;
-            }
-
-            var constructed = attrType.ConstructedFrom;
+            if (!attrType.IsGenericType) return false;
+            var constructed = attrType.OriginalDefinition;
             return constructed.ToDisplayString() == "Transformations.Mapping.MapToAttribute<TTarget>";
+        }
+
+        private static bool IsMapFromAttribute(INamedTypeSymbol attrType)
+        {
+            if (!attrType.IsGenericType) return false;
+            var constructed = attrType.OriginalDefinition;
+            return constructed.ToDisplayString() == "Transformations.Mapping.MapFromAttribute<TSource>";
         }
 
         private static List<PropertyMapping> BuildPropertyMappings(
@@ -679,7 +717,7 @@ namespace Transformations.Mapping.Generator
             {
                 return new SourceResolution(
                     sourceProp.Name,
-                    $"this.{sourceProp.Name}",
+                    $"source.{sourceProp.Name}",
                     sourceProp.Type,
                     IsNullableReferenceOrValueType(sourceProp.Type),
                     true);
@@ -724,7 +762,7 @@ namespace Transformations.Mapping.Generator
 
         private static string BuildSourcePathExpression(List<IPropertySymbol> pathProperties)
         {
-            var expression = new StringBuilder("this");
+            var expression = new StringBuilder("source");
             for (int i = 0; i < pathProperties.Count; i++)
             {
                 IPropertySymbol property = pathProperties[i];
@@ -834,40 +872,26 @@ namespace Transformations.Mapping.Generator
 
             string indent = hasNamespace ? "    " : "";
 
-            foreach (var containingType in model.ContainingTypes)
-            {
-                sb.AppendLine($"{indent}partial class {containingType.DeclarationName}");
-                sb.AppendLine($"{indent}{{");
-                indent += "    ";
-            }
-
-            sb.AppendLine($"{indent}partial class {model.SourceDeclarationName}");
+            string extensionClassName = SanitizeIdentifier(model.SourceMetadataName) + "MappingExtensions";
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Provides mapping extension methods for {model.SourceClassName}.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}public static class {extensionClassName}");
             sb.AppendLine($"{indent}{{");
 
             foreach (var target in model.Targets)
             {
-                EmitMappingMethod(sb, target, indent + "    ");
+                EmitMappingMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
-                EmitMapToExistingTargetMethod(sb, target, indent + "    ");
+                EmitMapToExistingTargetMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
                 EmitStaticFactory(sb, model, target, indent + "    ");
-
-                if (target != model.Targets[model.Targets.Count - 1])
-                {
-                    sb.AppendLine();
-                }
+                sb.AppendLine();
             }
+
+            EmitCollectionExtensions(sb, model, indent + "    ");
 
             sb.AppendLine($"{indent}}}");
-
-            for (int i = model.ContainingTypes.Count - 1; i >= 0; i--)
-            {
-                indent = indent.Substring(0, indent.Length - 4);
-                sb.AppendLine($"{indent}}}");
-            }
-
-            sb.AppendLine();
-            EmitCollectionExtensions(sb, model, hasNamespace ? "    " : "");
 
             if (hasNamespace)
             {
@@ -879,34 +903,45 @@ namespace Transformations.Mapping.Generator
 
         private static void EmitCollectionExtensions(StringBuilder sb, MappingModel model, string indent)
         {
-            string extensionClassName = SanitizeIdentifier(model.SourceMetadataName) + "MappingExtensions";
-            sb.AppendLine($"{indent}/// <summary>");
-            sb.AppendLine($"{indent}/// Provides collection mapping helpers for {model.SourceClassName}.");
-            sb.AppendLine($"{indent}/// </summary>");
-            sb.AppendLine($"{indent}public static class {extensionClassName}");
-            sb.AppendLine($"{indent}{{");
-
             foreach (var target in model.Targets)
             {
                 EmitEnumerableMappingMethod(sb, model, target, indent + "    ");
+                sb.AppendLine();
+                EmitAsyncEnumerableMappingMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
                 EmitListMappingMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
                 EmitListFastPathMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
+
+                if (model.IsValueType)
+                {
+                    EmitStructListFastPathMethod(sb, model, target, indent + "    ");
+                    sb.AppendLine();
+                }
+
                 EmitArrayMappingMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
                 EmitArrayFastPathMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
-                EmitQueryableProjectionMethod(sb, model, target, indent + "    ");
+
+                if (model.IsValueType)
+                {
+                    EmitStructArrayFastPathMethod(sb, model, target, indent + "    ");
+                    sb.AppendLine();
+                }
+
+                EmitMemoryFastPathMethod(sb, model, target, indent + "    ");
+                sb.AppendLine();
+                EmitReadOnlyMemoryFastPathMethod(sb, model, target, indent + "    ");
+                sb.AppendLine();
+                EmitQueryableProjectionMethod(sb, model, target, indent);
 
                 if (target != model.Targets[model.Targets.Count - 1])
                 {
                     sb.AppendLine();
                 }
             }
-
-            sb.AppendLine($"{indent}}}");
         }
 
         private static void EmitEnumerableMappingMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
@@ -917,6 +952,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The source sequence to map.</param>");
             sb.AppendLine($"{indent}/// <returns>A sequence of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
             sb.AppendLine($"{indent}public static global::System.Collections.Generic.IEnumerable<{target.TargetFullName}> To{target.TargetClassName}Enumerable{methodTypeParameters}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source)");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
@@ -925,6 +961,30 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}    }}");
             sb.AppendLine();
             sb.AppendLine($"{indent}    foreach (var item in source)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        yield return item == null ? null! : item.To{target.TargetClassName}();");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine($"{indent}}}");
+        }
+
+        private static void EmitAsyncEnumerableMappingMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+        {
+            string methodTypeParameters = GetMethodTypeParameters(model);
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Asynchronously and lazily maps a sequence of {model.SourceClassName} instances to {target.TargetClassName} instances.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source async sequence to map.</param>");
+            sb.AppendLine($"{indent}/// <param name=\"ct\">Optional cancellation token for async iteration.</param>");
+            sb.AppendLine($"{indent}/// <returns>An async sequence of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
+            sb.AppendLine($"{indent}public static async global::System.Collections.Generic.IAsyncEnumerable<{target.TargetFullName}> To{target.TargetClassName}AsyncEnumerable{methodTypeParameters}(this global::System.Collections.Generic.IAsyncEnumerable<{model.SourceFullName}> source, [global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken ct = default)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    await foreach (var item in source.WithCancellation(ct))");
             sb.AppendLine($"{indent}    {{");
             sb.AppendLine($"{indent}        yield return item == null ? null! : item.To{target.TargetClassName}();");
             sb.AppendLine($"{indent}    }}");
@@ -969,6 +1029,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The source list to map.</param>");
             sb.AppendLine($"{indent}/// <returns>A list of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
             sb.AppendLine($"{indent}public static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{methodTypeParameters}(this global::System.Collections.Generic.List<{model.SourceFullName}> source)");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
@@ -977,9 +1038,13 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}    }}");
             sb.AppendLine();
             sb.AppendLine($"{indent}    var list = new global::System.Collections.Generic.List<{target.TargetFullName}>(source.Count);");
-            sb.AppendLine($"{indent}    foreach (var item in global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(source))");
+            sb.AppendLine($"{indent}    global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(list, source.Count);");
+            sb.AppendLine($"{indent}    var destSpan = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(list);");
+            sb.AppendLine($"{indent}    var sourceSpan = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(source);");
+            sb.AppendLine($"{indent}    for (int i = 0; i < sourceSpan.Length; i++)");
             sb.AppendLine($"{indent}    {{");
-            sb.AppendLine($"{indent}        list.Add(item == null ? null! : item.To{target.TargetClassName}());");
+            sb.AppendLine($"{indent}        var item = sourceSpan[i];");
+            sb.AppendLine($"{indent}        destSpan[i] = item == null ? null! : item.To{target.TargetClassName}();");
             sb.AppendLine($"{indent}    }}");
             sb.AppendLine();
             sb.AppendLine($"{indent}    return list;");
@@ -1025,6 +1090,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The source array to map.</param>");
             sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
             sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{methodTypeParameters}(this {model.SourceFullName}[] source)");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
@@ -1036,6 +1102,97 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}    for (int i = 0; i < source.Length; i++)");
             sb.AppendLine($"{indent}    {{");
             sb.AppendLine($"{indent}        var item = source[i];");
+            sb.AppendLine($"{indent}        array[i] = item == null ? null! : item.To{target.TargetClassName}();");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    return array;");
+            sb.AppendLine($"{indent}}}");
+        }
+
+        private static void EmitStructListFastPathMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+        {
+            string methodTypeParameters = GetMethodTypeParameters(model);
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Maps a list of {model.SourceClassName} struct instances (passed by reference) to a list of {target.TargetClassName} instances with zero-copy semantics.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source list to map (passed by reference to avoid copying).</param>");
+            sb.AppendLine($"{indent}/// <returns>A list of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
+            sb.AppendLine($"{indent}public static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{methodTypeParameters}(in global::System.Collections.Generic.List<{model.SourceFullName}> source)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    var list = new global::System.Collections.Generic.List<{target.TargetFullName}>(source.Count);");
+            sb.AppendLine($"{indent}    global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(list, source.Count);");
+            sb.AppendLine($"{indent}    var destSpan = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(list);");
+            sb.AppendLine($"{indent}    var sourceSpan = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(source);");
+            sb.AppendLine($"{indent}    for (int i = 0; i < sourceSpan.Length; i++)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        destSpan[i] = sourceSpan[i].To{target.TargetClassName}();");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    return list;");
+            sb.AppendLine($"{indent}}}");
+        }
+
+        private static void EmitStructArrayFastPathMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+        {
+            string methodTypeParameters = GetMethodTypeParameters(model);
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Maps an array of {model.SourceClassName} struct instances (passed by reference) to an array of {target.TargetClassName} instances with zero-copy semantics.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source array to map (passed by reference to avoid copying).</param>");
+            sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
+            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{methodTypeParameters}(in {model.SourceFullName}[] source)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    var array = new {target.TargetFullName}[source.Length];");
+            sb.AppendLine($"{indent}    for (int i = 0; i < source.Length; i++)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        array[i] = source[i].To{target.TargetClassName}();");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    return array;");
+            sb.AppendLine($"{indent}}}");
+        }
+
+        private static void EmitMemoryFastPathMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+        {
+            string methodTypeParameters = GetMethodTypeParameters(model);
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Maps a memory region of {model.SourceClassName} instances to an array of {target.TargetClassName} instances with zero-copy span access.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source memory region to map.</param>");
+            sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
+            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{methodTypeParameters}(this global::System.Memory<{model.SourceFullName}> source)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    var span = source.Span;");
+            sb.AppendLine($"{indent}    var array = new {target.TargetFullName}[span.Length];");
+            sb.AppendLine($"{indent}    for (int i = 0; i < span.Length; i++)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        var item = span[i];");
+            sb.AppendLine($"{indent}        array[i] = item == null ? null! : item.To{target.TargetClassName}();");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    return array;");
+            sb.AppendLine($"{indent}}}");
+        }
+
+        private static void EmitReadOnlyMemoryFastPathMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
+        {
+            string methodTypeParameters = GetMethodTypeParameters(model);
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// Maps a read-only memory region of {model.SourceClassName} instances to an array of {target.TargetClassName} instances with zero-copy span access.");
+            sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source read-only memory region to map.</param>");
+            sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
+            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{methodTypeParameters}(this global::System.ReadOnlyMemory<{model.SourceFullName}> source)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    var span = source.Span;");
+            sb.AppendLine($"{indent}    var array = new {target.TargetFullName}[span.Length];");
+            sb.AppendLine($"{indent}    for (int i = 0; i < span.Length; i++)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        var item = span[i];");
             sb.AppendLine($"{indent}        array[i] = item == null ? null! : item.To{target.TargetClassName}();");
             sb.AppendLine($"{indent}    }}");
             sb.AppendLine();
@@ -1068,6 +1225,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The queryable source sequence to project.</param>");
             sb.AppendLine($"{indent}/// <returns>A queryable sequence projected to {target.TargetClassName}.</returns>");
+            sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
             sb.AppendLine($"{indent}public static global::System.Linq.IQueryable<{target.TargetFullName}> ProjectTo{target.TargetClassName}{methodTypeParameters}(this global::System.Linq.IQueryable<{model.SourceFullName}> source)");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
@@ -1113,20 +1271,23 @@ namespace Transformations.Mapping.Generator
                 : "<" + string.Join(", ", model.SourceTypeParameterNames) + ">";
         }
 
-        private static void EmitMappingMethod(StringBuilder sb, TargetMapping target, string indent)
+        private static void EmitMappingMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
         {
+            string methodTypeParameters = GetMethodTypeParameters(model);
             sb.AppendLine($"{indent}/// <summary>");
             sb.AppendLine($"{indent}/// Maps this instance to a new {target.TargetClassName}.");
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <returns>A new {target.TargetClassName} with mapped property values.</returns>");
-            sb.AppendLine($"{indent}public {target.TargetFullName} To{target.TargetClassName}()");
+            sb.AppendLine($"{indent}public static {target.TargetFullName} To{target.TargetClassName}{methodTypeParameters}(this {model.SourceFullName} source)");
             sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null) return null!;");
+            sb.AppendLine();
             sb.AppendLine($"{indent}    return new {target.TargetFullName}()");
             sb.AppendLine($"{indent}    {{");
 
             foreach (var prop in target.Properties)
             {
-                string assignment = GetAssignmentExpression(prop);
+                string assignment = GetAssignmentExpression(model, prop);
                 sb.AppendLine($"{indent}        @{prop.TargetPropertyName} = {assignment},");
             }
 
@@ -1134,15 +1295,21 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}}}");
         }
 
-        private static void EmitMapToExistingTargetMethod(StringBuilder sb, TargetMapping target, string indent)
+        private static void EmitMapToExistingTargetMethod(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
         {
+            string methodTypeParameters = GetMethodTypeParameters(model);
             sb.AppendLine($"{indent}/// <summary>");
             sb.AppendLine($"{indent}/// Maps this instance onto an existing {target.TargetClassName}.");
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"target\">The target instance to update.</param>");
             sb.AppendLine($"{indent}/// <returns>The updated {target.TargetClassName} instance.</returns>");
-            sb.AppendLine($"{indent}public {target.TargetFullName} MapTo({target.TargetFullName} target)");
+            sb.AppendLine($"{indent}public static {target.TargetFullName} MapTo{methodTypeParameters}(this {model.SourceFullName} source, {target.TargetFullName} target)");
             sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null)");
+            sb.AppendLine($"{indent}    {{");
+            sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(source));");
+            sb.AppendLine($"{indent}    }}");
+            sb.AppendLine();
             sb.AppendLine($"{indent}    if (target == null)");
             sb.AppendLine($"{indent}    {{");
             sb.AppendLine($"{indent}        throw new global::System.ArgumentNullException(nameof(target));");
@@ -1151,7 +1318,7 @@ namespace Transformations.Mapping.Generator
 
             foreach (var prop in target.Properties)
             {
-                string assignment = GetAssignmentExpression(prop);
+                string assignment = GetAssignmentExpression(model, prop);
                 sb.AppendLine($"{indent}    target.@{prop.TargetPropertyName} = {assignment};");
             }
 
@@ -1162,13 +1329,16 @@ namespace Transformations.Mapping.Generator
 
         private static void EmitStaticFactory(StringBuilder sb, MappingModel model, TargetMapping target, string indent)
         {
+            string methodTypeParameters = GetMethodTypeParameters(model);
             sb.AppendLine($"{indent}/// <summary>");
             sb.AppendLine($"{indent}/// Maps a {target.TargetClassName} back to a new {model.SourceClassName}.");
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The source {target.TargetClassName} to map from.</param>");
             sb.AppendLine($"{indent}/// <returns>A new {model.SourceClassName} with mapped property values.</returns>");
-            sb.AppendLine($"{indent}public static {model.SourceFullName} From{target.TargetClassName}({target.TargetFullName} source)");
+            sb.AppendLine($"{indent}public static {model.SourceFullName} To{model.SourceClassName}{methodTypeParameters}(this {target.TargetFullName} source)");
             sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    if (source == null) return null!;");
+            sb.AppendLine();
             sb.AppendLine($"{indent}    return new {model.SourceFullName}()");
             sb.AppendLine($"{indent}    {{");
 
@@ -1187,11 +1357,11 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}}}");
         }
 
-        private static string GetAssignmentExpression(PropertyMapping prop)
+        private static string GetAssignmentExpression(MappingModel model, PropertyMapping prop)
         {
             if (prop.ConverterMethodName != null)
             {
-                return $"{prop.ConverterMethodName}({prop.SourceExpression})";
+                return $"{model.SourceFullName}.{prop.ConverterMethodName}({prop.SourceExpression})";
             }
 
             if (prop.SameType)
@@ -1248,13 +1418,13 @@ namespace Transformations.Mapping.Generator
 
         private static string ToProjectionSourceExpression(string sourceExpression)
         {
-            const string thisPrefix = "this.";
+            const string thisPrefix = "source.";
             if (sourceExpression.StartsWith(thisPrefix, StringComparison.Ordinal))
             {
                 return "item." + sourceExpression.Substring(thisPrefix.Length);
             }
 
-            return sourceExpression.Replace("this.", "item.");
+            return sourceExpression.Replace("source.", "item.");
         }
 
         private static string GetReverseAssignmentExpression(PropertyMapping prop)
@@ -1328,8 +1498,9 @@ namespace Transformations.Mapping.Generator
         public Location? SourceLocation { get; }
         public List<Diagnostic> Diagnostics { get; }
         public List<TargetMapping> Targets { get; }
+        public bool IsValueType { get; }
 
-        public MappingModel(string sourceClassName, string sourceDeclarationName, string sourceMetadataName, List<string> sourceTypeParameterNames, List<TypeDeclarationModel> containingTypes, string sourceNamespace, string sourceFullName, Location? sourceLocation, List<Diagnostic> diagnostics, List<TargetMapping> targets)
+        public MappingModel(string sourceClassName, string sourceDeclarationName, string sourceMetadataName, List<string> sourceTypeParameterNames, List<TypeDeclarationModel> containingTypes, string sourceNamespace, string sourceFullName, Location? sourceLocation, List<Diagnostic> diagnostics, List<TargetMapping> targets, bool isValueType = false)
         {
             SourceClassName = sourceClassName;
             SourceDeclarationName = sourceDeclarationName;
@@ -1341,6 +1512,7 @@ namespace Transformations.Mapping.Generator
             SourceLocation = sourceLocation;
             Diagnostics = diagnostics;
             Targets = targets;
+            IsValueType = isValueType;
         }
     }
 
