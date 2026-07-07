@@ -3,12 +3,17 @@ using YamlDotNet.Serialization;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts and flattens text content from YAML documents.
+/// </summary>
 public class YamlExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".yml", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         using var stream = new MemoryStream(fileData);

@@ -5,18 +5,15 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <RootNamespace>Transformations.Mapping.Generator</RootNamespace>
-    <AssemblyName>Transformations.Mapping.Generator</AssemblyName>
+    <RootNamespace>Transformations.Analyzers</RootNamespace>
+    <AssemblyName>Transformations.Analyzers.CodeFixes</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.12.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.3.0" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
-    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+    <ProjectReference Include="..\Transformations.Analyzers\Transformations.Analyzers.csproj" />
   </ItemGroup>
 
 </Project>

@@ -184,25 +184,36 @@ namespace Transformations.Mapping.Generator
 
                 if (targets.Count > 0)
                 {
-                    var containingTypes = GetContainingTypes(decoratedType, diagnostics);
-                    if (containingTypes == null)
+                    if (!IsPartialClass(decoratedType))
                     {
+                        diagnostics.Add(Diagnostic.Create(
+                            MissingPartialSourceType,
+                            decoratedType.Locations.FirstOrDefault() ?? Location.None,
+                            decoratedType.Name));
                         yield return CreateInvalidMappingModel(decoratedType, sourceNamespace, diagnostics);
                     }
                     else
                     {
-                        yield return new MappingModel(
-                            decoratedType.Name,
-                            GetSourceDeclarationName(decoratedType),
-                            GetSourceMetadataName(decoratedType),
-                            GetSourceTypeParameterNames(decoratedType),
-                            containingTypes,
-                            sourceNamespace,
-                            decoratedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                            decoratedType.Locations.FirstOrDefault() ?? Location.None,
-                            diagnostics,
-                            targets,
-                            decoratedType.IsValueType);
+                        var containingTypes = GetContainingTypes(decoratedType, diagnostics);
+                        if (containingTypes == null)
+                        {
+                            yield return CreateInvalidMappingModel(decoratedType, sourceNamespace, diagnostics);
+                        }
+                        else
+                        {
+                            yield return new MappingModel(
+                                decoratedType.Name,
+                                GetSourceDeclarationName(decoratedType),
+                                GetSourceMetadataName(decoratedType),
+                                GetSourceTypeParameterNames(decoratedType),
+                                containingTypes,
+                                sourceNamespace,
+                                decoratedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                                decoratedType.Locations.FirstOrDefault() ?? Location.None,
+                                diagnostics,
+                                targets,
+                                decoratedType.IsValueType);
+                        }
                     }
                 }
             }

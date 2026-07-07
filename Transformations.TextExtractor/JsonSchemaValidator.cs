@@ -4,11 +4,20 @@ using Json.Schema;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Provides validation and normalization helpers for JSON content using JSON Schema.
+/// </summary>
 public static class JsonSchemaValidator
 {
+    /// <summary>
+    /// Validates a raw JSON payload against a specified JSON schema.
+    /// </summary>
     public static bool ValidateJson(string rawJson, string schemaJson)
         => ListSchemaErrors(rawJson, schemaJson).Count == 0;
 
+    /// <summary>
+    /// Evaluates a JSON payload against a schema and returns a list of detailed error messages if invalid.
+    /// </summary>
     public static List<string> ListSchemaErrors(string rawJson, string schemaJson)
     {
         var errors = new List<string>();
@@ -51,6 +60,9 @@ public static class JsonSchemaValidator
         return errors;
     }
 
+    /// <summary>
+    /// Normalizes JSON text by stripping surrounding markdown code blocks and trimming whitespace.
+    /// </summary>
     public static string NormalizeJson(string input)
     {
         if (string.IsNullOrWhiteSpace(input))

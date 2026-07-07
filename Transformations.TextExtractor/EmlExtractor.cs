@@ -3,6 +3,9 @@ using System.Text;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text and metadata from EML files, optionally parsing attachments.
+/// </summary>
 public class EmlExtractor : ITextExtractor
 {
     private readonly IReadOnlyList<ITextExtractor>? _innerExtractors;
@@ -21,9 +24,11 @@ public class EmlExtractor : ITextExtractor
         _innerExtractors = innerExtractors.ToList().AsReadOnly();
     }
 
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".eml", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         using var stream = new MemoryStream(fileData);

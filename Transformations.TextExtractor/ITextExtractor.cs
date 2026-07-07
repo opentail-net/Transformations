@@ -7,8 +7,14 @@ namespace Transformations.Text;
 /// </summary>
 public interface ITextExtractor
 {
+    /// <summary>
+    /// Determines whether this extractor can process the specified file extension.
+    /// </summary>
     bool CanHandle(string extension);
 
+    /// <summary>
+    /// Extracts text from the provided byte array.
+    /// </summary>
     string ExtractText(byte[] data);
 
     /// <summary>

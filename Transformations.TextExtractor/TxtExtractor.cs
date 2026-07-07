@@ -2,13 +2,19 @@ using System.Text;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text from plain-text files using UTF-8 or BOM-detected encoding.
+/// Acts as the final fallback for unknown file types.
+/// </summary>
 public class TxtExtractor : ITextExtractor
 {
     /// <summary>
     /// Accepts any extension — acts as the final fallback for unknown text-like files.
     /// </summary>
+    /// <inheritdoc />
     public bool CanHandle(string extension) => true;
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         if (IsBinary(fileData))

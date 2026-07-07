@@ -3,6 +3,9 @@ using ExcelDataReader;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text from Excel spreadsheets (.xlsx, .xls, .xlsm) using ExcelDataReader.
+/// </summary>
 public class ExcelExtractor : ITextExtractor
 {
     static ExcelExtractor()
@@ -10,13 +13,16 @@ public class ExcelExtractor : ITextExtractor
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".xls", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".xlsm", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var stream = new MemoryStream(fileData);

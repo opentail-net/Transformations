@@ -3,6 +3,9 @@ using Markdig;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Provides helper methods to normalize Markdown and extract structural headings/sections.
+/// </summary>
 public static class MarkdownStructureExtractor
 {
     /// <summary>
@@ -20,6 +23,9 @@ public static class MarkdownStructureExtractor
     public static bool CompareMarkdown(string leftMarkdown, string rightMarkdown) =>
         HasChanged(leftMarkdown, rightMarkdown);
 
+    /// <summary>
+    /// Normalizes Markdown content by unifying line endings and collapsing excessive blank lines.
+    /// </summary>
     public static string NormalizeMarkdown(string markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
@@ -39,6 +45,9 @@ public static class MarkdownStructureExtractor
         return normalized.Trim();
     }
 
+    /// <summary>
+    /// Parses Markdown text to build a map of its heading structure (ATX and Setext headings).
+    /// </summary>
     public static List<MarkdownHeading> BuildHeadingMap(string markdown)
     {
         var result = new List<MarkdownHeading>();
@@ -83,6 +92,9 @@ public static class MarkdownStructureExtractor
         return result;
     }
 
+    /// <summary>
+    /// Extracts content sections from Markdown, dividing the text into blocks based on headings.
+    /// </summary>
     public static List<MarkdownSection> ExtractSections(string markdown)
     {
         var sections = new List<MarkdownSection>();

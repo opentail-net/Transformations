@@ -4,6 +4,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Dependency injection extensions for text extraction services.
+/// </summary>
 public static class ServiceCollectionExtensions
 {
     /// <summary>
@@ -71,6 +74,9 @@ public sealed class TextExtractorBuilder
 {
     private readonly List<ITextExtractor> _extractors;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TextExtractorBuilder"/> class with the default extractors.
+    /// </summary>
     public TextExtractorBuilder(List<ITextExtractor> extractors) => _extractors = extractors;
 
     /// <summary>
@@ -116,5 +122,8 @@ public sealed class TextExtractorBuilder
         return this;
     }
 
+    /// <summary>
+    /// Builds and returns the configured collection of extractors.
+    /// </summary>
     public IEnumerable<ITextExtractor> Build() => _extractors;
 }

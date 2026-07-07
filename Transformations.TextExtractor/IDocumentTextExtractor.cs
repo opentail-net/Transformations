@@ -8,20 +8,37 @@ public interface IDocumentTextExtractor
 {
     // ── Core extraction ──────────────────────────────────────────────────────
 
+    /// <summary>Extracts text from a byte array.</summary>
     ExtractionResult GetText(string fileName, byte[] content);
+    /// <summary>Extracts text from a stream.</summary>
     ExtractionResult GetText(string fileName, Stream content);
+    /// <summary>Extracts text from a byte array with options.</summary>
     ExtractionResult GetText(string fileName, byte[] content, ExtractionOptions? options);
+    /// <summary>Extracts text from a stream with options.</summary>
     ExtractionResult GetText(string fileName, Stream content, ExtractionOptions? options);
 
+    /// <summary>Extracts text and metadata from a byte array.</summary>
     ExtractionMetadataResult GetTextWithMetadata(string fileName, byte[] content);
+    /// <summary>Extracts text and metadata from a stream.</summary>
     ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content);
+    /// <summary>Extracts text and metadata from a byte array with options.</summary>
     ExtractionMetadataResult GetTextWithMetadata(string fileName, byte[] content, ExtractionOptions? options);
+    /// <summary>Extracts text and metadata from a stream with options.</summary>
     ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content, ExtractionOptions? options);
 
+    /// <summary>Asynchronously extracts text from a stream.</summary>
     Task<ExtractionResult> GetTextAsync(string fileName, Stream content, CancellationToken cancellationToken = default);
+    /// <summary>Asynchronously extracts text from a stream with options.</summary>
     Task<ExtractionResult> GetTextAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Asynchronously extracts text from a stream and retrieves metadata.
+    /// </summary>
     Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously extracts text from a stream and retrieves metadata using specific extraction options.
+    /// </summary>
     Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default);
 
     // ── Batch extraction ─────────────────────────────────────────────────────

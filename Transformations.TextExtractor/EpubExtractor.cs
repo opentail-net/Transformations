@@ -17,14 +17,19 @@ public class EpubExtractor : ITextExtractor
 
     private readonly HtmlExtractor _htmlExtractor;
 
+    /// <summary>Constructs an instance with injected fallback extractors.</summary>
     public EpubExtractor(IEnumerable<ITextExtractor> _) : this() { }
+    /// <summary>Constructs a default instance.</summary>
     public EpubExtractor() => _htmlExtractor = new HtmlExtractor();
 
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".epub", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var ms = new MemoryStream(fileData);

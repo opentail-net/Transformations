@@ -19,11 +19,14 @@ public class ZipExtractor : ITextExtractor
         _extractors = extractors.ToList().AsReadOnly();
     }
 
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".zip", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         var sb = new StringBuilder();

@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Transformations.Analyzers\Transformations.Analyzers.csproj" />
+    <ProjectReference Include="..\Transformations.Analyzers.CodeFixes\Transformations.Analyzers.CodeFixes.csproj" />
   </ItemGroup>
 
   <ItemGroup>

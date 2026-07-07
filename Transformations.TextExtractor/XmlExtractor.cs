@@ -3,12 +3,17 @@ using System.Xml.Linq;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts and flattens text content from XML documents.
+/// </summary>
 public class XmlExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".xml", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".config", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         using var stream = new MemoryStream(fileData);

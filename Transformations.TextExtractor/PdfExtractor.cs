@@ -4,19 +4,28 @@ using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text from Portable Document Format (.pdf) files using PdfPig.
+/// </summary>
 public class PdfExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var stream = new MemoryStream(fileData);
         return ExtractFromStream(stream, options);
     }
 
+    /// <summary>
+    /// Extracts text directly from a stream, optionally tracking page numbers.
+    /// </summary>
     public string ExtractFromStream(Stream stream, ExtractionOptions? options = null)
     {
         var sb = new StringBuilder();

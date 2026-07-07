@@ -8,9 +8,11 @@ namespace Transformations.Text;
 /// </summary>
 public class RtfExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".rtf", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         // RTF is ASCII-based; use Latin-1 to preserve high-byte chars until \'XX handles them

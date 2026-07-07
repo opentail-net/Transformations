@@ -16,18 +16,22 @@ public class OdtExtractor : ITextExtractor
     private static readonly XNamespace DrawNs   = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
     private static readonly XNamespace PresentationNs = "urn:oasis:names:tc:opendocument:xmlns:presentation:1.0";
 
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".odt", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".odp", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var ms = new MemoryStream(fileData);
         return ExtractFromStream(ms, options);
     }
 
+    /// <inheritdoc />
     public string ExtractText(Stream stream) => ExtractFromStream(stream, null);
 
     private static string ExtractFromStream(Stream stream, ExtractionOptions? options)

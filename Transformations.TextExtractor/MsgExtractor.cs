@@ -3,11 +3,16 @@ using System.Text;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts email body and metadata (From, Date, Subject) from Outlook MSG files.
+/// </summary>
 public class MsgExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".msg", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         using var stream = new MemoryStream(fileData);

@@ -10,9 +10,9 @@ using UglyToad.PdfPig;
 namespace Transformations.Text;
 
 /// <summary>
-/// Primary facade for text extraction. Routes files to format-specific extractors,
+/// facade for text extraction. Routes files to format-specific extractors,
 /// normalizes the result, and returns typed success/failure DTOs.
-/// Register via <see cref="ServiceCollectionExtensions.AddTextExtractor"/> for DI,
+/// Register via <see cref="ServiceCollectionExtensions.AddTextExtractor(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/> for DI,
 /// or construct directly with <c>new TextExtractor()</c>.
 /// </summary>
 public class TextExtractor : IDocumentTextExtractor
@@ -39,6 +39,7 @@ public class TextExtractor : IDocumentTextExtractor
         _logger = logger;
     }
 
+    /// <summary>Creates the default list of built-in format extractors.</summary>
     public static IEnumerable<ITextExtractor> CreateDefaultExtractors()
     {
         var core = new List<ITextExtractor>
@@ -71,48 +72,61 @@ public class TextExtractor : IDocumentTextExtractor
 
     // ── byte[] surface ──────────────────────────────────────────────────────
 
+    /// <inheritdoc />
     public ExtractionResult GetText(string fileName, byte[] content)
         => GetTextCore(fileName, content, null);
 
+    /// <inheritdoc />
     public ExtractionResult GetText(string fileName, byte[] content, ExtractionOptions? options)
         => GetTextCore(fileName, content, options);
 
+    /// <inheritdoc />
     public ExtractionMetadataResult GetTextWithMetadata(string fileName, byte[] content)
         => GetTextWithMetadataCore(fileName, content, null);
 
+    /// <inheritdoc />
     public ExtractionMetadataResult GetTextWithMetadata(string fileName, byte[] content, ExtractionOptions? options)
         => GetTextWithMetadataCore(fileName, content, options);
 
     // ── Stream surface ───────────────────────────────────────────────────────
 
+    /// <inheritdoc />
     public ExtractionResult GetText(string fileName, Stream content)
         => GetTextCore(fileName, ReadStream(content), null);
 
+    /// <inheritdoc />
     public ExtractionResult GetText(string fileName, Stream content, ExtractionOptions? options)
         => GetTextCore(fileName, ReadStream(content), options);
 
+    /// <inheritdoc />
     public ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content)
         => GetTextWithMetadataCore(fileName, ReadStream(content), null);
 
+    /// <inheritdoc />
     public ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content, ExtractionOptions? options)
         => GetTextWithMetadataCore(fileName, ReadStream(content), options);
 
     // ── Async surface ────────────────────────────────────────────────────────
 
+    /// <inheritdoc />
     public async Task<ExtractionResult> GetTextAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
         => GetTextCore(fileName, await ReadStreamAsync(content, cancellationToken), null);
 
+    /// <inheritdoc />
     public async Task<ExtractionResult> GetTextAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default)
         => GetTextCore(fileName, await ReadStreamAsync(content, cancellationToken), options);
 
+    /// <inheritdoc />
     public async Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
         => GetTextWithMetadataCore(fileName, await ReadStreamAsync(content, cancellationToken), null);
 
+    /// <inheritdoc />
     public async Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default)
         => GetTextWithMetadataCore(fileName, await ReadStreamAsync(content, cancellationToken), options);
 
     // ── Batch ────────────────────────────────────────────────────────────────
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ExtractionResult> GetTextBatchAsync(
         IEnumerable<(string FileName, byte[] Content)> documents,
         int maxDegreeOfParallelism = 4,
@@ -156,6 +170,7 @@ public class TextExtractor : IDocumentTextExtractor
         ".zip", ".odt", ".odp", ".rtf", ".epub", ".txt"
     ];
 
+    /// <inheritdoc />
     public IReadOnlyList<string> GetSupportedExtensions()
         => _probedExtensions
             .Where(ext => _extractors.Any(e => e.CanHandle(ext) && e is not TxtExtractor))
@@ -163,6 +178,7 @@ public class TextExtractor : IDocumentTextExtractor
             .ToList()
             .AsReadOnly();
 
+    /// <inheritdoc />
     public bool IsSupported(string fileName)
     {
         var ext = Path.GetExtension(fileName);
@@ -609,6 +625,7 @@ public enum TableMode
 /// </summary>
 public sealed record ExtractionOptions
 {
+    /// <summary>Default extraction options.</summary>
     public static readonly ExtractionOptions Default = new();
 
     /// <summary>Truncate output to this many characters after normalization. <c>null</c> = no limit.</summary>
@@ -647,9 +664,11 @@ public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage
     /// <summary>Structured failure category; <see cref="ExtractionErrorKind.None"/> on success.</summary>
     public ExtractionErrorKind ErrorKind { get; init; } = ExtractionErrorKind.None;
 
+    /// <summary>Creates a successful extraction result.</summary>
     public static ExtractionResult Success(string text, string? extractorName = null, TimeSpan duration = default)
         => new(true, text, null) { ExtractorName = extractorName, Duration = duration };
 
+    /// <summary>Creates a failed extraction result.</summary>
     public static ExtractionResult Failure(string error,
         ExtractionErrorKind kind = ExtractionErrorKind.ExtractionFailed,
         string? extractorName = null,
@@ -671,10 +690,12 @@ public record ExtractionMetadataResult(bool IsSuccess, string Text, Dictionary<s
     /// <summary>Structured failure category; <see cref="ExtractionErrorKind.None"/> on success.</summary>
     public ExtractionErrorKind ErrorKind { get; init; } = ExtractionErrorKind.None;
 
+    /// <summary>Creates a successful metadata extraction result.</summary>
     public static ExtractionMetadataResult Success(string text, Dictionary<string, string> metadata,
         string? extractorName = null, TimeSpan duration = default)
         => new(true, text, metadata, null) { ExtractorName = extractorName, Duration = duration };
 
+    /// <summary>Creates a failed metadata extraction result.</summary>
     public static ExtractionMetadataResult Failure(string error,
         ExtractionErrorKind kind = ExtractionErrorKind.ExtractionFailed,
         string? extractorName = null,

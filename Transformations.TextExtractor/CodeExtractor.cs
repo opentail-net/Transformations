@@ -3,6 +3,9 @@ using System.Text.RegularExpressions;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text from source code files, stripping empty lines and copyright headers.
+/// </summary>
 public class CodeExtractor : ITextExtractor
 {
     private static readonly HashSet<string> CodeExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -11,8 +14,10 @@ public class CodeExtractor : ITextExtractor
         ".rb", ".php", ".swift", ".kt", ".scala", ".fs", ".vb", ".lua", ".r", ".m", ".dart"
     };
 
+    /// <inheritdoc />
     public bool CanHandle(string extension) => CodeExtensions.Contains(extension);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         using var stream = new MemoryStream(fileData);

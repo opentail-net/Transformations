@@ -4,19 +4,26 @@ using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text from Word documents (.docx) using OpenXML.
+/// </summary>
 public class DocxExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".docx", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var stream = new MemoryStream(fileData);
         return ExtractFromStream(stream, options);
     }
 
+    /// <inheritdoc />
     public string ExtractText(Stream stream) => ExtractFromStream(stream, null);
 
     private static string ExtractFromStream(Stream stream, ExtractionOptions? options)

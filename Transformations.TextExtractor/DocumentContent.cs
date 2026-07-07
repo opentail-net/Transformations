@@ -1,14 +1,26 @@
 namespace Transformations.Text;
 
+/// <summary>
+/// Specifies the underlying format of a document.
+/// </summary>
 public enum DocumentFormat
 {
+    /// <summary>Unformatted plain text.</summary>
     PlainText = 0,
+    /// <summary>Markdown formatted text.</summary>
     Markdown = 1,
+    /// <summary>JSON structured data.</summary>
     Json = 2
 }
 
+/// <summary>
+/// Provides utility methods for format-aware text normalization and comparison.
+/// </summary>
 public static class DocumentContent
 {
+    /// <summary>
+    /// Normalizes the provided content based on its specific format.
+    /// </summary>
     public static string Normalize(string content, DocumentFormat format) =>
         format switch
         {

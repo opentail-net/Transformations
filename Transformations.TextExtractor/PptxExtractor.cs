@@ -5,19 +5,26 @@ using A = DocumentFormat.OpenXml.Drawing;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text from PowerPoint presentations (.pptx files).
+/// </summary>
 public class PptxExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".pptx", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var stream = new MemoryStream(fileData);
         return ExtractFromStream(stream, options);
     }
 
+    /// <inheritdoc />
     public string ExtractText(Stream stream) => ExtractFromStream(stream, null);
 
     private static string ExtractFromStream(Stream stream, ExtractionOptions? options)
@@ -30,7 +37,7 @@ public class PptxExtractor : ITextExtractor
 
         using var pres = PresentationDocument.Open(stream, false);
         var presPart = pres.PresentationPart;
-        if (presPart?.Presentation.SlideIdList == null)
+        if (presPart?.Presentation?.SlideIdList == null)
             return string.Empty;
 
         int slideNum = 1;
@@ -55,7 +62,7 @@ public class PptxExtractor : ITextExtractor
 
     private static void AppendSlideText(SlidePart slidePart, StringBuilder sb)
     {
-        var shapeTree = slidePart.Slide.CommonSlideData?.ShapeTree;
+        var shapeTree = slidePart.Slide?.CommonSlideData?.ShapeTree;
         if (shapeTree == null) return;
 
         foreach (var shape in shapeTree.Elements<Shape>())

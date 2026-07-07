@@ -3,11 +3,16 @@ using System.Text.Json;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts and flattens text content from JSON documents.
+/// </summary>
 public class JsonExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".json", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         using var stream = new MemoryStream(fileData);

@@ -5,11 +5,16 @@ using CsvHelper.Configuration;
 
 namespace Transformations.Text;
 
+/// <summary>
+/// Extracts text from CSV files using CsvHelper.
+/// </summary>
 public class CsvExtractor : ITextExtractor
 {
+    /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".csv", StringComparison.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public string ExtractText(byte[] fileData)
     {
         using var reader = new StreamReader(new MemoryStream(fileData));
