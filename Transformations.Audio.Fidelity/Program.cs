@@ -74,7 +74,12 @@ var options = defaults with
     AlgorithmIds = algorithmIds.Count == 0 ? null : algorithmIds
 };
 
-var report = HasFlag(args, "--ratio-threshold-sweep")
+var report = HasFlag(args, "--sinc-v23-threshold-sweep")
+    ? ResamplerFidelitySuite.RunSincV23ThresholdSweep(
+        scenarios,
+        ReadDoubles(args, "--threshold", [0.50, 0.60, 0.667, 0.75, 0.80, 0.875, 0.90, 0.95, 1.00]),
+        options)
+    : HasFlag(args, "--ratio-threshold-sweep")
     ? ResamplerFidelitySuite.RunRatioAwareThresholdSweep(
         scenarios,
         ReadDoubles(args, "--threshold", [0.50, 0.60, 0.667, 0.75, 0.80, 0.875, 0.90, 0.95, 1.00]),

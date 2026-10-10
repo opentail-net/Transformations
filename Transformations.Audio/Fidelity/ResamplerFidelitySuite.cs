@@ -30,13 +30,10 @@ public static class ResamplerFidelitySuite
         // gated scenario. Old v1 preserved at Resampler/Experimental/Rejected/CatmullRomSpline.cs.old.
         new("spline", "Spline", "v2", false, Resampler.Spline.Resample),
         new("sinc", "Sinc", "v1", false, Resampler.Sinc.Resample),
-        // sinc_v2/sinc_v3 promoted to non-experimental (2026-07-07): both are genuine,
-        // durable alias-suppression alternatives to plain sinc/v1 (which has zero
-        // anti-alias protection - 0 dB SNR whenever a scenario stresses aliasing), not
-        // short-lived A/B experiments. sinc/v1 is kept as-is (not demoted): it still wins
-        // every currently-gated scenario by large margins whenever the signal has no
-        // energy that would fold at the new Nyquist.
-        new("sinc_v2", "Sinc", "v2", false, JuliusSinc.Resample),
+        // sinc_v2 (JuliusSinc / v2) is retired (2026-07-08): sinc_v23 matched its
+        // pass-row count, beat its average SNR, and ran faster in repeated default +
+        // real-like comparisons. JuliusSinc remains as an internal helper for V20/V23's
+        // severe-downsample branch, but sinc_v2 is no longer an active top-level candidate.
         new("nuttall_sinc", "NuttallSinc", "v1", false, NuttallSinc.Resample),
         // sinc_v3 (KaiserSinc / v3) is retired (2026-07-07): strictly dominated by nuttall_sinc
         // on both alias suppression (+0.55 dB SNR on Alias Stress) and speed (24 ms vs 26 ms),
@@ -48,8 +45,8 @@ public static class ResamplerFidelitySuite
         // Resampler/Experimental/Rejected/README.md): sinc_v6 was a rejected minimum-phase
         // candidate; sinc_v5 was superseded by sinc_v7; sinc_v4 never distinctly beat
         // sinc_v3 anywhere; sinc_v7 in turn never won outright against the live sinc
-        // family (sinc/sinc_v2/sinc_v3) and was the clear worst of them specifically on
-        // alias suppression - "better than something already retired" wasn't enough to
+        // family then active (sinc/sinc_v2/sinc_v3) and was the clear worst of them
+        // specifically on alias suppression - "better than something already retired" wasn't enough to
         // keep it once checked against the live field it actually has to compete in.
         // These IDs stay out of circulation so old report artifacts are never confused
         // with a different idea reusing the same ID.
@@ -107,10 +104,22 @@ public static class ResamplerFidelitySuite
         // Resampler/Experimental/Rejected/SincV16.cs.old.
         // sinc_v17 (v1) is retired (2026-07-07) - strictly dominated by sinc_v20. Moved to
         // Resampler/Experimental/Rejected/SincV17.cs.old.
-        new("sinc_v18", "Experimental SincV18", "v1", true, SincV18.Resample),
+        // sinc_v18 (v1) is retired (2026-07-08): superseded by sinc_v23, which preserves
+        // V18's SNR profile while running materially faster in repeated focused comparisons.
+        // Source remains in Resampler/Experimental/SincV18.cs as the baseline for the V21-V23
+        // normalization experiments.
         // sinc_v19 (v1) is retired (2026-07-07) - failed strict anti-alias gating (gained only
         // 23.83 dB on Alias Stress). Moved to Resampler/Experimental/Rejected/SincV19.cs.old.
         new("sinc_v20", "Experimental SincV20", "v1", true, SincV20.Resample),
+        // sinc_v21 and sinc_v22 (v1) are retired (2026-07-08): both were useful single-branch
+        // normalization probes, but sinc_v23 combines them and beats both on repeated timing.
+        // sinc_v23 (v1) is retired (2026-07-08): it combined V21/V22 normalized kernels,
+        // then was superseded by sinc_v24's threshold-tuned router. Source remains as the
+        // baseline for the V24 threshold experiment.
+        // sinc_v24: V23 with the near-unity threshold tuned from 0.875 to 0.91875 after
+        // repeated default + real-like threshold sweeps. 0.91875 is the safe side of the
+        // 44.1k/48k routing boundary; 0.9188+ loses near-unity music/transient quality.
+        new("sinc_v24", "Experimental SincV24", "v1", true, SincV24.Resample),
         new("cubic_farrow", "Experimental CubicFarrow", "v1", true, FarrowResampler.Resample),
         // bspline (v1), tcb_spline (v1), newton_poly (v1), and nuttall_farrow (v1) are retired
         // (see Resampler/Experimental/Rejected/README.md): bspline, tcb_spline, and newton_poly
@@ -166,6 +175,31 @@ public static class ResamplerFidelitySuite
                     "v1",
                     true,
                     (input, inRate, outRate, channels) => SincV20.Resample(input, inRate, outRate, channels, threshold));
+            })
+            .ToArray();
+
+        return RunAlgorithms(scenarios, algorithms, options);
+    }
+
+    /// <summary>Runs V23 near-unity threshold variants for router tuning evidence.</summary>
+    public static ResamplerFidelityReport RunSincV23ThresholdSweep(
+        IEnumerable<FidelityScenario> scenarios,
+        IEnumerable<double> thresholds,
+        ResamplerFidelityOptions? options = null)
+    {
+        var algorithms = thresholds
+            .Distinct()
+            .Order()
+            .Select(threshold =>
+            {
+                string thresholdText = threshold.ToString("0.000", CultureInfo.InvariantCulture);
+                string id = "sinc_v23_threshold_" + thresholdText.Replace(".", "", StringComparison.Ordinal);
+                return new AlgorithmSpec(
+                    id,
+                    "Experimental SincV23",
+                    "v1",
+                    true,
+                    (input, inRate, outRate, channels) => SincV23.Resample(input, inRate, outRate, channels, threshold));
             })
             .ToArray();
 

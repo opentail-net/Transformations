@@ -141,6 +141,23 @@ float[] stereo = downmixer.Process(surround51);
 | `TruePeakMeter.Measure(...)` | Maximum 4x FIR-estimated intersample peak across all channels. |
 | `AudioLevels.ApplyGain(...)` | Applies dB gain into a new or caller-provided buffer. |
 | `AudioLevels.NormalizeSamplePeak(...)` | Normalizes by sample peak, leaving silence unchanged. |
+| `AudioSignalFeatures.MeasureZeroCrossingRate(...)` | Time-domain sign-change rate, with an optional dead zone for tiny noise. |
+| `AudioSignalFeatures.MeasureTotalEnergy(...)` | Sum-of-squares signal energy. |
+| `AudioSignalFeatures.MeasureMeanSquareEnergy(...)` | Average squared sample value. |
+| `AudioSignalFeatures.MeasureDcOffset(...)` | Average signed sample value. |
+| `AudioSignalFeatures.MeasureCrestFactor(...)` | Peak-to-RMS ratio as a linear value or dB. |
+| `AudioSignalGenerator.CreateSine(...)` | Deterministic interleaved sine fixtures for tests and examples. |
+| `AudioSignalGenerator.CreateLinearChirp(...)` | Deterministic frequency sweeps for resampler/filter checks. |
+| `AudioSignalGenerator.CreateImpulse(...)` | Impulse buffers for peak, filter, and latency checks. |
+| `AudioSignalGenerator.CreateWhiteNoise(...)` | Seeded white-noise buffers for repeatable stress fixtures. |
+| `AudioFilters.ApplyHighPass(...)` | Reduces rumble, handling noise, and DC offset below a cutoff. |
+| `AudioFilters.ApplyLowPass(...)` | Reduces high-frequency content above a cutoff. |
+| `AudioFilters.ApplyNotch(...)` | Reduces narrow-band hum, such as 50/60Hz mains noise. |
+| `ClickRepairer.RepairClicks(...)` | Repairs isolated click/pop samples by interpolating local outliers. |
+| `HumRemover.Remove50HzHum(...)` / `Remove60HzHum(...)` | Convenience mains-hum removal with harmonic notch filters. |
+| `DeEsser.Apply(...)` | Reduces harsh speech sibilance with a 4-9 kHz sidechain. |
+| `AudioCleaner.CleanRecording(...)` | Conservative cleanup chain: high-pass, optional hum notches, gentle gate, optional normalization, and final limiting. |
+| `SpeechCleaner.CleanSpeech(...)` / `CleanPodcast(...)` | Opinionated spoken-word cleanup presets built from the lower-level tools. |
 
 This is not advertised as full EBU R128 / BS.1770 loudness certification yet. The true-peak detector uses a 4x polyphase FIR shape, but standards-grade LUFS will need separate validation and probably a reference corpus before it becomes a public promise.
 

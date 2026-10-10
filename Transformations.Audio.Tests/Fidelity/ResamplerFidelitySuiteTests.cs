@@ -90,7 +90,7 @@ public sealed class ResamplerFidelitySuiteTests
         };
         var options = ResamplerFidelityOptions.Default with
         {
-            AlgorithmIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "sinc_v2" }
+            AlgorithmIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "sinc_v24" }
         };
 
         var first = ResamplerFidelitySuite.Run([scenario], options).Results.Single();

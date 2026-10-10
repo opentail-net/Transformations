@@ -9,6 +9,10 @@ public sealed class HybridV18AndV20Tests
 {
     [TestCase(18)]
     [TestCase(20)]
+    [TestCase(21)]
+    [TestCase(22)]
+    [TestCase(23)]
+    [TestCase(24)]
     public void Resample_keeps_frequencies_within_acceptable_limits(int version)
     {
         float[] silence = new float[480];
@@ -16,6 +20,10 @@ public sealed class HybridV18AndV20Tests
         {
             18 => SincV18.Resample(silence, 48_000, 44_100, 1),
             20 => SincV20.Resample(silence, 48_000, 44_100, 1),
+            21 => SincV21.Resample(silence, 48_000, 44_100, 1),
+            22 => SincV22.Resample(silence, 48_000, 44_100, 1),
+            23 => SincV23.Resample(silence, 48_000, 44_100, 1),
+            24 => SincV24.Resample(silence, 48_000, 44_100, 1),
             _ => throw new ArgumentException()
         };
 
@@ -25,6 +33,10 @@ public sealed class HybridV18AndV20Tests
 
     [TestCase(18)]
     [TestCase(20)]
+    [TestCase(21)]
+    [TestCase(22)]
+    [TestCase(23)]
+    [TestCase(24)]
     public void Resample_rejects_invalid_arguments(int version)
     {
         Assert.Throws<ArgumentException>(() => CallResample(version, null!, 48000, 44100, 1));
@@ -41,6 +53,10 @@ public sealed class HybridV18AndV20Tests
         {
             18 => SincV18.Resample(inputData, inRate, outRate, channels),
             20 => SincV20.Resample(inputData, inRate, outRate, channels),
+            21 => SincV21.Resample(inputData, inRate, outRate, channels),
+            22 => SincV22.Resample(inputData, inRate, outRate, channels),
+            23 => SincV23.Resample(inputData, inRate, outRate, channels),
+            24 => SincV24.Resample(inputData, inRate, outRate, channels),
             _ => throw new ArgumentException()
         };
     }

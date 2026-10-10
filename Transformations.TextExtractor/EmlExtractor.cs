@@ -145,6 +145,12 @@ public class EmlExtractor : ITextExtractor
 
     private static byte[] DecodeContentWithLimit(MimePart part, long remainingBytes, out long decodedBytes)
     {
+        if (part.Content == null)
+        {
+            decodedBytes = 0;
+            return [];
+        }
+
         using var stream = new LimitedMemoryStream(remainingBytes);
         part.Content.DecodeTo(stream);
         decodedBytes = stream.Length;

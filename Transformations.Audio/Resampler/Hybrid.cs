@@ -54,11 +54,11 @@ namespace Transformations.Audio.Resampler
                 return (float[])inputData.Clone();
 
             // Route based on quality level:
-            // Fast or below uses SincV18 (fast hybrid).
+            // Fast or below uses SincV24 (V23 with a tuned near-unity threshold).
             // Balanced or above uses SincV20 (precision hybrid).
             if (quality <= ResampleQuality.Fast)
             {
-                return Experimental.SincV18.Resample(inputData, inRate, outRate, channels);
+                return Experimental.SincV24.Resample(inputData, inRate, outRate, channels);
             }
             else
             {

@@ -296,15 +296,105 @@ pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity
 
 The process exits with code `0` when every measured algorithm/scenario pair passes and `1` otherwise.
 
+### Current V21 normalization experiment
+
+`sinc_v21/v1` is a direct `sinc_v18` successor candidate: it keeps V18's routing thresholds, but replaces the Nuttall stages with `NormalizedNuttallSinc`, which normalizes each cached kernel once at build time instead of summing kernel weights inside every output sample/channel loop.
+
+Fresh focused reports:
+
+- `fidelity-report-sinc-v21-default.*`
+- `fidelity-report-sinc-v21-real-like.*`
+
+Initial result: V21 matches V18's SNR/MSE profile exactly to the report precision. Speed is mixed rather than decisive: the default suite favored V18 (`81 ms` total vs V21's `90 ms`), while the real-like suite slightly favored V21 (`89 ms` total vs V18's `92 ms`). Keep V21 as an experimental candidate, but do not promote it on this evidence alone.
+
+### Current V22 normalized-sinc experiment
+
+`sinc_v22/v1` is another direct `sinc_v18` successor candidate: it keeps V18's routing thresholds and original Nuttall/Julius branches, but replaces only the near-unity plain `Sinc` branch with `NormalizedSinc`, which normalizes each cached Hann-windowed sinc kernel once instead of summing kernel weights inside every output sample.
+
+Fresh focused reports:
+
+- `fidelity-report-sinc-v22-default.*`
+- `fidelity-report-sinc-v22-real-like.*`
+
+Initial result: V22 also matches V18's SNR/MSE profile to report precision. In the first focused run, V22 tied V21 on total elapsed time in both suites (`99 ms` default, `138 ms` real-like), while V20 kept a tiny quality edge on V20-routed downsampling cases. Treat V22 as useful implementation evidence, not a promotion candidate yet.
+
+### Current V23 combined-normalization experiment
+
+`sinc_v23/v1` combines V21 and V22: it keeps V18's routing thresholds, uses `NormalizedNuttallSinc` for the Nuttall branches, and uses `NormalizedSinc` for the near-unity plain sinc branch. It is the direct candidate for replacing V18 as the fast hybrid route.
+
+Confirmation run: five repeated default-suite and five repeated real-like-suite comparisons against `sinc_v18`, `sinc_v20`, `sinc_v21`, and `sinc_v22`.
+
+| Suite | Algorithm | Runs | Avg total ms | Min ms | Max ms | Avg SNR |
+|---|---:|---:|---:|---:|---:|---:|
+| default | `sinc_v23` | 5 | 61.0 | 57 | 64 | 42.79 |
+| default | `sinc_v21` | 5 | 68.0 | 65 | 71 | 42.79 |
+| default | `sinc_v22` | 5 | 68.6 | 66 | 70 | 42.79 |
+| default | `sinc_v20` | 5 | 76.0 | 74 | 79 | 42.91 |
+| default | `sinc_v18` | 5 | 100.4 | 97 | 106 | 42.79 |
+| real-like | `sinc_v23` | 5 | 70.4 | 69 | 72 | 44.65 |
+| real-like | `sinc_v21` | 5 | 77.8 | 75 | 80 | 44.65 |
+| real-like | `sinc_v22` | 5 | 83.4 | 79 | 91 | 44.65 |
+| real-like | `sinc_v20` | 5 | 90.4 | 89 | 92 | 44.70 |
+| real-like | `sinc_v18` | 5 | 110.4 | 109 | 113 | 44.65 |
+
+Decision: `sinc_v23` supersedes `sinc_v18`, `sinc_v21`, and `sinc_v22` as the fast hybrid implementation. V20 remains the precision route because it keeps a tiny SNR edge on V20-routed downsampling cases. `Hybrid.Resample(..., quality <= Fast)` now routes to V23; `Balanced` and above still route to V20.
+
+### Current Sinc / SincV2 / SincV23 comparison
+
+Focused confirmation run: five repeated default-suite and five repeated real-like-suite comparisons of the serious carry-forward candidates: original `sinc`, promoted anti-alias `sinc_v2`, and combined practical hybrid `sinc_v23`.
+
+| Suite | Algorithm | Runs | Rows | Pass rows | Avg total ms | Min ms | Max ms | Avg SNR |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| default | `sinc_v23` | 5 | 35 | 25 | 69.8 | 69 | 71 | 42.79 |
+| default | `sinc` | 5 | 35 | 20 | 105.2 | 101 | 108 | 79.12 |
+| default | `sinc_v2` | 5 | 35 | 25 | 141.2 | 140 | 145 | 35.77 |
+| real-like | `sinc_v23` | 5 | 35 | 30 | 127.2 | 86 | 225 | 44.65 |
+| real-like | `sinc_v2` | 5 | 35 | 30 | 146.6 | 139 | 153 | 37.20 |
+| real-like | `sinc` | 5 | 35 | 20 | 188.6 | 123 | 340 | 40.62 |
+
+Decision: `sinc_v23` is the strongest practical default candidate. It is fastest overall in both suites, keeps the same pass-row count as `sinc_v2`, and avoids original `sinc`'s anti-alias failure on high-frequency downsampling. Original `sinc` remains worth keeping as the classic/reference sinc path because it still wins or ties near-unity music/transient/percussion cases and the synthetic upsample round trip. `sinc_v2` is retired as an active top-level candidate: V23 preserves its practical anti-alias role while being faster and stronger on average SNR. The Julius-style implementation stays as an internal helper because V20/V23 still use it for severe downsampling.
+
+### Current V24 threshold-tuned V23 experiment
+
+`sinc_v24/v1` keeps V23's normalized kernels and routing shape, but raises the near-unity threshold from `0.875` to `0.91875`.
+
+Threshold sweep evidence:
+
+- Sweep set: `0.667`, `0.750`, `0.800`, `0.850`, `0.875`, `0.900`
+- Runs: five repeated default-suite runs and five repeated real-like-suite runs per threshold
+- Reports: `fidelity-report-sinc-v23-threshold-default.*`, `fidelity-report-sinc-v23-threshold-real-like.*`, and `bench-repeat-v23-threshold/`
+
+| Suite | Threshold | Runs | Pass rows | Avg total ms | Min ms | Max ms | Avg SNR |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| default | `0.900` | 5 | 25/35 | 70.2 | 64 | 85 | 42.79 |
+| default | `0.875` | 5 | 25/35 | 71.8 | 71 | 72 | 42.79 |
+| default | `0.850` | 5 | 25/35 | 77.8 | 64 | 124 | 42.79 |
+| real-like | `0.900` | 5 | 30/35 | 82.2 | 71 | 92 | 44.65 |
+| real-like | `0.875` | 5 | 30/35 | 86.0 | 69 | 98 | 44.65 |
+| real-like | `0.850` | 5 | 30/35 | 82.6 | 70 | 94 | 44.65 |
+
+Follow-up edge check around the exact 44.1k/48k ratio (`0.91875`) showed the cliff starts immediately above it:
+
+| Suite | Threshold | Avg total ms | Avg SNR | 48k->44.1k music SNR | Transient/percussion SNR |
+|---|---:|---:|---:|---:|---:|
+| default | `0.91875` | 90.0 | 42.79 | 73.05 | 72.28 |
+| default | `0.9188` | 88.3 | 36.51 | 71.35 | 29.96 |
+| default | `0.9200` | 88.3 | 36.51 | 71.35 | 29.96 |
+| real-like | `0.91875` | 103.3 | 44.65 | 94.01 | 79.25 |
+| real-like | `0.9188` | 98.3 | 38.04 | 92.28 | 34.70 |
+| real-like | `0.9200` | 98.0 | 38.04 | 92.28 | 34.70 |
+
+Decision: `0.920` is not safe. `0.91875` is the highest measured safe threshold: it preserves the near-unity music/transient/percussion path, while `0.9188+` routes those cases to the lower-quality branch. `Hybrid.Resample(..., quality <= Fast)` now routes to `sinc_v24`.
+
 ## Algorithm Versioning
 
-The fidelity suite uses stable algorithm IDs and versions, for example `sinc/v1`, `wdl_sinc/v1`, and `linear/v1`. When developing a new algorithm, add it beside the old one rather than replacing the old implementation immediately:
+The fidelity suite uses stable algorithm IDs and versions, for example `sinc/v1`, `sinc_v23/v1`, and `linear/v1`. When developing a new algorithm, add it beside the old one rather than replacing the old implementation immediately:
 
 ```csharp
-new("sinc_v2", "Sinc", "v2", false, SincV2.Resample)
+new("sinc_v24", "Experimental SincV24", "v1", true, SincV24.Resample)
 ```
 
-That lets `sinc/v1` and `sinc_v2/v2` appear in the same Markdown/JSON/CSV reports. Once the newer version wins consistently across gated and exploratory evidence, consolidate the public surface and keep the report artifacts as the audit trail.
+That lets `sinc/v1` and `sinc_v24/v1` appear in the same Markdown/JSON/CSV reports. Once the newer version wins consistently across gated and exploratory evidence, consolidate the public surface and keep the report artifacts as the audit trail.
 
 ## Tests
 
