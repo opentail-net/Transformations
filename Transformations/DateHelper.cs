@@ -357,8 +357,7 @@ using System.Globalization;
         /// <param name="date">The date.</param>
         /// <param name="value">The value in seconds.</param>
         /// <returns>The result.</returns>
-        /// <remarks>Previously (incorrectly) added years; use <see cref="AddYearsSafely"/> for that.</remarks>
-        [Obsolete("Use AddSecondsSafely(DateTime, double) instead. This overload will be removed in 2.2.0.")]
+        /// <remarks>Earlier versions (incorrectly) added years here; use <see cref="AddYearsSafely"/> for that.</remarks>
         public static DateTime AddSecondsSafely(this DateTime date, int value)
         {
             return date.AddSecondsSafely((double)value);

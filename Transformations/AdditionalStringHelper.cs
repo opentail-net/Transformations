@@ -460,6 +460,34 @@ namespace Transformations
             }
 
             string trimmed = output.ToString().TrimEnd();
+
+            // A cut inside a tag leaves a dangling "<b" fragment; drop it.
+            int lastOpen = trimmed.LastIndexOf('<');
+            if (lastOpen >= 0 && trimmed.IndexOf('>', lastOpen) < 0)
+            {
+                trimmed = trimmed.Substring(0, lastOpen).TrimEnd();
+            }
+
+            // Close only the tags that survived the cut. Tags opened after the cut point were
+            // discarded with the text, so closing them would emit stray end tags.
+            openTags.Clear();
+            for (int pos = 0; pos < trimmed.Length; pos++)
+            {
+                if (trimmed[pos] != '<')
+                {
+                    continue;
+                }
+
+                int end = trimmed.IndexOf('>', pos);
+                if (end < 0)
+                {
+                    break;
+                }
+
+                ProcessTag(trimmed.Substring(pos, end - pos + 1), openTags);
+                pos = end;
+            }
+
             var result = new StringBuilder(trimmed.Length + 32);
             result.Append(trimmed).Append("...");
 

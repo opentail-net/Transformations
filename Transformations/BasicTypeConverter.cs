@@ -200,7 +200,7 @@ public static class BasicTypeConverter
                 switch (Type.GetTypeCode(typeof(T)))
                 {
                     case TypeCode.Boolean:
-                        return (T)(object)ConvertToBool(value, true);
+                        return (T)(object)ConvertToBool(value, false);
                     case TypeCode.Byte:
                         return (T)(object)ConvertToByte(value, 0);
                     case TypeCode.DateTime:
@@ -2820,6 +2820,11 @@ public static class BasicTypeConverter
                     ////return (T)(object)char.Parse(value.GetFirstCharacter());
                 }
 
+                if (typeof(T) == typeof(bool))
+                {
+                    return TryParseBoolWord(value, out bool boolWord) ? (T)(object)boolWord : defaultValue;
+                }
+
                 var t = typeof(T);
                 return (T)Convert.ChangeType(value, t);
 
@@ -4331,6 +4336,13 @@ public static class BasicTypeConverter
                     
                     //result = (T)(object)char.Parse(value.GetFirstCharacter());
                     return true;
+                }
+
+                if (typeof(T) == typeof(bool))
+                {
+                    bool parsed = TryParseBoolWord(value, out bool boolWord);
+                    result = (T)(object)boolWord;
+                    return parsed;
                 }
 
                 var t = typeof(T);
@@ -11945,6 +11957,18 @@ public static class BasicTypeConverter
                     return true;
                 }
 
+                if (typeof(T) == typeof(bool))
+                {
+                    if (TryParseBoolWord(value, out bool boolWord))
+                    {
+                        result = (T)(object)boolWord;
+                        return true;
+                    }
+
+                    result = defaultValue;
+                    return false;
+                }
+
                 var t = typeof(T);
                 result = (T)Convert.ChangeType(value, t);
                 return true;
@@ -14895,33 +14919,33 @@ public static class BasicTypeConverter
     /// <returns>
     /// The object as the specified type.
     /// </returns>
-    private static bool ConvertToBool(this string value, bool defaultValue)
+    private static bool TryParseBoolWord(string value, out bool result)
     {
-        string lowerValue = value.ToLower();
-        switch (lowerValue)
+        switch (value.Trim().ToLowerInvariant())
         {
             case "1":
             case "y":
             case "yes":
             case "t":
             case "true":
-                {
-                    return true;
-                }
-
+                result = true;
+                return true;
             case "0":
             case "n":
             case "no":
             case "f":
             case "false":
-                {
-                    return false;
-                }
+                result = false;
+                return true;
             default:
-                {
-                    return defaultValue;
-                }
+                result = false;
+                return false;
         }
+    }
+
+    private static bool ConvertToBool(this string value, bool defaultValue)
+    {
+        return TryParseBoolWord(value, out bool parsed) ? parsed : defaultValue;
     }
 
     /// <summary>

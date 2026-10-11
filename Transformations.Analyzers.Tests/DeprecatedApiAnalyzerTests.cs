@@ -195,52 +195,6 @@ namespace Transformations.Analyzers.Tests
         }
 
         [Test]
-        public async Task CodeFix_AddSecondsSafely_RenamedToAddYearsSafely()
-        {
-            string testCode = """
-                using System;
-
-                public static class DateHelper
-                {
-                    [Obsolete] public static DateTime AddSecondsSafely(this DateTime d, int v) => d;
-                    public static DateTime AddYearsSafely(this DateTime d, int v) => d;
-                }
-
-                public class Test
-                {
-                    public void Run()
-                    {
-                        var d = DateTime.Now.{|#0:AddSecondsSafely|}(1);
-                    }
-                }
-                """;
-
-            string fixedCode = """
-                using System;
-
-                public static class DateHelper
-                {
-                    [Obsolete] public static DateTime AddSecondsSafely(this DateTime d, int v) => d;
-                    public static DateTime AddYearsSafely(this DateTime d, int v) => d;
-                }
-
-                public class Test
-                {
-                    public void Run()
-                    {
-                        var d = DateTime.Now.AddYearsSafely(1);
-                    }
-                }
-                """;
-
-            var expected = CodeFixVerifier.Diagnostic(DeprecatedApiAnalyzer.DiagnosticId)
-                .WithLocation(0)
-                .WithArguments("AddSecondsSafely", "AddYearsSafely");
-
-            await CodeFixVerifier.VerifyCodeFixAsync(testCode, expected, fixedCode);
-        }
-
-        [Test]
         public async Task Analyzer_IsBetweenCall_ReportsDiagnosticButNoCodeFix()
         {
             // IsBetween maps to two possible replacements — analyzer warns but no auto-fix

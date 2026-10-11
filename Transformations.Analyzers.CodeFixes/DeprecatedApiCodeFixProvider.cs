@@ -23,7 +23,6 @@ namespace Transformations.Analyzers
             ImmutableDictionary.CreateRange(new[]
             {
                 new KeyValuePair<string, string>("Between", "BetweenExclusive"),
-                new KeyValuePair<string, string>("AddSecondsSafely", "AddYearsSafely"),
                 new KeyValuePair<string, string>("GetEnumDescription2", "GetEnumDescription"),
                 new KeyValuePair<string, string>("GetEnumDescription3", "GetDescription"),
                 new KeyValuePair<string, string>("GetEnumDescriptionKeyValuePairs2", "GetEnumDescriptionKeyValuePairs"),

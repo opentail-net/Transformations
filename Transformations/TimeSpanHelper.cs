@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 using Transformations;
 
@@ -60,7 +61,7 @@ public static class TimeSpanHelper
             case OutputFormat.VerboseTotalTime:
                 if (timespan.TotalSeconds < 1)
                 {
-                    return timespan.ToString(@"%f") + "ms";
+                    return ((long)Math.Abs(timespan.TotalMilliseconds)).ToString(CultureInfo.InvariantCulture) + "ms";
                 }
                 else if (timespan.TotalMinutes < 1)
                 {
@@ -102,23 +103,23 @@ public static class TimeSpanHelper
             case OutputFormat.VerboseTime:
                 if (timespan.TotalSeconds < 1)
                 {
-                    return timespan.ToString(@"%f") + "ms";
+                    return Math.Abs(timespan.Milliseconds).ToString(CultureInfo.InvariantCulture) + "ms";
                 }
                 else if (timespan.TotalMinutes < 1)
                 {
-                    return timespan.ToString(@"%s") + " seconds " + timespan.ToString(@"%f") + "ms";
+                    return timespan.ToString(@"%s") + " seconds " + Math.Abs(timespan.Milliseconds).ToString(CultureInfo.InvariantCulture) + "ms";
                 }
                 else if (timespan.TotalHours < 1)
                 {
-                    return timespan.ToString(@"%m") + " minutes " + timespan.ToString(@"%s") + " seconds " + timespan.ToString(@"%f") + "ms";
+                    return timespan.ToString(@"%m") + " minutes " + timespan.ToString(@"%s") + " seconds " + Math.Abs(timespan.Milliseconds).ToString(CultureInfo.InvariantCulture) + "ms";
                 }
                 else if (timespan.TotalDays < 1)
                 {
-                    return timespan.ToString(@"%h") + " hours " + timespan.ToString(@"%m") + " minutes " + timespan.ToString(@"%s") + " seconds " + timespan.ToString(@"%f") + "ms";
+                    return timespan.ToString(@"%h") + " hours " + timespan.ToString(@"%m") + " minutes " + timespan.ToString(@"%s") + " seconds " + Math.Abs(timespan.Milliseconds).ToString(CultureInfo.InvariantCulture) + "ms";
                 }
                 else
                 {
-                    return timespan.ToString(@"%d") + " days " + timespan.ToString(@"%h") + " hours " + timespan.ToString(@"%m") + " minutes " + timespan.ToString(@"%s") + " seconds " + timespan.ToString(@"%f") + "ms";
+                    return timespan.ToString(@"%d") + " days " + timespan.ToString(@"%h") + " hours " + timespan.ToString(@"%m") + " minutes " + timespan.ToString(@"%s") + " seconds " + Math.Abs(timespan.Milliseconds).ToString(CultureInfo.InvariantCulture) + "ms";
                 }
             case OutputFormat.ShorthandTime:
                 if (timespan.TotalSeconds < 1)
@@ -139,12 +140,12 @@ public static class TimeSpanHelper
                 }
                 else
                 {
-                    return timespan.ToString(@"d\d\a\y\s hh\h\:mm\m\:ss\s\:fff\m\s");
+                    return timespan.ToString(@"d\d\a\y\s\ hh\h\:mm\m\:ss\s\:fff\m\s");
                 }
             case OutputFormat.hhmm:
-                return timespan.ToString(@"hh\:mm");
+                return ((long)Math.Abs(timespan.TotalHours)).ToString("00", CultureInfo.InvariantCulture) + ":" + Math.Abs(timespan.Minutes).ToString("00", CultureInfo.InvariantCulture);
             case OutputFormat.hhmmss:
-                return timespan.ToString(@"hh\:mm\:ss");
+                return ((long)Math.Abs(timespan.TotalHours)).ToString("00", CultureInfo.InvariantCulture) + ":" + Math.Abs(timespan.Minutes).ToString("00", CultureInfo.InvariantCulture) + ":" + Math.Abs(timespan.Seconds).ToString("00", CultureInfo.InvariantCulture);
             default:
                 return "Unknown format.";
         }

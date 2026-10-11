@@ -37,9 +37,6 @@ namespace Transformations.Analyzers
                 // ExtensionHelper
                 new KeyValuePair<string, string>("ExtensionHelper.Between", "BetweenExclusive"),
 
-                // DateHelper
-                new KeyValuePair<string, string>("DateHelper.AddSecondsSafely", "AddYearsSafely"),
-
                 // EnumHelper
                 new KeyValuePair<string, string>("EnumHelper.GetEnumDescription2", "GetEnumDescription"),
                 new KeyValuePair<string, string>("EnumHelper.GetEnumDescription3", "GetDescription"),

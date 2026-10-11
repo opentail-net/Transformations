@@ -277,6 +277,12 @@ namespace Transformations
                 return new DateTime(1995, 05, 08);
             }
 
+            if (year == 2020)
+            {
+                // In 2020 the May Day bank holiday was moved from 4 May to 8 May for the 75th anniversary of VE Day.
+                return new DateTime(2020, 05, 08);
+            }
+
             DateTime mayDayBankHoliday = new DateTime(year, 05, 01);
             while (mayDayBankHoliday.DayOfWeek != DayOfWeek.Monday)
             {
@@ -470,6 +476,9 @@ namespace Transformations
                 case 2012:
                     // The Spring Bank Holiday was moved from 27 May to 4 June to make it a four-day weekend.
                     return new DateTime(2012, 06, 04);
+                case 2022:
+                    // Moved from 30 May to 2 June for the Platinum Jubilee (3 June was added as an extra holiday).
+                    return new DateTime(2022, 06, 02);
             }
 
             DateTime springBankHoliday = new DateTime(year, 05, 31);
@@ -739,6 +748,13 @@ namespace Transformations
                     break;
                 case 2012:
                     bankHolidays.Add(new DateTime(2012, 06, 05)); //  Diamond Jubilee of Queen Elizabeth II
+                    break;
+                case 2022:
+                    bankHolidays.Add(new DateTime(2022, 06, 03)); //  Platinum Jubilee of Queen Elizabeth II
+                    bankHolidays.Add(new DateTime(2022, 09, 19)); //  State funeral of Queen Elizabeth II
+                    break;
+                case 2023:
+                    bankHolidays.Add(new DateTime(2023, 05, 08)); //  Coronation of King Charles III
                     break;
             }
 
