@@ -67,11 +67,7 @@ public static class WavePcm16Reader
             }
             else if (chunkId == "data")
             {
-                data = reader.ReadBytes(checked((int)chunkSize));
-                if (data.Length != chunkSize)
-                {
-                    throw new InvalidDataException("WAV data chunk is truncated.");
-                }
+                data = ReadChunkBytes(source, chunkSize, "WAV data chunk is truncated.");
             }
             else
             {
@@ -80,9 +76,10 @@ public static class WavePcm16Reader
 
             if ((chunkSize & 1) == 1)
             {
+                // Some writers omit the pad byte after a final odd-sized chunk; treat EOF as end of file.
                 if (source.ReadByte() < 0)
                 {
-                    throw new InvalidDataException("WAV chunk padding byte is truncated.");
+                    break;
                 }
             }
         }
@@ -132,10 +129,18 @@ public static class WavePcm16Reader
             throw new InvalidDataException("WAV fmt chunk is too small.");
         }
 
+        var audioFormat = ReadUInt16(reader);
+        var channels = ReadUInt16(reader);
+        var sampleRateRaw = ReadUInt32(reader);
+        if (sampleRateRaw > int.MaxValue)
+        {
+            throw new InvalidDataException("WAV sample rate is out of range.");
+        }
+
         var format = new FormatChunk(
-            ReadUInt16(reader),
-            ReadUInt16(reader),
-            checked((int)ReadUInt32(reader)),
+            audioFormat,
+            channels,
+            (int)sampleRateRaw,
             ReadUInt32(reader),
             ReadUInt16(reader),
             ReadUInt16(reader));
@@ -143,11 +148,7 @@ public static class WavePcm16Reader
         var remaining = chunkSize - 16;
         if (remaining > 0)
         {
-            var skipped = reader.ReadBytes(checked((int)remaining));
-            if (skipped.Length != remaining)
-            {
-                throw new InvalidDataException("WAV fmt chunk is truncated.");
-            }
+            SkipChunk(reader.BaseStream, remaining);
         }
 
         return format;
@@ -211,10 +212,49 @@ public static class WavePcm16Reader
         return output;
     }
 
+    private static byte[] ReadChunkBytes(Stream source, uint chunkSize, string truncatedMessage)
+    {
+        if (chunkSize > int.MaxValue || (source.CanSeek && chunkSize > source.Length - source.Position))
+        {
+            throw new InvalidDataException(truncatedMessage);
+        }
+
+        var size = (int)chunkSize;
+        if (source.CanSeek)
+        {
+            var exact = new byte[size];
+            source.ReadExactly(exact);
+            return exact;
+        }
+
+        // Non-seekable: grow as data arrives so a bogus size can't force a huge allocation.
+        using var buffer = new MemoryStream();
+        var block = new byte[81920];
+        var remaining = size;
+        while (remaining > 0)
+        {
+            var read = source.Read(block, 0, Math.Min(block.Length, remaining));
+            if (read == 0)
+            {
+                throw new InvalidDataException(truncatedMessage);
+            }
+
+            buffer.Write(block, 0, read);
+            remaining -= read;
+        }
+
+        return buffer.ToArray();
+    }
+
     private static void SkipChunk(Stream source, uint chunkSize)
     {
         if (source.CanSeek)
         {
+            if (chunkSize > source.Length - source.Position)
+            {
+                throw new InvalidDataException("WAV chunk is truncated.");
+            }
+
             source.Seek(chunkSize, SeekOrigin.Current);
             return;
         }

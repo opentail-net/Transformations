@@ -51,6 +51,7 @@ public static class WavePcm16Writer
     public static void WriteFile(string path, ReadOnlySpan<short> samples, int sampleRate, int channels)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ValidateFormat(samples.Length, sampleRate, channels);
         using FileStream stream = File.Create(path);
         Write(stream, samples, sampleRate, channels);
     }
@@ -67,8 +68,10 @@ public static class WavePcm16Writer
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(options);
-        using FileStream stream = File.Create(path);
-        Write(stream, samples, sampleRate, options);
+
+        // Convert and validate first so an invalid request doesn't leave an empty file behind.
+        var pcm = Pcm16Converter.ToInt16(samples, options);
+        WriteFile(path, pcm, sampleRate, options.Channels);
     }
 
     /// <summary>

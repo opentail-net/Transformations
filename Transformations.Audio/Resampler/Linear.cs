@@ -63,7 +63,7 @@ namespace Transformations.Audio.Resampler
 
             // If the sample rate hasn't changed, return the original data (no resampling needed)
             if (inRate == outRate)
-                return inputData;
+                return (float[])inputData.Clone();
 
             // Calculate the ratio of input rate to output rate.
             double ratio = (double)inRate / outRate;

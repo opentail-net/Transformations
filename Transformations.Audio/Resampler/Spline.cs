@@ -93,6 +93,15 @@ namespace Transformations.Audio.Resampler
             if (outputFrames == 0)
                 return Array.Empty<float>();
 
+            if (inputFrames == 1)
+            {
+                // A single frame has no segment to interpolate; hold the sample.
+                var held = new float[outputFrames * channels];
+                for (int i = 0; i < outputFrames; i++)
+                    Array.Copy(inputData, 0, held, i * channels, channels);
+                return held;
+            }
+
             double[][] channelData = SplitChannels(inputData, channels);
             var secondDerivatives = new double[channels][];
             Parallel.For(0, channels, c => secondDerivatives[c] = SolveSecondDerivatives(channelData[c]));
