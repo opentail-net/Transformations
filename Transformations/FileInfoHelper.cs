@@ -166,6 +166,11 @@ public static class FileInfoHelper
     /// </example>
     public static void Delete(this FileInfo[] files, OnException exceptionOption)
     {
+        if (files == null)
+        {
+            return;
+        }
+
         if (exceptionOption == OnException.ConsolidateAndThrowError)
         {
             List<Exception> exceptions = new List<Exception>();
@@ -206,7 +211,7 @@ public static class FileInfoHelper
                 {
                     if (exceptionOption == OnException.ThrowEachError)
                     {
-                        throw new Exception("Error deleting files", e);
+                        throw;
                     }
                 }
             }

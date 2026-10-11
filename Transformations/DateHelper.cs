@@ -298,19 +298,15 @@ using System.Globalization;
         /// <returns>The result.</returns>
         public static DateTime AddMonthsSafely(this DateTime date, int value)
         {
-            // 25920000000000 ticks is one month
-            if (date.Ticks + (value * 25920000000000) < DateTime.MinValue.Ticks)
+            // Month lengths vary, so rely on the BCL range check rather than a tick estimate.
+            try
             {
-                return DateTime.MinValue;
+                return date.AddMonths(value);
             }
-
-            // 25920000000000 ticks is one month
-            if (date.Ticks + (value * 25920000000000) > DateTime.MaxValue.Ticks)
+            catch (ArgumentOutOfRangeException)
             {
-                return DateTime.MaxValue;
+                return value < 0 ? DateTime.MinValue : DateTime.MaxValue;
             }
-
-            return date.AddMonths(value);
         }
 
         /// <summary>
@@ -344,31 +340,28 @@ using System.Globalization;
         /// <returns>The result.</returns>
         public static DateTime AddYearsSafely(this DateTime date, int value)
         {
-            // 316224000000000 ticks is one year
-            if (date.Ticks + (value * 316224000000000) < DateTime.MinValue.Ticks)
+            // Year lengths vary, so rely on the BCL range check rather than a tick estimate.
+            try
             {
-                return DateTime.MinValue;
+                return date.AddYears(value);
             }
-
-            // 316224000000000 ticks is one year
-            if (date.Ticks + (value * 316224000000000) > DateTime.MaxValue.Ticks)
+            catch (ArgumentOutOfRangeException)
             {
-                return DateTime.MaxValue;
+                return value < 0 ? DateTime.MinValue : DateTime.MaxValue;
             }
-
-            return date.AddYears(value);
         }
 
         /// <summary>
-        /// Legacy alias retained for backward compatibility.
+        /// Integer overload retained for source compatibility; adds <paramref name="value"/> seconds.
         /// </summary>
         /// <param name="date">The date.</param>
-        /// <param name="value">The value in years.</param>
+        /// <param name="value">The value in seconds.</param>
         /// <returns>The result.</returns>
-        [Obsolete("Use AddYearsSafely(...) for explicit year-based behavior. This legacy alias will be removed in 2.2.0.")]
+        /// <remarks>Previously (incorrectly) added years; use <see cref="AddYearsSafely"/> for that.</remarks>
+        [Obsolete("Use AddSecondsSafely(DateTime, double) instead. This overload will be removed in 2.2.0.")]
         public static DateTime AddSecondsSafely(this DateTime date, int value)
         {
-            return date.AddYearsSafely(value);
+            return date.AddSecondsSafely((double)value);
         }
 
         /// <summary>
@@ -675,7 +668,7 @@ using System.Globalization;
         /// <returns>The result.</returns>
         public static DateTime Tomorrow(this DateTime date)
         {
-            return DateTime.Today.AddDays(1);
+            return date.Date.AddDays(1);
         }
 
         /// <summary>
@@ -685,7 +678,7 @@ using System.Globalization;
         /// <returns>The result.</returns>
         public static DateTime Yesterday(this DateTime date)
         {
-            return DateTime.Today.AddDays(-1);
+            return date.Date.AddDays(-1);
         }
 
         /// <summary>

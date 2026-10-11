@@ -156,18 +156,15 @@ public static class MiscHelper
             case TypeCode.Int32:
                 return (int)val;
             case TypeCode.Int64:
-                // The max value compiler allows the Enum to be declared with is 2147483647, so no danger in converting it to int.
-                return (int)(long)val;
+                return ((long)val).ConvertTo<int>(ConfirmDefault<int>(defaultValue));
             case TypeCode.SByte:
                 return (int)(sbyte)val;
             case TypeCode.UInt16:
                 return (int)(ushort)val;
             case TypeCode.UInt32:
-                // The max value compiler allows the Enum to be declared with is 2147483647, so no danger in converting it to int.
-                return (int)(uint)val;
+                return ((uint)val).ConvertTo<int>(ConfirmDefault<int>(defaultValue));
             case TypeCode.UInt64:
-                // The max value compiler allows the Enum to be declared with is 2147483647, so no danger in converting it to int.
-                return (int)(ulong)val;
+                return ((ulong)val).ConvertTo<int>(ConfirmDefault<int>(defaultValue));
             default:
                 return ConfirmDefault<int>(defaultValue);
         }
@@ -240,7 +237,7 @@ public static class MiscHelper
             case TypeCode.Int32:
                 return ((int)val).ConvertTo<sbyte>(ConfirmDefault<sbyte>(defaultValue));
             case TypeCode.Int64:
-                return ((int)val).ConvertTo<sbyte>(ConfirmDefault<sbyte>(defaultValue));
+                return ((long)val).ConvertTo<sbyte>(ConfirmDefault<sbyte>(defaultValue));
             case TypeCode.SByte:
                 return (sbyte)val;
             case TypeCode.UInt16:
@@ -439,7 +436,8 @@ public static class MiscHelper
 
         foreach (var foo in Enum.GetValues(enumType))
         {
-            returnDictionary.Add(Convert.ToInt32(foo), foo.ToString() ?? string.Empty);
+            // Aliased members share a value; keep the first name rather than throwing.
+            returnDictionary.TryAdd(Convert.ToInt32(foo), foo.ToString() ?? string.Empty);
         }
 
         return returnDictionary;

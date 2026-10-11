@@ -36,14 +36,12 @@ public static class CsvHelper
     /// </example>
     public static string ToCsv<T>(this IEnumerable<T> source)
     {
-        if (source == null || !source.Any())
+        if (source == null)
         {
             return string.Empty;
         }
 
-        var csv = new StringBuilder();
-        source.ForEach(value => csv.AppendFormat("{0}{1}", value, Comma));
-        return csv.ToString(0, csv.Length - 1);
+        return string.Join(Comma, source.Select(value => ((object?)value ?? string.Empty).Qualify(null, Comma)));
     }
 
     /// <summary>
@@ -65,14 +63,12 @@ public static class CsvHelper
     [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "Reviewed. Suppression is OK here.")]
     public static string ToCsv<T>(this IEnumerable<T> source, char separator)
     {
-        if (source == null || !source.Any())
+        if (source == null)
         {
             return string.Empty;
         }
 
-        var csv = new StringBuilder();
-        source.ForEach(value => csv.AppendFormat("{0}{1}", value, separator));
-        return csv.ToString(0, csv.Length - 1);
+        return string.Join(separator, source.Select(value => ((object?)value ?? string.Empty).Qualify(null, separator.ToString())));
     }
 
     /// <summary>
@@ -131,7 +127,11 @@ public static class CsvHelper
     {
         string field = target?.ToString() ?? string.Empty;
 
-        if (field.Length > 0)
+        // Numbers (e.g. -5) legitimately start with '-' / '+'; only text can carry a formula.
+        bool isNumeric = target is sbyte or byte or short or ushort or int or uint or long or ulong
+            or float or double or decimal;
+
+        if (field.Length > 0 && !isNumeric)
         {
             char first = field[0];
             // Neutralise spreadsheet formula injection: = + - @ are Excel/Sheets formula prefixes;

@@ -202,7 +202,13 @@ public static class StreamHelper
     /// <returns>The result string.</returns>
     public static string ReadToEnd(this Stream stream, Encoding? encoding)
     {
-        using (var reader = stream.GetReader(encoding))
+        if (stream.CanRead == false)
+        {
+            throw new InvalidOperationException("Stream does not support reading.");
+        }
+
+        // Leave the caller's stream open; the reader is not the owner.
+        using (var reader = new StreamReader(stream, encoding ?? Encoding.Default, detectEncodingFromByteOrderMarks: true, bufferSize: 1024, leaveOpen: true))
         {
             return reader.ReadToEnd();
         }

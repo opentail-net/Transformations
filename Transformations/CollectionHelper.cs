@@ -101,7 +101,7 @@ public static class CollectionHelper
             return false;
         }
 
-        return collection.Any(thisValue => thisValue.Equals(searchValue, StringComparison.OrdinalIgnoreCase));
+        return collection.Any(thisValue => string.Equals(thisValue, searchValue, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

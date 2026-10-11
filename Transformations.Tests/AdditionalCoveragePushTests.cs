@@ -55,8 +55,7 @@ namespace Transformations.Tests
             Assert.That(now.AddMinutesSafely(1), Is.EqualTo(now.AddMinutes(1)));
             Assert.That(now.AddYearsSafely(1), Is.EqualTo(now.AddYears(1)));
 
-            // Legacy compatibility: this overload historically adds years despite the method name.
-            Assert.That(now.AddSecondsSafely(1), Is.EqualTo(now.AddYears(1)));
+            Assert.That(now.AddSecondsSafely(1), Is.EqualTo(now.AddSeconds(1)));
 
             Assert.That(DateHelper.GetMilliseconds(DateHelper.TimeInterval.Hour, 1), Is.EqualTo(3600000));
             Assert.That(DateHelper.GetMilliseconds((DateHelper.TimeInterval)999, 1), Is.EqualTo(0));

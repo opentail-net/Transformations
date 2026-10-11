@@ -311,9 +311,20 @@ namespace Transformations
             }
             else
             {
-                if (Enum.IsDefined(typeof(TEnum), intEnumValue))
+                // IsDefined(Type, object) requires the exact underlying type, so convert first.
+                object? underlying;
+                try
                 {
-                    result = (TEnum)Enum.ToObject(typeof(TEnum), intEnumValue);
+                    underlying = Convert.ChangeType(intEnumValue, Enum.GetUnderlyingType(typeof(TEnum)), CultureInfo.InvariantCulture);
+                }
+                catch (OverflowException)
+                {
+                    underlying = null;
+                }
+
+                if (underlying != null && Enum.IsDefined(typeof(TEnum), underlying))
+                {
+                    result = (TEnum)Enum.ToObject(typeof(TEnum), underlying);
                     conversionSuccess = true;
                 }
                 else
