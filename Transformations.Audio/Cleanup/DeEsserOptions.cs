@@ -44,4 +44,19 @@ public sealed record DeEsserOptions
     /// Gets the maximum attenuation in dB.
     /// </summary>
     public double MaxReductionDb { get; init; } = 9;
+
+    /// <summary>
+    /// Gets the gain-reduction attack time in milliseconds. Zero (the default) applies reduction instantly.
+    /// </summary>
+    /// <remarks>
+    /// With both smoothing times at zero the gain follows the rectified sidechain sample by sample, which
+    /// modulates the audio at the sibilance frequency and adds distortion. Set a short attack (for example
+    /// 0.5-2 ms) and a longer release (for example 20-80 ms) to smooth the gain.
+    /// </remarks>
+    public double AttackMilliseconds { get; init; }
+
+    /// <summary>
+    /// Gets the gain-reduction release time in milliseconds. Zero (the default) releases instantly.
+    /// </summary>
+    public double ReleaseMilliseconds { get; init; }
 }

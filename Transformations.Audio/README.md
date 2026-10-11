@@ -155,7 +155,7 @@ float[] stereo = downmixer.Process(surround51);
 | `AudioFilters.ApplyNotch(...)` | Reduces narrow-band hum, such as 50/60Hz mains noise. |
 | `ClickRepairer.RepairClicks(...)` | Repairs isolated click/pop samples by interpolating local outliers. |
 | `HumRemover.Remove50HzHum(...)` / `Remove60HzHum(...)` | Convenience mains-hum removal with harmonic notch filters. |
-| `DeEsser.Apply(...)` | Reduces harsh speech sibilance with a 4-9 kHz sidechain. |
+| `DeEsser.Apply(...)` | Reduces harsh speech sibilance with a 4-9 kHz sidechain. Optional `AttackMilliseconds` / `ReleaseMilliseconds` smooth the gain and avoid modulation distortion. |
 | `AudioCleaner.CleanRecording(...)` | Conservative cleanup chain: high-pass, optional hum notches, gentle gate, optional normalization, and final limiting. |
 | `SpeechCleaner.CleanSpeech(...)` / `CleanPodcast(...)` | Opinionated spoken-word cleanup presets built from the lower-level tools. |
 

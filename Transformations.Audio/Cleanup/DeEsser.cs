@@ -46,7 +46,9 @@ public static class DeEsser
         var thresholdDb = options.ThresholdDbFs;
         var maxReductionDb = options.MaxReductionDb;
         var threshold = AudioLevels.DbToLinear(thresholdDb);
-        var maxReduction = AudioLevels.DbToLinear(-maxReductionDb);
+        var attackCoefficient = SmoothingCoefficient(options.SampleRate, options.AttackMilliseconds);
+        var releaseCoefficient = SmoothingCoefficient(options.SampleRate, options.ReleaseMilliseconds);
+        var smoothedReductionDb = 0.0;
 
         for (var frame = 0; frame < frames; frame++)
         {
@@ -57,7 +59,13 @@ public static class DeEsser
                 sidechainPeak = Math.Max(sidechainPeak, Math.Abs((double)sidechain[offset + channel]));
             }
 
-            var gain = ComputeGain(sidechainPeak, threshold, thresholdDb, options.Ratio, maxReduction, maxReductionDb);
+            var targetReductionDb = ComputeReductionDb(sidechainPeak, threshold, thresholdDb, options.Ratio, maxReductionDb);
+
+            // Smooth the reduction (in dB): attack when reduction increases, release when it decreases.
+            var coefficient = targetReductionDb > smoothedReductionDb ? attackCoefficient : releaseCoefficient;
+            smoothedReductionDb = targetReductionDb + ((smoothedReductionDb - targetReductionDb) * coefficient);
+
+            var gain = AudioLevels.DbToLinear(-smoothedReductionDb);
             for (var channel = 0; channel < options.Channels; channel++)
             {
                 output[offset + channel] = (float)(samples[offset + channel] * gain);
@@ -65,23 +73,27 @@ public static class DeEsser
         }
     }
 
-    private static double ComputeGain(
+    private static double ComputeReductionDb(
         double sidechainPeak,
         double threshold,
         double thresholdDb,
         double ratio,
-        double maxReduction,
         double maxReductionDb)
     {
         if (sidechainPeak <= threshold)
         {
-            return 1;
+            return 0;
         }
 
         var inputDb = sidechainPeak > 1e-10 ? AudioLevels.LinearToDb(sidechainPeak) : MinAmplitudeDb;
         var reducedDb = thresholdDb + ((inputDb - thresholdDb) / ratio);
-        var reductionDb = Math.Min(inputDb - reducedDb, maxReductionDb);
-        return Math.Max(maxReduction, AudioLevels.DbToLinear(-reductionDb));
+        return Math.Min(inputDb - reducedDb, maxReductionDb);
+    }
+
+    private static double SmoothingCoefficient(int sampleRate, double milliseconds)
+    {
+        var samples = sampleRate * milliseconds / 1000.0;
+        return samples > 0 ? Math.Exp(-1.0 / samples) : 0.0;
     }
 
     private static void ValidateArguments(ReadOnlySpan<float> samples, Span<float> output, DeEsserOptions options)
@@ -119,6 +131,16 @@ public static class DeEsser
         if (!double.IsFinite(options.MaxReductionDb) || options.MaxReductionDb < 0)
         {
             throw new ArgumentException("Max reduction must be finite and non-negative.", nameof(options));
+        }
+
+        if (!double.IsFinite(options.AttackMilliseconds) || options.AttackMilliseconds < 0)
+        {
+            throw new ArgumentException("Attack must be finite and non-negative.", nameof(options));
+        }
+
+        if (!double.IsFinite(options.ReleaseMilliseconds) || options.ReleaseMilliseconds < 0)
+        {
+            throw new ArgumentException("Release must be finite and non-negative.", nameof(options));
         }
     }
 }
