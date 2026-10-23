@@ -46,7 +46,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         using var stream = new MemoryStream(fileData);
         var message = MimeMessage.Load(stream);
 
-        using var bodyScope = new SafetyScope(options);
+        using var bodyScope = new SafetyScope(options, "message body");
         var messageText = TextNormalizer.Normalize(ExtractMessageText(message, bodyScope.Options));
         var sb = new StringBuilder();
         sb.Append(bodyScope.Complete(messageText, "message body", scanText: true) is { } withheld
@@ -156,7 +156,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
                     Warn(options, ExtractionWarningCodes.ContentTypeMismatch, fileName,
                         $"Attachment extension '{ext}' does not match its content, which is '{detected}'.");
 
-                using var scope = new SafetyScope(options);
+                using var scope = new SafetyScope(options, fileName);
                 var attachText = TextNormalizer.Normalize(extractor.ExtractText(attachmentBytes, scope.Options), preserveSpacing: extractor is CodeExtractor);
                 if (scope.Complete(attachText, fileName, scanText: extractor is not IPartGatedContainer) is { } withheld)
                 {

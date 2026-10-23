@@ -201,6 +201,22 @@ public class TextExtractor : IDocumentTextExtractor
         }
     }
 
+    // ── Model input ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Extracts a document for an AI model as structured, provenance-labelled segments instead of one string.
+    /// <paramref name="options"/> defaults to <see cref="ExtractionOptions.ForAiIngestion"/>; page markers are always
+    /// turned on so segments can carry their page, slide or chapter. Withheld content is never in a segment; only the
+    /// names of withheld parts are listed. The result is untrusted data: see <see cref="ModelInput"/>.
+    /// </summary>
+    public ModelInput GetModelInput(string fileName, byte[] content, ExtractionOptions? options = null)
+    {
+        var segments = new List<ContentSegment>();
+        var effective = (options ?? ExtractionOptions.ForAiIngestion()) with { IncludePageMarkers = true, SegmentSink = segments.Add };
+        var result = GetTextCore(fileName, content, effective);
+        return ModelInput.From(fileName, result, segments, effective.MaxCharacters);
+    }
+
     // ── Discovery ────────────────────────────────────────────────────────────
 
     private static readonly string[] _probedExtensions =
@@ -425,7 +441,7 @@ public class TextExtractor : IDocumentTextExtractor
     private static string ExtractGated(ITextExtractor processor, byte[] content, ExtractionOptions options, string fileName,
         out string? withheld)
     {
-        using var scope = new SafetyScope(options);
+        using var scope = new SafetyScope(options, fileName);
         var text = Extract(processor, content, scope.Options);
         withheld = scope.Complete(text, fileName, scanText: processor is not IPartGatedContainer);
         return text;
@@ -1201,6 +1217,12 @@ public sealed record ExtractionOptions
 
     /// <summary>The budget shared by nested containers when <see cref="ShareContainerBudget"/> is on. Set by the facade.</summary>
     internal ContainerBudget? SharedBudget { get; init; }
+
+    /// <summary>Path of the unit being extracted, from the top-level file down. Set by <see cref="SafetyScope"/>.</summary>
+    internal string? PartPath { get; init; }
+
+    /// <summary>Receives each extracted content segment with its provenance. Set by <see cref="TextExtractor.GetModelInput"/>.</summary>
+    internal Action<ContentSegment>? SegmentSink { get; init; }
 
     /// <summary>
     /// Options for untrusted documents whose text goes to an AI model (RAG ingestion, agents):

@@ -868,13 +868,20 @@ internal sealed class SafetyScope : IDisposable
     private bool _fromOcr;
     private bool _done;
 
-    internal SafetyScope(ExtractionOptions? outer)
+    /// <param name="outer">The options of the enclosing unit.</param>
+    /// <param name="partName">
+    /// The unit's name (file, entry or attachment). It is appended to the enclosing part path, so nested parts get
+    /// paths like <c>a.zip/mail.eml/notes.txt</c> taken from the container structure, not from the text.
+    /// </param>
+    internal SafetyScope(ExtractionOptions? outer, string partName)
     {
         _outer = outer;
         var baseOptions = outer ?? ExtractionOptions.Default;
         var outerWarnings = baseOptions.WarningSink;
+        PartPath = string.IsNullOrEmpty(baseOptions.PartPath) ? partName : $"{baseOptions.PartPath}/{partName}";
         Options = baseOptions with
         {
+            PartPath = PartPath,
             FindingSink = _captured.Add,
             WarningSink = w =>
             {
@@ -886,6 +893,9 @@ internal sealed class SafetyScope : IDisposable
 
     /// <summary>The options to extract this unit with.</summary>
     internal ExtractionOptions Options { get; }
+
+    /// <summary>The unit's path from the top-level file down.</summary>
+    internal string PartPath { get; }
 
     private SafetyPolicy Policy => _outer?.Safety ?? SafetyPolicy.Default;
 
@@ -908,6 +918,12 @@ internal sealed class SafetyScope : IDisposable
             findings = findings.Select(f => deciding.Contains(f) ? f with { Withheld = true } : f).ToList();
             _outer?.WithheldSink?.Invoke(new QuarantinedPart(source, text, findings));
         }
+
+        // A unit that was scanned here and not withheld is a content segment; containers (scanText false) are not,
+        // their parts are.
+        if (reason == null && scanText && _outer?.SegmentSink is { } segments && !string.IsNullOrWhiteSpace(text))
+            segments(new ContentSegment(PartPath, null, _fromOcr ? ContentOrigin.Ocr : ContentOrigin.Text, text)
+                { Findings = findings });
 
         Forward(findings);
         return reason;

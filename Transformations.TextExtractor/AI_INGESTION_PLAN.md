@@ -1,9 +1,7 @@
 # Transformations.Text — AI-ingestion safety (plan and build record)
 
 Written 2026-10-23 from an external implementation brief (phases 0–9). The user asked for sensible choices and work to
-completion while away, with economical token use. Built here: phases 0–5, plus documentation and release checks
-from phases 7–9. Deferred: per-segment provenance (phase 6), recall/false-positive metrics (phase 8). See the
-status table at the end.
+completion while away, with economical token use. All phases built (phase 7 as shared nested budgets plus documented isolation advice). See the status table at the end.
 
 ## Contracts this must satisfy (read in this session)
 | Contract | Promise / what callers rely on | Consequence |
@@ -50,7 +48,7 @@ status table at the end.
 | 3 Unicode/obfuscation (NFKC, homoglyphs, letter spacing, base64) | Built |
 | 4 Categories, confidence, correlated escalation, tool/exfil/concealment rules | Built |
 | 5 Policy layer (ReviewAt, RejectAt, SafetyVerdict) | Built |
-| 6 Structured model-facing representation with per-segment provenance | Deferred: needs an API design decision (segment model) |
+| 6 Structured model-facing representation with per-segment provenance | Built: `TextExtractor.GetModelInput` → `ModelInput` / `ContentSegment` (source path from container structure, page/slide/chapter location from markers, OCR origin, per-segment findings, withheld sources, partial flag) |
 | 7 Resource hardening | Shared nested budget built; process isolation documented |
-| 8 Corpus | Adversarial + benign regression tests and fuzzing in the test project; recall/FP metrics not built |
+| 8 Corpus | Built: `TextExtractorSafetyCorpusTests` (23 adversarial, 4 labelled known gaps, 18 benign; recall and false-positive rate printed and enforced) plus mutation fuzzing |
 | 9 Docs, pack, vulnerability scan, consumer test | Done (see final report) |

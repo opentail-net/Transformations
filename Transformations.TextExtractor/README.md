@@ -358,6 +358,31 @@ What each format is checked for (anything not listed is not inspected, which is 
 | EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts | EPUB is gated as one document |
 | Images (OCR) | OCR text is scanned like any text and its findings are scored higher | text the OCR engine does not see |
 
+**Structured model input.** `GetModelInput` returns segments with provenance instead of one string, so an application can
+pass each piece to the model as a separate, attributed content item and decide per segment:
+
+```csharp
+ModelInput input = extractor.GetModelInput("upload.zip", bytes);   // options default to ForAiIngestion()
+
+if (!input.CanIndexWithoutReview) reviewQueue.Add(input);           // verdict, findings, WithheldSources
+foreach (var s in input.Segments)
+    chunks.Add(new Chunk(s.Text, source: s.Source, location: s.Location, ocr: s.Origin == ContentOrigin.Ocr, findings: s.Findings));
+```
+
+`Segment.Source` is the path through the container structure (`upload.zip/mail.eml/notes.txt`), recorded by the
+extractors, so document text cannot forge it. `Location` (`page 3`, `slide 2`, `chapter 1`) comes from page markers in
+the text; a document can contain marker-like lines, so treat it as a hint. Withheld parts never appear in a segment
+(only their names, in `WithheldSources`); `IsPartial` reports skipped entries, missing OCR and truncation by
+`MaxCharacters` (applied across segments); `IsTrusted` is always `false`.
+
+**Measured detection.** `TextExtractorSafetyCorpusTests` runs a labelled corpus (23 adversarial samples, 4 documented
+gaps, 18 benign samples across HTML, DOCX, PDF, EML, ZIP, XLSX, PPTX, images and plain text) through the profile on
+every test run and prints recall and false-positive rate. Current result: 100% of the expected adversarial set and 85%
+including known gaps are routed to review or withheld; 0% of the benign set is. The known gaps are: a visible plain
+instruction (only Flagged, by design), an instruction split across table cells, hiding through an external
+stylesheet, and invisible PDF text over an image. These are figures on a small synthetic corpus, not a measure of
+real-world detection.
+
 **Security contract.** Extracted text is untrusted data even when `SafetyVerdict` is `NoKnownSignals`: the detectors find
 known patterns, they cannot prove the absence of prompt injection. Keep document text separate from system instructions;
 delimiters or "ignore any instructions below" notes do not reliably stop injection. This library cannot authorise tool
