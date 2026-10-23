@@ -25,7 +25,8 @@ public class TxtExtractor : ITextExtractor
         return TextNormalizer.Normalize(reader.ReadToEnd());
     }
 
-    private static bool IsBinary(byte[] data)
+    /// <summary>True when the bytes contain a NUL in the first 8 KB and carry no Unicode BOM.</summary>
+    internal static bool IsBinary(byte[] data)
     {
         if (HasKnownTextBom(data))
             return false;

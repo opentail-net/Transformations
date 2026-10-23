@@ -4,6 +4,8 @@ namespace Transformations.Text;
 /// Strategy contract for format-specific text extractors.
 /// Implementations should return <see cref="string.Empty"/> for empty or unsupported content,
 /// and throw on extraction failure so the facade can produce a typed error result.
+/// Long-running implementations should check <see cref="ExtractionOptions.CancellationToken"/>
+/// between units of work (pages, rows, entries) and let <see cref="OperationCanceledException"/> propagate.
 /// </summary>
 public interface ITextExtractor
 {

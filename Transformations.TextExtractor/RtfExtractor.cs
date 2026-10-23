@@ -13,14 +13,17 @@ public class RtfExtractor : ITextExtractor
         extension.Equals(".rtf", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    /// <inheritdoc />
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         // RTF is ASCII-based; use Latin-1 to preserve high-byte chars until \'XX handles them
         var rtf = Encoding.Latin1.GetString(fileData);
-        return StripRtf(rtf);
+        return StripRtf(rtf, options);
     }
 
-    private static string StripRtf(string rtf)
+    private static string StripRtf(string rtf, ExtractionOptions? options)
     {
         var result = new StringBuilder(rtf.Length / 2);
         int i = 0;
@@ -34,8 +37,16 @@ public class RtfExtractor : ITextExtractor
         ucStack.Push(1);
         int pendingSkip = 0; // chars to skip (substitute chars after \uN)
 
+        int nextCancellationCheck = 0;
+
         while (i < rtf.Length)
         {
+            if (i >= nextCancellationCheck)
+            {
+                ExtractionGuard.ThrowIfCancellationRequested(options);
+                nextCancellationCheck = i + 65536;
+            }
+
             char c = rtf[i];
 
             if (c == '{')
@@ -120,8 +131,11 @@ public class RtfExtractor : ITextExtractor
                         case "u":
                             if (numStr != null && int.TryParse(numStr, out int unicode))
                             {
-                                int cp = unicode < 0 ? unicode + 65536 : unicode;
-                                result.Append(char.ConvertFromUtf32(cp));
+                                // \uN is a signed 16-bit UTF-16 code unit, so characters outside the BMP
+                                // arrive as two escapes (a surrogate pair) that combine once appended.
+                                int unit = unicode < 0 ? unicode + 65536 : unicode;
+                                if (unit is >= 0 and <= 0xFFFF)
+                                    result.Append((char)unit);
                             }
                             pendingSkip = ucStack.Peek();
                             break;

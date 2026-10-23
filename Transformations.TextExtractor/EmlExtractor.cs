@@ -69,7 +69,7 @@ public class EmlExtractor : ITextExtractor
         else if (!string.IsNullOrEmpty(message.HtmlBody))
         {
             var htmlExtractor = new HtmlExtractor();
-            bodyText = htmlExtractor.ExtractText(Encoding.UTF8.GetBytes(message.HtmlBody));
+            bodyText = htmlExtractor.ExtractFromHtml(message.HtmlBody, options);
         }
 
         sb.Append(bodyText);
@@ -93,6 +93,7 @@ public class EmlExtractor : ITextExtractor
 
         foreach (var entity in message.Attachments)
         {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             if (entity is not MimePart part || part.Content == null) continue;
 
             var fileName = part.FileName ?? string.Empty;
@@ -108,9 +109,20 @@ public class EmlExtractor : ITextExtractor
 
             var ext = Path.GetExtension(fileName);
             var extractor = ResolveProcessor(innerExtractors, ext);
+            if (extractor is ImageExtractor && !ImageExtractor.OcrAvailable(options))
+                extractor = null; // recorded as a stub that needs OCR
             if (extractor == null)
             {
-                Warn(options, ExtractionWarningCodes.ContainerUnsupportedEntry, fileName, $"No extractor is registered for EML attachment extension '{ext}'.");
+                byte[]? stubBytes = null;
+                try
+                {
+                    stubBytes = DecodeContentWithLimit(part, maxBytes - totalDecodedBytes, out long stubDecoded);
+                    totalDecodedBytes += stubDecoded;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { }
+                sb.AppendLine();
+                PartStub.Append(sb, $"[Attachment: {fileName}]", fileName, ext, stubBytes, stubBytes?.Length ?? 0,
+                    "EML attachment", options);
                 continue;
             }
 
@@ -119,17 +131,23 @@ public class EmlExtractor : ITextExtractor
                 byte[] attachmentBytes = DecodeContentWithLimit(part, maxBytes - totalDecodedBytes, out long decodedBytes);
                 totalDecodedBytes += decodedBytes;
 
+                // A disguised attachment (invoice.pdf that is really an Office file) is a classic
+                // malware carrier. Report it; it is still parsed only as the format its name claims.
+                if (ContentTypeDetector.DetectMismatch(ext, attachmentBytes) is { } detected)
+                    Warn(options, ExtractionWarningCodes.ContentTypeMismatch, fileName,
+                        $"Attachment extension '{ext}' does not match its content, which is '{detected}'.");
+
                 var attachText = extractor.ExtractText(attachmentBytes, options);
                 if (!string.IsNullOrWhiteSpace(attachText))
                 {
                     sb.AppendLine();
-                    sb.AppendLine($"[Attachment: {fileName}]");
+                    sb.AppendLine(extractor is ImageExtractor ? $"[Attachment: {fileName}] (OCR)" : $"[Attachment: {fileName}]");
                     sb.AppendLine(attachText);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                var code = ex is InvalidDataException
+                var code = ex is InvalidDataException or ExtractionLimitExceededException
                     ? ExtractionWarningCodes.ContainerByteLimit
                     : ExtractionWarningCodes.ContainerEntryFailed;
                 Warn(options, code, fileName, ex.Message);

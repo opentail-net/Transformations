@@ -14,6 +14,12 @@ public class CodeExtractor : ITextExtractor
         ".rb", ".php", ".swift", ".kt", ".scala", ".fs", ".vb", ".lua", ".r", ".m", ".dart"
     };
 
+    // A /* ... */ comment containing "Copyright". The tempered tokens stop the match at the first
+    // "*/", so it can never run from one comment across code into another.
+    private static readonly Regex CopyrightBlockComment = new(
+        @"/\*(?:(?!\*/)[\s\S])*?Copyright(?:(?!\*/)[\s\S])*?\*/",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <inheritdoc />
     public bool CanHandle(string extension) => CodeExtensions.Contains(extension);
 
@@ -24,7 +30,7 @@ public class CodeExtractor : ITextExtractor
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         var rawCode = reader.ReadToEnd();
 
-        var cleanedCode = Regex.Replace(rawCode, @"/\*[\s\S]*?Copyright[\s\S]*?\*/", "", RegexOptions.IgnoreCase);
+        var cleanedCode = CopyrightBlockComment.Replace(rawCode, "");
 
         var lines = cleanedCode.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
         var sb = new StringBuilder();

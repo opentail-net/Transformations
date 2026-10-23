@@ -50,7 +50,7 @@ public class EpubExtractor : ITextExtractor
         using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
 
         // 1. Find the OPF path via META-INF/container.xml
-        var opfPath = FindOpfPath(zip);
+        var opfPath = FindOpfPath(zip, maxBytes);
         if (opfPath == null)
         {
             Warn(options, ExtractionWarningCodes.ContainerManifestMissing, "META-INF/container.xml", "EPUB package manifest could not be found or read.");
@@ -58,7 +58,7 @@ public class EpubExtractor : ITextExtractor
         }
 
         // 2. Parse the OPF to get the spine (reading order)
-        var spineItems = ParseSpine(zip, opfPath);
+        var spineItems = ParseSpine(zip, opfPath, maxBytes);
         if (spineItems.Count == 0)
             Warn(options, ExtractionWarningCodes.ContainerSpineEmpty, opfPath, "EPUB spine was empty or could not be read.");
 
@@ -69,6 +69,7 @@ public class EpubExtractor : ITextExtractor
 
         foreach (var (href, mediaType) in spineItems)
         {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             if (processedEntries >= maxEntries)
             {
                 Warn(options, ExtractionWarningCodes.ContainerEntryLimit, href, $"Stopped after {processedEntries} EPUB spine entries.");
@@ -116,7 +117,7 @@ public class EpubExtractor : ITextExtractor
                     sb.AppendLine();
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Warn(options, ExtractionWarningCodes.ContainerEntryFailed, entry.FullName, ex.Message);
             }
@@ -125,14 +126,14 @@ public class EpubExtractor : ITextExtractor
         return sb.ToString().Trim();
     }
 
-    private static string? FindOpfPath(ZipArchive zip)
+    private static string? FindOpfPath(ZipArchive zip, long maxBytes)
     {
         var containerEntry = FindEntry(zip, "META-INF/container.xml");
         if (containerEntry == null) return null;
 
         try
         {
-            using var s = containerEntry.Open();
+            using var s = ExtractionGuard.OpenLimited(containerEntry, maxBytes);
             var doc = XDocument.Load(s);
             // <rootfile full-path="..." media-type="application/oebps-package+xml"/>
             var rootfile = doc.Descendants()
@@ -142,14 +143,14 @@ public class EpubExtractor : ITextExtractor
         catch { return null; }
     }
 
-    private static IReadOnlyList<(string Href, string MediaType)> ParseSpine(ZipArchive zip, string opfPath)
+    private static IReadOnlyList<(string Href, string MediaType)> ParseSpine(ZipArchive zip, string opfPath, long maxBytes)
     {
         var entry = FindEntry(zip, opfPath);
         if (entry == null) return [];
 
         try
         {
-            using var s = entry.Open();
+            using var s = ExtractionGuard.OpenLimited(entry, maxBytes);
             var doc = XDocument.Load(s);
 
             // Build id → href + media-type map from manifest

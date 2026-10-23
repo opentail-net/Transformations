@@ -15,7 +15,10 @@ public class CsvExtractor : ITextExtractor
         extension.Equals(".csv", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    /// <inheritdoc />
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         using var reader = new StreamReader(new MemoryStream(fileData));
 
@@ -36,7 +39,14 @@ public class CsvExtractor : ITextExtractor
 
         var rows = new List<string[]>();
         while (csv.Read())
+        {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             rows.Add(headers.Select(h => csv.GetField(h) ?? string.Empty).ToArray());
+        }
+
+        // A header-only file has nothing to label; emit the header row instead of returning nothing.
+        if (rows.Count == 0)
+            return string.Join(" | ", headers.Where(h => !string.IsNullOrWhiteSpace(h)));
 
         for (int r = 0; r < rows.Count; r++)
         {

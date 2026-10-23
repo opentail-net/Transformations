@@ -59,6 +59,7 @@ public class TextExtractor : IDocumentTextExtractor
             new CodeExtractor(),
             new OdtExtractor(),
             new RtfExtractor(),
+            new ImageExtractor(),
             new TxtExtractor()
         };
         // EmlExtractor, ZipExtractor, and EpubExtractor each take a snapshot of the core
@@ -92,37 +93,45 @@ public class TextExtractor : IDocumentTextExtractor
 
     /// <inheritdoc />
     public ExtractionResult GetText(string fileName, Stream content)
-        => GetTextCore(fileName, ReadStream(content), null);
+        => GetText(fileName, content, null);
 
     /// <inheritdoc />
     public ExtractionResult GetText(string fileName, Stream content, ExtractionOptions? options)
-        => GetTextCore(fileName, ReadStream(content), options);
+        => ReadStream(content, options) is { } bytes
+            ? GetTextCore(fileName, bytes, options)
+            : ExtractionResult.Failure(TooLargeMessage(options), ExtractionErrorKind.TooLarge);
 
     /// <inheritdoc />
     public ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content)
-        => GetTextWithMetadataCore(fileName, ReadStream(content), null);
+        => GetTextWithMetadata(fileName, content, null);
 
     /// <inheritdoc />
     public ExtractionMetadataResult GetTextWithMetadata(string fileName, Stream content, ExtractionOptions? options)
-        => GetTextWithMetadataCore(fileName, ReadStream(content), options);
+        => ReadStream(content, options) is { } bytes
+            ? GetTextWithMetadataCore(fileName, bytes, options)
+            : ExtractionMetadataResult.Failure(TooLargeMessage(options), ExtractionErrorKind.TooLarge);
 
     // ── Async surface ────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<ExtractionResult> GetTextAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
-        => GetTextCore(fileName, await ReadStreamAsync(content, cancellationToken), null);
+    public Task<ExtractionResult> GetTextAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
+        => GetTextAsync(fileName, content, null, cancellationToken);
 
     /// <inheritdoc />
     public async Task<ExtractionResult> GetTextAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default)
-        => GetTextCore(fileName, await ReadStreamAsync(content, cancellationToken), options);
+        => await ReadStreamAsync(content, options, cancellationToken) is { } bytes
+            ? GetTextCore(fileName, bytes, options, cancellationToken)
+            : ExtractionResult.Failure(TooLargeMessage(options), ExtractionErrorKind.TooLarge);
 
     /// <inheritdoc />
-    public async Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
-        => GetTextWithMetadataCore(fileName, await ReadStreamAsync(content, cancellationToken), null);
+    public Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, CancellationToken cancellationToken = default)
+        => GetTextWithMetadataAsync(fileName, content, null, cancellationToken);
 
     /// <inheritdoc />
     public async Task<ExtractionMetadataResult> GetTextWithMetadataAsync(string fileName, Stream content, ExtractionOptions? options, CancellationToken cancellationToken = default)
-        => GetTextWithMetadataCore(fileName, await ReadStreamAsync(content, cancellationToken), options);
+        => await ReadStreamAsync(content, options, cancellationToken) is { } bytes
+            ? GetTextWithMetadataCore(fileName, bytes, options, cancellationToken)
+            : ExtractionMetadataResult.Failure(TooLargeMessage(options), ExtractionErrorKind.TooLarge);
 
     // ── Batch ────────────────────────────────────────────────────────────────
 
@@ -135,26 +144,61 @@ public class TextExtractor : IDocumentTextExtractor
     {
         if (maxDegreeOfParallelism <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxDegreeOfParallelism), "Must be > 0.");
+        ArgumentNullException.ThrowIfNull(documents);
+        ValidateOptions(options);
 
+        // At most maxDegreeOfParallelism documents parse at once; up to twice that many are started
+        // ahead so a slow document at the head of the queue doesn't idle the other workers.
+        int readAhead = maxDegreeOfParallelism * 2;
         using var semaphore = new SemaphoreSlim(maxDegreeOfParallelism, maxDegreeOfParallelism);
-        var docs = documents.ToList();
-        var tasks = new Task<ExtractionResult>[docs.Count];
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var pending = new Queue<Task<ExtractionResult>>();
 
-        for (int i = 0; i < docs.Count; i++)
+        Task<ExtractionResult> Start(string fileName, byte[] content) => Task.Run(async () =>
         {
-            var (fileName, content) = docs[i];
-            cancellationToken.ThrowIfCancellationRequested();
-            await semaphore.WaitAsync(cancellationToken);
+            await semaphore.WaitAsync(stop.Token).ConfigureAwait(false);
+            try { return GetTextCore(fileName, content, options, stop.Token); }
+            finally { semaphore.Release(); }
+        });
 
-            tasks[i] = Task.Run(() =>
+        using var source = documents.GetEnumerator();
+        try
+        {
+            while (true)
             {
-                try { return GetTextCore(fileName, content, options); }
-                finally { semaphore.Release(); }
-            }, cancellationToken);
-        }
+                cancellationToken.ThrowIfCancellationRequested();
+                while (pending.Count < readAhead && source.MoveNext())
+                    pending.Enqueue(Start(source.Current.FileName, source.Current.Content));
 
-        foreach (var task in tasks)
-            yield return await task;
+                if (pending.Count == 0)
+                    yield break;
+
+                ExtractionResult next;
+                try
+                {
+                    next = await pending.Dequeue().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Surface caller cancellation as OperationCanceledException, as before, rather than
+                    // the TaskCanceledException of whichever worker noticed it first.
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw;
+                }
+                yield return next;
+            }
+        }
+        finally
+        {
+            // Reached when the batch completes, is cancelled, fails, or the caller stops enumerating.
+            // Stop outstanding work and let it finish before the semaphore is disposed.
+            if (pending.Count > 0)
+            {
+                stop.Cancel();
+                try { await Task.WhenAll(pending).ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+        }
     }
 
     // ── Discovery ────────────────────────────────────────────────────────────
@@ -193,61 +237,66 @@ public class TextExtractor : IDocumentTextExtractor
 
     // ── Core implementations ─────────────────────────────────────────────────
 
-    private ExtractionResult GetTextCore(string fileName, byte[] content, ExtractionOptions? options)
+    private ExtractionResult GetTextCore(string fileName, byte[] content, ExtractionOptions? options,
+        CancellationToken callerToken = default)
     {
+        options ??= ExtractionOptions.Default;
+        ValidateOptions(options);
+        if (CheckBeforeParsing(fileName, content, options, out var processor) is { } rejected)
+            return ExtractionResult.Failure(rejected.Message, rejected.Kind, processor?.GetType().Name);
+
         var warnings = new List<ExtractionWarning>();
-        var effectiveOptions = WithWarningCapture(options, warnings);
+        var mismatch = ContentTypeDetector.DetectMismatch(Path.GetExtension(fileName), content);
+        using var cancellation = new ExtractionCancellationScope(options, callerToken);
+        var effectiveOptions = WithWarningCapture(options, warnings) with { CancellationToken = cancellation.Token };
 
-        if (content == null || content.Length == 0)
-            return ExtractionResult.Failure("File content is empty.", ExtractionErrorKind.Empty);
-
-        var processor = Route(fileName, content);
-        if (processor == null)
-            return ExtractionResult.Failure($"Unsupported file type: {Path.GetExtension(fileName)}", ExtractionErrorKind.Unsupported);
-
-        _logger.LogDebug("Extracting {FileName} using {Extractor}", fileName, processor.GetType().Name);
+        _logger.LogDebug("Extracting {FileName} using {Extractor}", fileName, processor!.GetType().Name);
         var sw = Stopwatch.StartNew();
         try
         {
-            var text = TextNormalizer.Normalize(processor.ExtractText(content, effectiveOptions));
-            if (effectiveOptions.MaxCharacters is int max && text.Length > max)
-                text = text[..max];
+            var text = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, ref processor);
             sw.Stop();
+            ReportMismatch(fileName, mismatch, effectiveOptions);
             _logger.LogDebug("Extracted {CharCount} chars from {FileName} in {ElapsedMs}ms",
                 text.Length, fileName, sw.ElapsedMilliseconds);
             return ExtractionResult.Success(text, processor.GetType().Name, sw.Elapsed, warnings);
         }
+        catch (OperationCanceledException) when (cancellation.CallerCancelled)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             sw.Stop();
-            _logger.LogWarning(ex, "Extraction failed for {FileName} ({Extractor}): {Message}",
-                fileName, processor.GetType().Name, ex.Message);
-            return ExtractionResult.Failure($"Extraction failed: {ex.Message}",
-                ClassifyException(ex), processor.GetType().Name, sw.Elapsed);
+            var (message, kind) = DescribeFailure(ex, cancellation, options, fileName, processor);
+            ReportMismatch(fileName, mismatch, effectiveOptions);
+            return ExtractionResult.Failure(message, kind, processor.GetType().Name, sw.Elapsed) with { Warnings = warnings };
         }
     }
 
-    private ExtractionMetadataResult GetTextWithMetadataCore(string fileName, byte[] content, ExtractionOptions? options)
+    private ExtractionMetadataResult GetTextWithMetadataCore(string fileName, byte[] content, ExtractionOptions? options,
+        CancellationToken callerToken = default)
     {
+        options ??= ExtractionOptions.Default;
+        ValidateOptions(options);
+        if (CheckBeforeParsing(fileName, content, options, out var processor) is { } rejected)
+            return ExtractionMetadataResult.Failure(rejected.Message, rejected.Kind, processor?.GetType().Name);
+
         var warnings = new List<ExtractionWarning>();
-        var effectiveOptions = WithWarningCapture(options, warnings);
-
-        if (content == null || content.Length == 0)
-            return ExtractionMetadataResult.Failure("File content is empty.", ExtractionErrorKind.Empty);
-
-        var processor = Route(fileName, content);
-        if (processor == null)
-            return ExtractionMetadataResult.Failure($"Unsupported file type: {Path.GetExtension(fileName)}", ExtractionErrorKind.Unsupported);
+        var mismatch = ContentTypeDetector.DetectMismatch(Path.GetExtension(fileName), content);
+        using var cancellation = new ExtractionCancellationScope(options, callerToken);
+        var effectiveOptions = WithWarningCapture(options, warnings) with { CancellationToken = cancellation.Token };
 
         var sw = Stopwatch.StartNew();
         try
         {
-            var normalizedText = TextNormalizer.Normalize(processor.ExtractText(content, effectiveOptions));
-            if (effectiveOptions.MaxCharacters is int max && normalizedText.Length > max)
-                normalizedText = normalizedText[..max];
+            var normalizedText = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, ref processor!);
             sw.Stop();
-            var metadata = BuildMetadata(fileName, content, normalizedText);
-            metadata["extraction.extractor"] = processor.GetType().Name;
+            ReportMismatch(fileName, mismatch, effectiveOptions);
+            var metadata = BuildMetadata(fileName, content, normalizedText, processor);
+            if (mismatch != null)
+                metadata["file.detectedFormat"] = mismatch;
+            metadata["extraction.extractor"] = processor!.GetType().Name;
             metadata["extraction.durationMs"] = sw.ElapsedMilliseconds.ToString();
             if (warnings.Count > 0)
             {
@@ -257,14 +306,118 @@ public class TextExtractor : IDocumentTextExtractor
             return ExtractionMetadataResult.Success(normalizedText, metadata,
                 processor.GetType().Name, sw.Elapsed, warnings);
         }
+        catch (OperationCanceledException) when (cancellation.CallerCancelled)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             sw.Stop();
-            _logger.LogWarning(ex, "Extraction failed for {FileName} ({Extractor}): {Message}",
-                fileName, processor.GetType().Name, ex.Message);
-            return ExtractionMetadataResult.Failure($"Extraction failed: {ex.Message}",
-                ClassifyException(ex), processor.GetType().Name, sw.Elapsed);
+            var (message, kind) = DescribeFailure(ex, cancellation, options, fileName, processor!);
+            ReportMismatch(fileName, mismatch, effectiveOptions);
+            return ExtractionMetadataResult.Failure(message, kind, processor!.GetType().Name, sw.Elapsed) with { Warnings = warnings };
         }
+    }
+
+    /// <summary>
+    /// Checks that run before any parser touches the bytes: empty input, input size,
+    /// routing, and binary content that only the plain-text fallback would accept.
+    /// </summary>
+    private (string Message, ExtractionErrorKind Kind)? CheckBeforeParsing(
+        string fileName, byte[] content, ExtractionOptions options, out ITextExtractor? processor)
+    {
+        processor = null;
+
+        if (content == null || content.Length == 0)
+            return ("File content is empty.", ExtractionErrorKind.Empty);
+
+        if (options.MaxInputBytes is long maxInput && content.Length > maxInput)
+            return ($"File is {content.Length} bytes; the limit is {maxInput} bytes (ExtractionOptions.MaxInputBytes).",
+                ExtractionErrorKind.TooLarge);
+
+        processor = Route(fileName, content);
+        if (processor == null)
+            return ($"Unsupported file type: {Path.GetExtension(fileName)}", ExtractionErrorKind.Unsupported);
+
+        if (processor is TxtExtractor && ContentTypeDetector.IsImageExtension(ContentTypeDetector.SniffExtension(content)))
+            return ($"File is an image ({ContentTypeDetector.SniffExtension(content)}); its text, if any, needs OCR: {fileName}",
+                ExtractionErrorKind.NeedsOcr);
+
+        if (processor is TxtExtractor && TxtExtractor.IsBinary(content))
+            return ($"File appears to be binary and has no extractable text: {fileName}", ExtractionErrorKind.Binary);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="processor"/>. If it was chosen by file extension and fails, and the content's
+    /// magic bytes point to a different extractor (a DOCX named <c>.pdf</c>, say), retries once with that
+    /// extractor. <paramref name="processor"/> is updated to the extractor that produced the result.
+    /// A file disguised under another extension is a common malware-delivery trick, so the retry is
+    /// deliberately narrow: it is skipped when <see cref="ExtractionOptions.RetryWithDetectedFormat"/> is off,
+    /// when the first attempt hit a safety limit, and when the detected format is a container
+    /// (ZIP, EML, EPUB) that would unpack further content. It shares the first attempt's timeout.
+    /// </summary>
+    private string ExtractWithContentFallback(string fileName, byte[] content, ExtractionOptions options,
+        List<ExtractionWarning> warnings, ref ITextExtractor processor)
+    {
+        try
+        {
+            return Extract(processor, content, options);
+        }
+        catch (Exception ex) when (options.RetryWithDetectedFormat
+                                   && ex is not (OperationCanceledException or ExtractionLimitExceededException)
+                                   && SniffedAlternative(content, processor) is { } alternative)
+        {
+            _logger.LogWarning(ex, "{Extractor} failed on {FileName}; content looks like {Alternative}, retrying",
+                processor.GetType().Name, fileName, alternative.GetType().Name);
+            warnings.Clear(); // warnings from the failed attempt describe the wrong format
+            processor = alternative;
+            return Extract(alternative, content, options);
+        }
+    }
+
+    private void ReportMismatch(string fileName, string? detected, ExtractionOptions options)
+    {
+        if (detected == null) return;
+        _logger.LogWarning("File {FileName} has extension {Extension} but its content is {Detected}",
+            fileName, Path.GetExtension(fileName), detected);
+        options.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.ContentTypeMismatch, fileName,
+            $"Extension '{Path.GetExtension(fileName)}' does not match the content, which is '{detected}'."));
+    }
+
+    private ITextExtractor? SniffedAlternative(byte[] content, ITextExtractor failed)
+    {
+        var sniffed = ContentTypeDetector.SniffExtension(content);
+        if (sniffed == null) return null;
+        var alternative = _extractors.FirstOrDefault(e => e.CanHandle(sniffed) && e is not TxtExtractor);
+        if (alternative is null or ZipExtractor or EmlExtractor or EpubExtractor || ReferenceEquals(alternative, failed))
+            return null;
+        return alternative;
+    }
+
+    private static string Extract(ITextExtractor processor, byte[] content, ExtractionOptions options)
+    {
+        options.CancellationToken.ThrowIfCancellationRequested();
+        var text = TextNormalizer.Normalize(processor.ExtractText(content, options));
+        if (options.MaxCharacters is int max && text.Length > max)
+            text = text[..max];
+        return text;
+    }
+
+    private (string Message, ExtractionErrorKind Kind) DescribeFailure(Exception ex, ExtractionCancellationScope cancellation,
+        ExtractionOptions options, string fileName, ITextExtractor processor)
+    {
+        if (ex is OperationCanceledException && cancellation.TimedOut)
+        {
+            _logger.LogWarning("Extraction timed out for {FileName} ({Extractor}) after {Timeout}",
+                fileName, processor.GetType().Name, options.Timeout);
+            return ($"Extraction timed out after {options.Timeout} (ExtractionOptions.Timeout).", ExtractionErrorKind.TimedOut);
+        }
+
+        _logger.LogWarning(ex, "Extraction failed for {FileName} ({Extractor}): {Message}",
+            fileName, processor.GetType().Name, ex.Message);
+        return ($"Extraction failed: {ex.Message}", ClassifyException(ex));
     }
 
     // ── Routing ──────────────────────────────────────────────────────────────
@@ -293,10 +446,52 @@ public class TextExtractor : IDocumentTextExtractor
         return byExtension; // TxtExtractor catch-all, or null if no extractors registered
     }
 
+    // ── Options validation ───────────────────────────────────────────────────
+
+    /// <summary>Rejects option values that can only be a caller mistake, before any work starts.</summary>
+    private static void ValidateOptions(ExtractionOptions? options)
+    {
+        if (options == null) return;
+
+        static void Require(bool ok, string property, object? value, string rule)
+        {
+            if (!ok)
+                throw new ArgumentOutOfRangeException(nameof(options), value,
+                    $"ExtractionOptions.{property} {rule}.");
+        }
+
+        Require(options.MaxCharacters is null or >= 0, nameof(ExtractionOptions.MaxCharacters), options.MaxCharacters, "must be >= 0");
+        Require(options.MaxPages is null or >= 1, nameof(ExtractionOptions.MaxPages), options.MaxPages, "must be >= 1");
+        Require(options.StartPage is null or >= 1, nameof(ExtractionOptions.StartPage), options.StartPage, "must be >= 1");
+        Require(options.EndPage is null or >= 1, nameof(ExtractionOptions.EndPage), options.EndPage, "must be >= 1");
+        Require(options.EndPage is null || options.EndPage >= (options.StartPage ?? 1),
+            nameof(ExtractionOptions.EndPage), options.EndPage, "must be >= StartPage");
+        Require(options.MaxDecompressedBytes >= 0, nameof(ExtractionOptions.MaxDecompressedBytes), options.MaxDecompressedBytes, "must be >= 0");
+        Require(options.MaxContainerEntries >= 0, nameof(ExtractionOptions.MaxContainerEntries), options.MaxContainerEntries, "must be >= 0");
+        Require(options.MaxInputBytes is null or >= 0, nameof(ExtractionOptions.MaxInputBytes), options.MaxInputBytes, "must be >= 0");
+        Require(options.MaxImagePixels >= 0, nameof(ExtractionOptions.MaxImagePixels), options.MaxImagePixels, "must be >= 0");
+        Require(options.Timeout is null || options.Timeout > TimeSpan.Zero || options.Timeout == System.Threading.Timeout.InfiniteTimeSpan,
+            nameof(ExtractionOptions.Timeout), options.Timeout, "must be positive or Timeout.InfiniteTimeSpan");
+    }
+
     // ── Exception classification ──────────────────────────────────────────────
 
     private static ExtractionErrorKind ClassifyException(Exception ex)
     {
+        var kind = ClassifySingleException(ex);
+        // Extractors may wrap the parser's exception (PdfExtractor does); the cause is more specific.
+        if (kind == ExtractionErrorKind.ExtractionFailed && ex.InnerException is { } inner)
+            kind = ClassifyException(inner);
+        return kind;
+    }
+
+    private static ExtractionErrorKind ClassifySingleException(Exception ex)
+    {
+        if (ex is ExtractionLimitExceededException)
+            return ExtractionErrorKind.LimitExceeded;
+        if (ex is OcrUnavailableException)
+            return ExtractionErrorKind.NeedsOcr;
+
         var msg = ex.Message ?? string.Empty;
         var typeName = ex.GetType().Name;
 
@@ -316,12 +511,31 @@ public class TextExtractor : IDocumentTextExtractor
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static byte[] ReadStream(Stream stream)
+    /// <summary>
+    /// Buffers <paramref name="stream"/>, stopping as soon as it passes
+    /// <see cref="ExtractionOptions.MaxInputBytes"/>. Returns <c>null</c> when the limit is exceeded.
+    /// </summary>
+    private static byte[]? ReadStream(Stream stream, ExtractionOptions? options)
     {
+        ValidateOptions(options);
+        long? limit = (options ?? ExtractionOptions.Default).MaxInputBytes;
+        if (limit is long known && stream.CanSeek && stream.Length - stream.Position > known)
+            return null;
+
         using var ms = new MemoryStream();
-        stream.CopyTo(ms);
+        var buffer = new byte[81920];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (limit is long max && ms.Length + read > max)
+                return null;
+            ms.Write(buffer, 0, read);
+        }
         return ms.ToArray();
     }
+
+    private static string TooLargeMessage(ExtractionOptions? options)
+        => $"File exceeds the limit of {(options ?? ExtractionOptions.Default).MaxInputBytes} bytes (ExtractionOptions.MaxInputBytes).";
 
     private static ExtractionOptions WithWarningCapture(ExtractionOptions? options, List<ExtractionWarning> warnings)
     {
@@ -338,21 +552,47 @@ public class TextExtractor : IDocumentTextExtractor
         };
     }
 
-    private static async Task<byte[]> ReadStreamAsync(Stream stream, CancellationToken ct)
+    private static async Task<byte[]?> ReadStreamAsync(Stream stream, ExtractionOptions? options, CancellationToken ct)
     {
+        ValidateOptions(options);
+        long? limit = (options ?? ExtractionOptions.Default).MaxInputBytes;
+        if (limit is long known && stream.CanSeek && stream.Length - stream.Position > known)
+            return null;
+
         using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms, ct);
+        var buffer = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+        {
+            if (limit is long max && ms.Length + read > max)
+                return null;
+            ms.Write(buffer, 0, read);
+        }
         return ms.ToArray();
     }
 
-    private static Dictionary<string, string> BuildMetadata(string fileName, byte[] content, string normalizedText)
+    private static Dictionary<string, string> BuildMetadata(string fileName, byte[] content, string normalizedText,
+        ITextExtractor processor)
     {
         var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        var extension = Path.GetExtension(fileName);
+        // Format-specific metadata follows the extractor that produced the text, so a PDF named
+        // upload.txt still gets pdf.* keys. Custom extractors fall back to the file extension.
+        var extension = processor switch
+        {
+            PdfExtractor => ".pdf",
+            DocxExtractor => ".docx",
+            PptxExtractor => ".pptx",
+            ExcelExtractor when ExtractionGuard.IsZip(content) => ".xlsx",
+            EmlExtractor => ".eml",
+            MsgExtractor => ".msg",
+            MarkdownExtractor => ".md",
+            JsonExtractor => ".json",
+            _ => Path.GetExtension(fileName),
+        };
         string sourceText = GetSourceText(content);
         metadata["file.name"] = fileName;
-        metadata["file.extension"] = extension;
+        metadata["file.extension"] = Path.GetExtension(fileName);
         metadata["file.bytes"] = content.Length.ToString();
         metadata["text.length"] = normalizedText.Length.ToString();
         metadata["text.lineCount"] = CountLines(normalizedText).ToString();
@@ -630,7 +870,24 @@ public enum ExtractionErrorKind
     /// <summary>The file is corrupt or malformed.</summary>
     Corrupted,
     /// <summary>Extraction failed for another reason (see <c>ErrorMessage</c>).</summary>
-    ExtractionFailed
+    ExtractionFailed,
+    /// <summary>
+    /// The file is binary (an image, executable, unknown archive, ...) and no extractor for its
+    /// format is registered, so there is no text to extract. Previously reported as an empty success.
+    /// </summary>
+    Binary,
+    /// <summary>The input is larger than <see cref="ExtractionOptions.MaxInputBytes"/>; it was not parsed.</summary>
+    TooLarge,
+    /// <summary>
+    /// The document would exceed a safety limit while being parsed, for example an Office file that
+    /// expands past <see cref="ExtractionOptions.MaxDecompressedBytes"/> or has more parts than
+    /// <see cref="ExtractionOptions.MaxContainerEntries"/>.
+    /// </summary>
+    LimitExceeded,
+    /// <summary>Parsing took longer than <see cref="ExtractionOptions.Timeout"/> and was stopped.</summary>
+    TimedOut,
+    /// <summary>The file is an image (recognised by content); any text in it can only be read with OCR.</summary>
+    NeedsOcr
 }
 
 /// <summary>Controls how tables are rendered in extracted text.</summary>
@@ -672,11 +929,58 @@ public sealed record ExtractionOptions
     /// <summary>How tables are rendered. Defaults to <see cref="TableMode.KeyValue"/>.</summary>
     public TableMode TableMode { get; init; } = TableMode.KeyValue;
 
-    /// <summary>ZIP/EPUB decompression guard: stop after this many total bytes. Default 512 MB.</summary>
-    public long MaxDecompressedBytes { get; init; } = 512L * 1024 * 1024;
+    /// <summary>
+    /// Decompression guard. ZIP, EPUB and EML attachments stop (with a warning) after this many total bytes;
+    /// DOCX, XLSX/XLSM, PPTX, ODT and ODP files that would expand past it fail with
+    /// <see cref="ExtractionErrorKind.LimitExceeded"/> before they are parsed. Default 512 MB.
+    /// </summary>
+    public long MaxDecompressedBytes { get; init; } = ExtractionGuard.DefaultMaxDecompressedBytes;
 
-    /// <summary>ZIP/EPUB/EML entry guard: stop after this many container entries. Default 10,000.</summary>
-    public int MaxContainerEntries { get; init; } = 10_000;
+    /// <summary>
+    /// Entry guard. ZIP, EPUB and EML stop (with a warning) after this many container entries;
+    /// Office/OpenDocument files with more parts fail with <see cref="ExtractionErrorKind.LimitExceeded"/>. Default 10,000.
+    /// </summary>
+    public int MaxContainerEntries { get; init; } = ExtractionGuard.DefaultMaxContainerEntries;
+
+    /// <summary>
+    /// Inputs larger than this many bytes are rejected with <see cref="ExtractionErrorKind.TooLarge"/>
+    /// before parsing. Stream input stops being read as soon as it passes the limit. Default 256 MB;
+    /// <c>null</c> = no limit.
+    /// </summary>
+    public long? MaxInputBytes { get; init; } = 256L * 1024 * 1024;
+
+    /// <summary>
+    /// Stops parsing after this long and returns <see cref="ExtractionErrorKind.TimedOut"/>. The clock starts
+    /// when parsing starts (after any stream has been read). <c>null</c> = no timeout.
+    /// </summary>
+    public TimeSpan? Timeout { get; init; }
+
+    /// <summary>
+    /// When the extractor chosen by file extension fails and the content's magic bytes identify a different
+    /// format, retry once with that format's extractor and report
+    /// <see cref="ExtractionWarningCodes.ContentTypeMismatch"/>. Never retries into ZIP, EML or EPUB,
+    /// or after a safety limit was hit. Default <c>true</c>; set <c>false</c> to fail on the first attempt.
+    /// </summary>
+    public bool RetryWithDetectedFormat { get; init; } = true;
+
+    /// <summary>
+    /// OCR backend for images and scanned PDF pages (for example <c>TesseractOcrEngine</c> from
+    /// <c>Transformations.Text.Ocr</c>). <c>null</c> = no OCR: images get stub records / <see cref="ExtractionErrorKind.NeedsOcr"/>.
+    /// </summary>
+    public IOcrEngine? OcrEngine { get; init; }
+
+    /// <summary>
+    /// Images larger than this many pixels (read from the header, before decoding) are not OCR'd and fail with
+    /// <see cref="ExtractionErrorKind.LimitExceeded"/>. Default 64 MP; an A4 page scanned at 600 dpi is about 35 MP.
+    /// </summary>
+    public long MaxImagePixels { get; init; } = 64_000_000;
+
+    /// <summary>
+    /// Cancels extraction. The built-in extractors check it between pages, slides, rows, paragraphs and
+    /// archive entries, so a cancelled parse actually stops rather than running on in the background.
+    /// Cancellation throws <see cref="OperationCanceledException"/>. Custom extractors should check it too.
+    /// </summary>
+    public CancellationToken CancellationToken { get; init; }
 
     /// <summary>Optional callback invoked when extraction skips part of a container or recovers from a non-fatal issue.</summary>
     public Action<ExtractionWarning>? WarningSink { get; init; }
@@ -715,6 +1019,26 @@ public static class ExtractionWarningCodes
 
     /// <summary>An entry was selected for extraction but failed independently of the rest of the document.</summary>
     public const string ContainerEntryFailed = "container.entryFailed";
+
+    /// <summary>
+    /// The file's extension contradicts its content's binary signature (a DOCX named <c>invoice.pdf</c>, a PDF
+    /// named <c>notes.txt</c>). Reported whether or not extraction succeeded; the detected extension is in
+    /// <c>Message</c> and in the <c>file.detectedFormat</c> metadata key. Disguised files are a common way to
+    /// deliver malware by email, so treat this as a reason to quarantine or scan, not just as a curiosity.
+    /// </summary>
+    public const string ContentTypeMismatch = "content.typeMismatch";
+
+    /// <summary>
+    /// A part has no text layer and its text, if any, can only be read with OCR: an image attachment or ZIP entry,
+    /// or a scanned PDF page. A stub line marks its place in the text.
+    /// </summary>
+    public const string NeedsOcr = "content.needsOcr";
+
+    /// <summary>
+    /// Text came from OCR. It is untrusted: an image can carry instructions aimed at an AI reader that no
+    /// text-level check saw before OCR, so OCR text must go through the same safety checks as any other text.
+    /// </summary>
+    public const string OcrText = "content.ocr";
 }
 
 /// <summary>
@@ -731,7 +1055,10 @@ public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage
     /// <summary>Structured failure category; <see cref="ExtractionErrorKind.None"/> on success.</summary>
     public ExtractionErrorKind ErrorKind { get; init; } = ExtractionErrorKind.None;
 
-    /// <summary>Non-fatal issues encountered during extraction, such as skipped archive entries.</summary>
+    /// <summary>
+    /// Non-fatal issues encountered during extraction, such as skipped archive entries. Failures after
+    /// parsing started also carry warnings, notably <see cref="ExtractionWarningCodes.ContentTypeMismatch"/>.
+    /// </summary>
     public IReadOnlyList<ExtractionWarning> Warnings { get; init; } = Array.Empty<ExtractionWarning>();
 
     /// <summary>Creates a successful extraction result.</summary>

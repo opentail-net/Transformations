@@ -6,7 +6,8 @@ using A = DocumentFormat.OpenXml.Drawing;
 namespace Transformations.Text;
 
 /// <summary>
-/// Extracts text from PowerPoint presentations (.pptx files).
+/// Extracts text from PowerPoint presentations (.pptx files): text shapes (including shapes inside
+/// groups), tables, and speaker notes. Charts, SmartArt and embedded objects are not extracted.
 /// </summary>
 public class PptxExtractor : ITextExtractor
 {
@@ -20,6 +21,7 @@ public class PptxExtractor : ITextExtractor
     /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.EnsurePackageWithinLimits(fileData, options, "PPTX");
         using var stream = new MemoryStream(fileData);
         return ExtractFromStream(stream, options);
     }
@@ -34,6 +36,7 @@ public class PptxExtractor : ITextExtractor
         int end = options?.EndPage ?? int.MaxValue;
         int max = options?.MaxPages.HasValue == true ? (start - 1) + options.MaxPages.Value : int.MaxValue;
         end = Math.Min(end, max);
+        bool slideMarkers = options?.IncludePageMarkers == true;
 
         using var pres = PresentationDocument.Open(stream, false);
         var presPart = pres.PresentationPart;
@@ -43,6 +46,7 @@ public class PptxExtractor : ITextExtractor
         int slideNum = 1;
         foreach (SlideId slideId in presPart.Presentation.SlideIdList.Elements<SlideId>())
         {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             if (slideNum < start) { slideNum++; continue; }
             if (slideNum > end) break;
 
@@ -50,7 +54,8 @@ public class PptxExtractor : ITextExtractor
             if (presPart.GetPartById(relId) is not SlidePart slidePart) { slideNum++; continue; }
             if (slidePart.Slide == null) { slideNum++; continue; }
 
-            sb.AppendLine($"[Slide {slideNum}]");
+            if (slideMarkers)
+                sb.AppendLine($"[Slide {slideNum}]");
             AppendSlideText(slidePart, sb);
             AppendNotesText(slidePart, sb);
             sb.AppendLine();
@@ -65,7 +70,8 @@ public class PptxExtractor : ITextExtractor
         var shapeTree = slidePart.Slide?.CommonSlideData?.ShapeTree;
         if (shapeTree == null) return;
 
-        foreach (var shape in shapeTree.Elements<Shape>())
+        // Descendants rather than direct children, so shapes inside group shapes are included.
+        foreach (var shape in shapeTree.Descendants<Shape>())
         {
             var phType = shape.NonVisualShapeProperties?
                 .ApplicationNonVisualDrawingProperties?
@@ -90,6 +96,19 @@ public class PptxExtractor : ITextExtractor
             else
                 foreach (var t in texts)
                     sb.AppendLine(t);
+        }
+
+        // Tables live in graphic frames, not shapes: one line per row, cells separated by " | ".
+        foreach (var table in shapeTree.Descendants<A.Table>())
+        {
+            foreach (var row in table.Elements<A.TableRow>())
+            {
+                var cells = row.Elements<A.TableCell>()
+                    .Select(c => string.Join(" ", c.Descendants<A.Text>().Select(t => t.Text)).Trim())
+                    .ToList();
+                if (cells.Any(c => c.Length > 0))
+                    sb.AppendLine(string.Join(" | ", cells));
+            }
         }
     }
 

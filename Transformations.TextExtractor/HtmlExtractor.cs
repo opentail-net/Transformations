@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 
 namespace Transformations.Text;
@@ -8,6 +9,17 @@ namespace Transformations.Text;
 /// </summary>
 public class HtmlExtractor : ITextExtractor
 {
+    // <meta charset="x">, <meta http-equiv="Content-Type" content="text/html; charset=x">, <?xml ... encoding="x"?>
+    private static readonly Regex DeclaredEncoding = new(
+        @"<meta[^>]*?charset\s*=\s*[""']?\s*(?<name>[A-Za-z0-9._:\-]+)|<\?xml[^>]*?encoding\s*=\s*[""'](?<name>[A-Za-z0-9._:\-]+)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    static HtmlExtractor()
+    {
+        // Legacy pages declare code pages such as windows-1252 or shift_jis.
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".html", StringComparison.OrdinalIgnoreCase) ||
@@ -18,18 +30,25 @@ public class HtmlExtractor : ITextExtractor
 
     /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
-    {
-        using var stream = new MemoryStream(fileData);
-        return ExtractFromStream(stream, options);
-    }
+        => ExtractFromHtml(Decode(fileData), options);
 
     /// <summary>
     /// Extracts text directly from a stream, using the specified extraction options.
+    /// The encoding is taken from a byte-order mark, then from a <c>&lt;meta charset&gt;</c> or XML
+    /// declaration in the first 4 KB, and otherwise defaults to UTF-8.
     /// </summary>
     public string ExtractFromStream(Stream stream, ExtractionOptions? options = null)
     {
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ExtractFromHtml(Decode(ms.ToArray()), options);
+    }
+
+    /// <summary>Extracts text from HTML that has already been decoded, such as an email body.</summary>
+    internal string ExtractFromHtml(string html, ExtractionOptions? options)
+    {
         var doc = new HtmlDocument();
-        doc.Load(stream, Encoding.UTF8);
+        doc.LoadHtml(html);
 
         var nodesToRemove = doc.DocumentNode.SelectNodes("//script|//style|//noscript|//comment()");
         if (nodesToRemove != null)
@@ -40,12 +59,13 @@ public class HtmlExtractor : ITextExtractor
 
         var sb = new StringBuilder();
         var tableMode = options?.TableMode ?? TableMode.KeyValue;
-        ExtractTextFromNode(doc.DocumentNode, sb, tableMode);
+        ExtractTextFromNode(doc.DocumentNode, sb, tableMode, options);
         return sb.ToString();
     }
 
-    private void ExtractTextFromNode(HtmlNode node, StringBuilder sb, TableMode tableMode)
+    private void ExtractTextFromNode(HtmlNode node, StringBuilder sb, TableMode tableMode, ExtractionOptions? options)
     {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         if (node.NodeType == HtmlNodeType.Text)
         {
             string text = node.InnerText.Trim();
@@ -55,6 +75,12 @@ public class HtmlExtractor : ITextExtractor
                 sb.Append(" ");
             }
         }
+        else if (node.Name == "br")
+        {
+            if (sb.Length > 0 && sb[^1] == ' ')
+                sb.Length -= 1;
+            sb.AppendLine();
+        }
         else if (node.Name == "table")
         {
             if (tableMode != TableMode.Omit)
@@ -63,7 +89,7 @@ public class HtmlExtractor : ITextExtractor
         else if (node.HasChildNodes)
         {
             foreach (var child in node.ChildNodes)
-                ExtractTextFromNode(child, sb, tableMode);
+                ExtractTextFromNode(child, sb, tableMode, options);
 
             if (IsBlockElement(node.Name))
             {
@@ -110,7 +136,8 @@ public class HtmlExtractor : ITextExtractor
                 break;
 
             default: // KeyValue
-                bool hasHeaders = headers.Any(h => !string.IsNullOrWhiteSpace(h));
+                // A one-row table has no data rows to label, so its only row is content, not headers.
+                bool hasHeaders = grid.Count > 1 && headers.Any(h => !string.IsNullOrWhiteSpace(h));
                 for (int r = hasHeaders ? 1 : 0; r < grid.Count; r++)
                 {
                     var cells = grid[r];
@@ -127,6 +154,32 @@ public class HtmlExtractor : ITextExtractor
                         sb.AppendLine(string.Join(" | ", parts));
                 }
                 break;
+        }
+    }
+
+    private static string Decode(byte[] data)
+    {
+        using var reader = new StreamReader(new MemoryStream(data), DetectDeclaredEncoding(data),
+            detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
+    private static Encoding DetectDeclaredEncoding(byte[] data)
+    {
+        var head = Encoding.Latin1.GetString(data, 0, Math.Min(data.Length, 4096));
+        var match = DeclaredEncoding.Match(head);
+        if (!match.Success) return Encoding.UTF8;
+
+        try
+        {
+            var declared = Encoding.GetEncoding(match.Groups["name"].Value);
+            // Bytes that could be read as ASCII to find the declaration are not UTF-16/32;
+            // browsers treat such a declaration as UTF-8 too.
+            return declared is UnicodeEncoding or UTF32Encoding ? Encoding.UTF8 : declared;
+        }
+        catch (ArgumentException)
+        {
+            return Encoding.UTF8;
         }
     }
 

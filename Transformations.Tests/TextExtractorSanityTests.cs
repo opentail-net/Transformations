@@ -416,11 +416,13 @@ public class TextExtractorSanityTests
 
         var result = _extractor.GetText("debug.log", bytes);
 
-        // LogExtractor exists in the pipeline, but may not be reached due to ordering
-        if (result.IsSuccess)
-        {
-            Assert.That(result.Text, Does.Contain("Application started") | Does.Contain("Application"));
-        }
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.ExtractorName, Is.EqualTo(nameof(LogExtractor)));
+        var lines = result.Text.Split(Environment.NewLine);
+        Assert.That(lines, Has.Length.EqualTo(3));
+        Assert.That(lines[0], Does.Contain("Application started"));
+        Assert.That(lines[1], Does.Contain("Initializing modules"));
+        Assert.That(lines[2], Does.Contain("Connection timeout"));
     }
 
     [Test]
@@ -486,22 +488,21 @@ public class TextExtractorSanityTests
 
         var result = _extractor.GetText("blank.txt", bytes);
 
-        // Should either succeed with empty text or fail gracefully
-        Assert.That(result.IsSuccess || result.ErrorMessage != null, Is.True);
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Text, Is.Empty);
     }
 
-    [TestCase(".TXT")]
-    [TestCase(".Json")]
-    [TestCase(".XML")]
-    public void ExtensionHandling_IsCaseInsensitive(string extension)
+    [TestCase(".TXT", "test content", nameof(TxtExtractor))]
+    [TestCase(".Json", "{\"k\":\"v\"}", nameof(JsonExtractor))]
+    [TestCase(".XML", "<k>v</k>", nameof(XmlExtractor))]
+    public void ExtensionHandling_IsCaseInsensitive(string extension, string data, string expectedExtractor)
     {
-        string data = extension == ".TXT" ? "test content" : "{}";
         byte[] bytes = Encoding.UTF8.GetBytes(data);
 
         var result = _extractor.GetText($"file{extension}", bytes);
 
-        // Should handle case variations gracefully
-        Assert.That(result.IsSuccess || result.ErrorMessage != null, Is.True);
+        Assert.That(result.IsSuccess, Is.True, result.ErrorMessage);
+        Assert.That(result.ExtractorName, Is.EqualTo(expectedExtractor));
     }
 
     [Test]

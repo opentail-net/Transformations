@@ -27,6 +27,7 @@ public class OdtExtractor : ITextExtractor
     /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.EnsurePackageWithinLimits(fileData, options, "OpenDocument");
         using var ms = new MemoryStream(fileData);
         return ExtractFromStream(ms, options);
     }
@@ -37,6 +38,7 @@ public class OdtExtractor : ITextExtractor
     private static string ExtractFromStream(Stream stream, ExtractionOptions? options)
     {
         var tableMode = options?.TableMode ?? TableMode.KeyValue;
+        bool slideMarkers = options?.IncludePageMarkers == true;
 
         using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
         var contentEntry = zip.GetEntry("content.xml");
@@ -60,24 +62,26 @@ public class OdtExtractor : ITextExtractor
                 var pageName = page.Attribute(DrawNs + "name")?.Value
                     ?? page.Attribute(PresentationNs + "class")?.Value
                     ?? $"Slide {slideNum}";
-                sb.AppendLine($"[{pageName}]");
-                ExtractContent(page, sb, tableMode);
+                if (slideMarkers)
+                    sb.AppendLine($"[{pageName}]");
+                ExtractContent(page, sb, tableMode, options);
                 sb.AppendLine();
                 slideNum++;
             }
         }
         else
         {
-            ExtractContent(body, sb, tableMode);
+            ExtractContent(body, sb, tableMode, options);
         }
 
         return sb.ToString().Trim();
     }
 
-    private static void ExtractContent(XElement element, StringBuilder sb, TableMode tableMode)
+    private static void ExtractContent(XElement element, StringBuilder sb, TableMode tableMode, ExtractionOptions? options)
     {
         foreach (var child in element.Elements())
         {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             var name = child.Name;
             if (name == TextNs + "p" || name == TextNs + "h")
             {
@@ -92,7 +96,7 @@ public class OdtExtractor : ITextExtractor
             }
             else
             {
-                ExtractContent(child, sb, tableMode);
+                ExtractContent(child, sb, tableMode, options);
             }
         }
     }
@@ -131,7 +135,8 @@ public class OdtExtractor : ITextExtractor
                 break;
 
             default: // KeyValue
-                bool hasHeaders = headers.Any(h => !string.IsNullOrWhiteSpace(h));
+                // A one-row table has no data rows to label, so its only row is content, not headers.
+                bool hasHeaders = grid.Count > 1 && headers.Any(h => !string.IsNullOrWhiteSpace(h));
                 int startRow = hasHeaders ? 1 : 0;
                 for (int r = startRow; r < grid.Count; r++)
                 {

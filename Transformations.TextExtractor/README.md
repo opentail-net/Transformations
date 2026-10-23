@@ -7,7 +7,7 @@ A comprehensive, first-class text extraction and transformation library for .NET
 - **18 built-in extractors** — PDF, DOCX, PPTX, Excel, HTML, Markdown, CSV, EML, MSG, ODT/ODP, RTF, EPUB, JSON, XML, YAML, log files, source code, and ZIP archives
 - **DI-ready** — `IDocumentTextExtractor` facade interface; register with one call via `AddTextExtractor()`; fluent `TextExtractorBuilder` for fine-grained pipeline control
 - **Async & streaming** — `GetTextAsync` / `GetTextWithMetadataAsync` accept `Stream` directly; `GetTextBatchAsync` parallelises multi-document pipelines
-- **Extraction options** — per-call `ExtractionOptions`: `MaxCharacters`, `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers`, `TableMode`, `MaxDecompressedBytes`, `MaxContainerEntries`, and `WarningSink`
+- **Extraction options** — per-call `ExtractionOptions`: `MaxCharacters`, `MaxPages`, `StartPage`, `EndPage`, `IncludePageMarkers`, `TableMode`, `MaxDecompressedBytes`, `MaxContainerEntries`, `MaxInputBytes`, `Timeout`, `CancellationToken`, and `WarningSink`
 - **Table rendering modes** — `TableMode.KeyValue` (default), `Markdown` (pipe tables), `Csv`, or `Omit`; applies to DOCX, HTML, Excel, and ODT tables
 - **Content-type sniffing** — magic-byte fallback when the extension is wrong or missing; detects PDF, DOCX/XLSX/PPTX, MSG, HTML, RTF, EML, EPUB, and ZIP families
 - **RAG chunking** — `TextChunker` splits text by characters (word-boundary-aware), sentences, paragraphs, Markdown sections, or token count with configurable overlap; chunks carry `PageNumber?` and `HeadingPath?` provenance metadata
@@ -159,6 +159,10 @@ var options = new ExtractionOptions
     TableMode           = TableMode.Csv,   // KeyValue | Markdown | Csv | Omit
     MaxDecompressedBytes = 256 * 1024 * 1024, // ZIP bomb guard (default 512 MB)
     MaxContainerEntries = 5_000,           // archive/attachment guard (default 10,000)
+    MaxInputBytes       = 50 * 1024 * 1024, // reject larger inputs before parsing (default 256 MB; null = no limit)
+    Timeout             = TimeSpan.FromSeconds(30), // stop a slow parse; result is ErrorKind.TimedOut
+    CancellationToken   = requestAborted,  // stop the parse itself; throws OperationCanceledException
+    RetryWithDetectedFormat = true,        // retry once with the sniffed format if the extension's parser fails
     WarningSink         = warning => logger.LogWarning(
         "{Code} while extracting {Source}: {Message}",
         warning.Code,
@@ -181,6 +185,20 @@ Extraction has three outcomes:
 | Partial success | `IsSuccess == true`, `Warnings.Count > 0` | The top-level document was readable, but some container content was skipped, missing, unsupported, or over a configured limit. |
 | Failure | `IsSuccess == false`, `ErrorKind != None` | The top-level document could not be extracted. `Text` is empty and `ErrorMessage` explains the failure. |
 
+Failure kinds (`ExtractionErrorKind`):
+
+| Kind | Meaning |
+|------|---------|
+| `Empty` | The input had zero bytes. |
+| `Unsupported` | No extractor is registered for the file type. |
+| `Binary` | The file is binary (image, executable, unknown archive) and only the plain-text fallback would have accepted it. Earlier versions returned an empty success here. |
+| `TooLarge` | The input is bigger than `MaxInputBytes`. It was not parsed; stream input stops being read once it passes the limit. |
+| `LimitExceeded` | A DOCX, XLSX/XLSM, PPTX, ODT or ODP file has more parts than `MaxContainerEntries` or expands past `MaxDecompressedBytes`. |
+| `TimedOut` | Parsing ran longer than `Timeout` and was stopped. |
+| `PasswordProtected`, `Corrupted`, `ExtractionFailed` | The parser itself failed. |
+
+Cancelling `ExtractionOptions.CancellationToken` (or the `cancellationToken` argument of the async methods) throws `OperationCanceledException` instead of returning a result. The built-in extractors check the token between pages, slides, rows, paragraphs, HTML nodes and archive entries, so a cancelled or timed-out parse actually stops instead of running on in the background. A single library call that cannot be interrupted (for example, laying out one PDF page or loading one XML part) finishes before the check runs.
+
 Warnings are recoverable issues. They do not mean the returned text is invalid; they mean it may be incomplete. For ingestion systems, a common policy is to index full successes automatically, index partial successes with an audit flag, and reject or quarantine failures.
 
 Stable warning codes are exposed as `ExtractionWarningCodes` constants:
@@ -194,11 +212,25 @@ Stable warning codes are exposed as `ExtractionWarningCodes` constants:
 | `container.byteLimit` | `ContainerByteLimit` | ZIP, EPUB, or EML attachment extraction would exceed `MaxDecompressedBytes`. |
 | `container.unsupportedEntry` | `ContainerUnsupportedEntry` | ZIP entry or EML attachment has no safe registered extractor. |
 | `container.entryFailed` | `ContainerEntryFailed` | An individual entry was selected for extraction but failed independently of the top-level document. |
+| `content.typeMismatch` | `ContentTypeMismatch` | The extension contradicts the content's binary signature (a DOCX named `invoice.pdf`, a PDF named `notes.txt`). Raised for the document itself, ZIP entries and EML attachments, on success and on failure. Disguised files are a common malware-delivery trick: quarantine or scan rather than index. |
+
+### Extension vs content
+
+The extension picks the extractor. If that extractor fails and the magic bytes identify a different format, the
+document is retried once with that format's extractor (`RetryWithDetectedFormat`, default on). The retry never
+targets ZIP, EML or EPUB (a disguised archive is reported, not unpacked), never follows a safety-limit failure,
+and shares the original `Timeout`. Independently, any mismatch between extension and a strong binary signature
+(PDF, OOXML, OpenDocument/ZIP, EPUB, OLE2) is reported as `content.typeMismatch`, and `GetTextWithMetadata` adds
+`file.detectedFormat`. Sibling extensions (`.xlsm`/`.xlsx`, `.docm`/`.docx`) and text heuristics (a `.txt`
+starting with `Date:`) are not mismatches. Format-specific metadata follows the extractor that ran, so a PDF named
+`upload.txt` still gets `pdf.*` keys.
 
 Security limits are intentionally conservative and apply before routing content deeper into the pipeline:
 
-- `MaxDecompressedBytes` caps total decompressed ZIP entries, EPUB chapter bytes, and decoded EML attachment bytes.
-- `MaxContainerEntries` caps ZIP entries, EPUB spine items, and EML attachments.
+- `MaxInputBytes` rejects oversized input before any parser runs (default 256 MB).
+- `MaxDecompressedBytes` caps total decompressed ZIP entries, EPUB chapter and package-document bytes, and decoded EML attachment bytes. DOCX, XLSX/XLSM, PPTX, ODT and ODP files are ZIPs too: before parsing, every part is decompressed into a byte counter, so a file whose headers under-report its size is still caught.
+- `MaxContainerEntries` caps ZIP entries, EPUB spine items, EML attachments, and the number of parts in an Office/OpenDocument file.
+- Limits apply per document. An Office file inside a ZIP or an email gets its own `MaxDecompressedBytes` budget; if it goes over, that file is skipped with a warning and the rest of the container is still extracted.
 - Nested ZIPs are not recursively extracted by the default pipeline; they are reported as unsupported entries.
 - Binary-looking unknown files are not extracted via the text fallback inside ZIP/EML containers.
 
@@ -390,6 +422,35 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 ---
 
 ## Changelog
+
+### Unreleased
+
+**Safety limits and cancellation:**
+- `ExtractionOptions.CancellationToken` and `ExtractionOptions.Timeout`. The built-in extractors check the token while they work, so a cancelled parse stops. `GetTextBatchAsync` and the async methods pass their `cancellationToken` through to the parser as well.
+- `ExtractionOptions.MaxInputBytes` (default 256 MB) and `ExtractionErrorKind.TooLarge`.
+- DOCX, XLSX/XLSM, PPTX, ODT and ODP are checked against `MaxDecompressedBytes` / `MaxContainerEntries` before parsing: new `ExtractionErrorKind.LimitExceeded` and `ExtractionLimitExceededException`.
+- EPUB package documents and content sniffing no longer read an archive entry of any size.
+- `ExtractionErrorKind.Binary`. **Behaviour change:** binary files that previously returned `IsSuccess == true` with empty text now return a failure with this kind.
+- `CsvExtractor` and `RtfExtractor` now have the `ExtractText(byte[], ExtractionOptions?)` overload.
+
+**Extension/content handling:**
+- Retry with the content-detected format when the extension's extractor fails (`RetryWithDetectedFormat`); new `content.typeMismatch` warning and `file.detectedFormat` metadata. Failures now carry `Warnings` too.
+- OLE2 files are identified by stream name (`.msg`, `.doc`, `.xls`, `.ppt`) instead of always `.msg`; extensionless legacy `.xls` is now extracted.
+- Invalid `ExtractionOptions` values (negative limits, `EndPage < StartPage`, zero `Timeout`) throw `ArgumentOutOfRangeException`.
+- Wrapped exceptions (PDF) are classified by their cause, so a corrupt PDF reports `Corrupted`.
+
+**Extraction fixes:**
+- `TextChunker.ChunkByCharacters` no longer skips text after a chunk snaps back to a word boundary, and no longer emits a redundant tail chunk; `ChunkBySentences` no longer splits after `Mr.`, `Dr.`, `vs.` and similar.
+- `CodeExtractor` copyright stripping can no longer delete code between two comments.
+- `XmlExtractor` keeps text in mixed-content elements (`<p>Hello <b>world</b></p>`).
+- `RtfExtractor` handles surrogate pairs (emoji) instead of failing.
+- `HtmlExtractor` turns `<br>` into a line break and honours `<meta charset>` / XML encoding declarations.
+- Single-row tables (DOCX, HTML, ODT), single-row sheets (Excel) and header-only CSVs are no longer dropped.
+- `PptxExtractor` reads text inside grouped shapes and tables.
+- `GetTextBatchAsync` streams results as they become ready (in input order, bounded read-ahead), and cancels and awaits outstanding work when the caller stops enumerating.
+
+**Behaviour changes:**
+- PPTX and ODP slide markers (`[Slide N]`) now follow `IncludePageMarkers` like PDF/DOCX/EPUB; previously they were always emitted. Set `IncludePageMarkers = true` to keep them.
 
 ### 2.0.4 (current)
 

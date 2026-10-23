@@ -19,6 +19,7 @@ public class DocxExtractor : ITextExtractor
     /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.EnsurePackageWithinLimits(fileData, options, "DOCX");
         using var stream = new MemoryStream(fileData);
         return ExtractFromStream(stream, options);
     }
@@ -42,6 +43,7 @@ public class DocxExtractor : ITextExtractor
 
         foreach (var element in body.ChildElements)
         {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             if (element is Paragraph para)
             {
                 // Detect explicit page breaks within this paragraph
@@ -98,7 +100,8 @@ public class DocxExtractor : ITextExtractor
                 break;
 
             default: // KeyValue
-                bool hasHeaders = headers.Any(h => !string.IsNullOrWhiteSpace(h));
+                // A one-row table has no data rows to label, so its only row is content, not headers.
+                bool hasHeaders = grid.Count > 1 && headers.Any(h => !string.IsNullOrWhiteSpace(h));
                 for (int r = hasHeaders ? 1 : 0; r < grid.Count; r++)
                 {
                     var cells = grid[r];

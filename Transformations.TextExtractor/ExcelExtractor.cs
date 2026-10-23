@@ -25,6 +25,7 @@ public class ExcelExtractor : ITextExtractor
     /// <inheritdoc />
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.EnsurePackageWithinLimits(fileData, options, "XLSX");
         using var stream = new MemoryStream(fileData);
         using var reader = ExcelReaderFactory.CreateReader(stream);
 
@@ -42,6 +43,7 @@ public class ExcelExtractor : ITextExtractor
 
             while (reader.Read())
             {
+                ExtractionGuard.ThrowIfCancellationRequested(options);
                 if (!isHeaderRead)
                 {
                     for (int i = 0; i < reader.FieldCount; i++)
@@ -85,6 +87,9 @@ public class ExcelExtractor : ITextExtractor
                     break;
 
                 default: // KeyValue
+                    // A sheet with a single row has nothing to label; emit that row instead of dropping it.
+                    if (dataRows.Count == 0 && headers.Any(h => !string.IsNullOrWhiteSpace(h)))
+                        sb.AppendLine($"[{sheetName}] {string.Join(" | ", headers.Where(h => !string.IsNullOrWhiteSpace(h)))}");
                     foreach (var row in dataRows)
                     {
                         var entries = new List<string>();

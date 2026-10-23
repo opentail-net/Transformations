@@ -9,7 +9,9 @@ public static class TextChunker
 {
     /// <summary>
     /// Splits text into fixed-size character windows with optional overlap.
-    /// Chunk boundaries snap to the nearest word boundary before the limit so words are never split.
+    /// Chunk boundaries snap to the nearest word boundary before the limit so words are never split
+    /// (a single word longer than <paramref name="maxLength"/> is split). Every character of
+    /// <paramref name="text"/> appears in at least one chunk.
     /// </summary>
     public static IReadOnlyList<TextChunk> ChunkByCharacters(string text, int maxLength, int overlap = 0)
     {
@@ -18,7 +20,6 @@ public static class TextChunker
         if (overlap < 0 || overlap >= maxLength) throw new ArgumentOutOfRangeException(nameof(overlap), "Must be >= 0 and < maxLength.");
 
         var chunks = new List<TextChunk>();
-        int step = maxLength - overlap;
         int index = 0;
         int chunkIndex = 0;
 
@@ -38,7 +39,12 @@ public static class TextChunker
             }
 
             chunks.Add(new TextChunk(chunkIndex++, text[index..end], index, end));
-            index += step;
+            if (end == text.Length) break;
+
+            // Continue from where this chunk really ended (it may have snapped back to a word
+            // boundary), stepping back by the overlap only while that still makes progress.
+            int next = end - overlap;
+            index = next > index ? next : end;
         }
 
         return chunks.AsReadOnly();
@@ -145,15 +151,17 @@ public static class TextChunker
 
     // ── Internals ────────────────────────────────────────────────────────────
 
+    // Sentence-ending punctuation followed by whitespace or end-of-string. Not a split point:
+    // decimals (3.14), initialisms (e.g., U.S.), ellipsis (...), or common title abbreviations (Mr. Smith).
+    private static readonly Regex SentenceEnd = new(
+        @"(?<=[^.!?]{2}[.!?])(?<!\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|Fig)\.)(?=\s|$)",
+        RegexOptions.Compiled);
+
     private static IReadOnlyList<(string Text, int Start)> SplitSentences(string text)
     {
         var result = new List<(string, int)>();
-        // Match sentence-ending punctuation followed by whitespace or end-of-string,
-        // but not decimals (3.14), abbreviations (Mr.), or ellipsis (...)
-        var regex = new Regex(@"(?<=[^.!?]{2}[.!?])(?=\s|$)", RegexOptions.Compiled);
-
         int start = 0;
-        foreach (Match m in regex.Matches(text))
+        foreach (Match m in SentenceEnd.Matches(text))
         {
             int end = m.Index + m.Length;
             if (end > start)

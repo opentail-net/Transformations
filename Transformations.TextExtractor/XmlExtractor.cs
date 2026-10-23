@@ -36,12 +36,22 @@ public class XmlExtractor : ITextExtractor
                 sb.AppendLine($"{currentPath}@{attr.Name.LocalName}: {attr.Value}");
         }
 
-        if (!element.HasElements && !string.IsNullOrWhiteSpace(element.Value))
-            sb.AppendLine($"{currentPath}: {element.Value.Trim()}");
-        else
+        if (!element.HasElements)
         {
-            foreach (var child in element.Elements())
-                FlattenElement(child, sb, currentPath);
+            if (!string.IsNullOrWhiteSpace(element.Value))
+                sb.AppendLine($"{currentPath}: {element.Value.Trim()}");
+            return;
         }
+
+        // Mixed content (<p>Hello <b>world</b> again</p>): text nodes directly under this element
+        // are emitted for this path; child elements are flattened beneath it.
+        var ownText = string.Join(" ", element.Nodes().OfType<XText>()
+            .Select(t => t.Value.Trim())
+            .Where(t => t.Length > 0));
+        if (ownText.Length > 0)
+            sb.AppendLine($"{currentPath}: {ownText}");
+
+        foreach (var child in element.Elements())
+            FlattenElement(child, sb, currentPath);
     }
 }

@@ -41,6 +41,7 @@ public class PdfExtractor : ITextExtractor
 
             foreach (var page in document.GetPages())
             {
+                ExtractionGuard.ThrowIfCancellationRequested(options);
                 int pageNum = page.Number;
                 if (pageNum < start) continue;
                 if (pageNum > end) break;
@@ -54,13 +55,46 @@ public class PdfExtractor : ITextExtractor
                     sb.AppendLine(pageText);
                     sb.AppendLine();
                 }
+                else if (page.GetImages().Any() && ImageExtractor.OcrAvailable(options))
+                {
+                    AppendOcrPage(page, pageNum, sb, options!);
+                }
+                else if (page.GetImages().Any())
+                {
+                    // A scanned page: the text is in the image. Say so instead of returning silence.
+                    sb.AppendLine($"[Page {pageNum}] not extracted: no text layer (scanned image); text, if any, needs OCR");
+                    sb.AppendLine();
+                    options?.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, $"page {pageNum}",
+                        "Page has images but no text layer; it is probably scanned."));
+                }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw new InvalidOperationException($"PDF extraction failed: {ex.Message}", ex);
         }
 
         return sb.ToString().Trim();
+    }
+
+    private static void AppendOcrPage(UglyToad.PdfPig.Content.Page page, int pageNum, StringBuilder sb, ExtractionOptions options)
+    {
+        var texts = new List<string>();
+        foreach (var image in page.GetImages())
+        {
+            // PNG conversion covers most scans; DCT (JPEG) streams can be passed through as they are.
+            byte[]? encoded = image.TryGetPng(out var png) ? png : image.RawBytes.ToArray();
+            if (!ContentTypeDetector.IsImageExtension(ContentTypeDetector.SniffExtension(encoded)))
+                continue;
+            var text = ImageExtractor.Recognize(encoded, ContentTypeDetector.SniffExtension(encoded)!,
+                options.OcrEngine!, options, $"page {pageNum}");
+            if (!string.IsNullOrWhiteSpace(text))
+                texts.Add(text.Trim());
+        }
+
+        if (texts.Count == 0) return;
+        sb.AppendLine($"[Page {pageNum}] (OCR)");
+        sb.AppendLine(string.Join(Environment.NewLine, texts));
+        sb.AppendLine();
     }
 }

@@ -43,7 +43,7 @@ public class MsgExtractor : ITextExtractor
         if (string.IsNullOrWhiteSpace(body) && !string.IsNullOrWhiteSpace(msg.BodyHtml))
         {
             var htmlExtractor = new HtmlExtractor();
-            body = htmlExtractor.ExtractText(Encoding.UTF8.GetBytes(msg.BodyHtml));
+            body = htmlExtractor.ExtractFromHtml(msg.BodyHtml, null);
         }
 
         if (!string.IsNullOrWhiteSpace(body))

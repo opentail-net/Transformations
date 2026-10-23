@@ -23,6 +23,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Transformations.TextExtractor\Transformations.Text.csproj" />
     <ProjectReference Include="..\Transformations\Transformations.csproj" />
+    <ProjectReference Include="..\Transformations.Text.Ocr\Transformations.Text.Ocr.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

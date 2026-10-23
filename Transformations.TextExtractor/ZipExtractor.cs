@@ -47,6 +47,7 @@ public class ZipExtractor : ITextExtractor
 
         foreach (var entry in zip.Entries)
         {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             if (processedEntries >= maxEntries)
             {
                 Warn(options, ExtractionWarningCodes.ContainerEntryLimit, entry.FullName, $"Stopped after {processedEntries} ZIP entries.");
@@ -64,9 +65,19 @@ public class ZipExtractor : ITextExtractor
 
             var ext = Path.GetExtension(entry.Name);
             var processor = ResolveProcessor(ext);
+            if (processor is ImageExtractor && !ImageExtractor.OcrAvailable(options))
+                processor = null; // recorded as a stub that needs OCR
             if (processor == null)
             {
-                Warn(options, ExtractionWarningCodes.ContainerUnsupportedEntry, entry.FullName, $"No extractor is registered for ZIP entry extension '{ext}'.");
+                byte[]? stubBytes = null;
+                try
+                {
+                    using var stubStream = entry.Open();
+                    stubBytes = CopyToMemoryWithLimit(stubStream, maxBytes - totalDecompressed, out long stubCopied);
+                    totalDecompressed += stubCopied;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { }
+                PartStub.Append(sb, $"[{entry.FullName}]", entry.FullName, ext, stubBytes, entry.Length, "ZIP entry", options);
                 continue;
             }
 
@@ -76,15 +87,19 @@ public class ZipExtractor : ITextExtractor
                 byte[] entryBytes = CopyToMemoryWithLimit(entryStream, maxBytes - totalDecompressed, out long copiedBytes);
                 totalDecompressed += copiedBytes;
 
+                if (ContentTypeDetector.DetectMismatch(ext, entryBytes) is { } detected)
+                    Warn(options, ExtractionWarningCodes.ContentTypeMismatch, entry.FullName,
+                        $"Entry extension '{ext}' does not match its content, which is '{detected}'.");
+
                 var text = TextNormalizer.Normalize(processor.ExtractText(entryBytes, options));
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    sb.AppendLine($"[{entry.FullName}]");
+                    sb.AppendLine(processor is ImageExtractor ? $"[{entry.FullName}] (OCR)" : $"[{entry.FullName}]");
                     sb.AppendLine(text);
                     sb.AppendLine();
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Warn(options, ExtractionWarningCodes.ContainerEntryFailed, entry.FullName, ex.Message);
             }
