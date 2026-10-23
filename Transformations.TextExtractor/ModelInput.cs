@@ -43,6 +43,9 @@ public sealed record ModelInput(
     private static readonly Regex Marker = new(@"^\[(?<kind>Page|Slide|Chapter|Image) (?<n>\d+)\](?<ocr> \(OCR\))?[ \t]*\r?$",
         RegexOptions.Multiline | RegexOptions.Compiled);
 
+    /// <summary>0–100 heuristic risk over all findings; see <see cref="ExtractionResult.RiskScore"/>.</summary>
+    public int RiskScore => FraudSignals.RiskScore(Findings);
+
     /// <summary>Always <c>false</c>: document content never becomes trusted instructions.</summary>
     public bool IsTrusted => false;
 

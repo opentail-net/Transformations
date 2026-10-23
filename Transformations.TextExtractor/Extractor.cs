@@ -1352,6 +1352,12 @@ public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage
     /// <summary>Summary of the safety outcome. <see cref="SafetyVerdict.NoKnownSignals"/> does not mean the text is safe.</summary>
     public SafetyVerdict SafetyVerdict { get; init; }
 
+    /// <summary>
+    /// 0–100 heuristic risk over all <c>Findings</c> (prompt-injection and fraud signals): severity weight (Low 8,
+    /// Medium 25, High 60) plus 10 for High confidence, capped at 100. For ranking and thresholds; not a probability.
+    /// </summary>
+    public int RiskScore => FraudSignals.RiskScore(Findings);
+
     /// <summary>Creates a successful extraction result.</summary>
     public static ExtractionResult Success(string text, string? extractorName = null, TimeSpan duration = default,
         IReadOnlyList<ExtractionWarning>? warnings = null)
@@ -1393,6 +1399,12 @@ public record ExtractionMetadataResult(bool IsSuccess, string Text, Dictionary<s
 
     /// <summary>Summary of the safety outcome. <see cref="SafetyVerdict.NoKnownSignals"/> does not mean the text is safe.</summary>
     public SafetyVerdict SafetyVerdict { get; init; }
+
+    /// <summary>
+    /// 0–100 heuristic risk over all <c>Findings</c> (prompt-injection and fraud signals): severity weight (Low 8,
+    /// Medium 25, High 60) plus 10 for High confidence, capped at 100. For ranking and thresholds; not a probability.
+    /// </summary>
+    public int RiskScore => FraudSignals.RiskScore(Findings);
 
     /// <summary>Creates a successful metadata extraction result.</summary>
     public static ExtractionMetadataResult Success(string text, Dictionary<string, string> metadata,

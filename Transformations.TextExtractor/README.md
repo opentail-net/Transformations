@@ -473,6 +473,27 @@ fullwidth/compatibility forms, letter spacing like `i g n o r e`, base64) Medium
 override, disclosure or tool-action instruction Medium (`safety.correlatedInstructions`); hidden + instruction,
 obfuscated + concealment, zero-width splitting, stray tag characters and bidi around instructions High.
 
+**Fraud and social engineering.** Besides content aimed at the model, the gate looks for scams aimed at the human
+reader. Single cue words ("urgent", "invoice", "password") never fire; a scenario needs its cues within about 600
+characters of each other in the same part (email body, attachment, page):
+
+| Code (`safety.fraud.*`) | Scenario |
+|---|---|
+| `paymentRedirection` | payment/invoice/supplier wording + new or changed bank details, IBAN or account number |
+| `credentialRequest` | a request to confirm or enter a password or login details |
+| `accountThreat` | account suspended/locked/closed + verify, click or sign in |
+| `codeRequest` | "send me / share your" verification, one-time or access code (not "do not share this code") |
+| `giftCards` | gift cards + send the codes or a photo of the card |
+| `pressurePayment` | urgency + secrecy + a payment or purchase |
+| `extortion` | a threat (recorded you, files encrypted) + cryptocurrency payment |
+| `macroLure` | "enable editing / content / macros" |
+
+They are Medium (review under the AI profile; nothing is quarantined on fraud alone) with category `Fraud`. Urgency,
+secrecy or an authority figure (CEO, CFO, director) near a scenario raises its confidence to High. Every result also
+has a `RiskScore` (0–100) summing all findings by severity and confidence, for ranking and thresholds; it is a
+heuristic, not a probability. Genuine notices (a real bank-detail change, a real account lock) look the same as the
+scams and will be routed to review, which is usually what a finance or support team wants anyway.
+
 What each format is checked for (anything not listed is not inspected, which is not the same as clean):
 
 | Format | Hidden content detected | Not inspected |
@@ -763,6 +784,10 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 ## Changelog
 
 ### 2.0.5 (current)
+
+**Fraud signals:** combination-based social-engineering scenarios (`safety.fraud.*`: payment redirection, credential
+and code requests, account threats, gift cards, pressure payments, extortion, macro lures) and a 0–100 `RiskScore` on
+results and `ModelInput`.
 
 **Images everywhere:** with an OCR engine, EML inline images, MSG attachments (now extracted, each gated on its own)
 and pictures embedded in DOCX/PPTX/XLSX/ODT, PDF text pages and HTML `data:` URIs are OCR'd (`OcrEmbeddedImages`,

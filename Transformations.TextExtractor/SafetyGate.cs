@@ -48,7 +48,12 @@ public enum SafetyCategory
     /// <summary>Text a human reader would not see (hidden HTML, DOCX, PDF, PPTX, XLSX content).</summary>
     HiddenContent,
     /// <summary>Invisible or direction-changing characters (tag characters, zero-width, bidi controls).</summary>
-    InvisibleCharacters
+    InvisibleCharacters,
+    /// <summary>
+    /// Social engineering aimed at the human reader (payment redirection, phishing, code requests, gift-card and
+    /// extortion scams), detected from combinations of cues, never from one word.
+    /// </summary>
+    Fraud
 }
 
 /// <summary>
@@ -131,6 +136,22 @@ public static class SafetyFindingCodes
     public const string EncodedInstruction = "safety.encodedInstruction";
     /// <summary>Concealment wording close to an override, disclosure or tool-action instruction.</summary>
     public const string CorrelatedInstructions = "safety.correlatedInstructions";
+    /// <summary>Payment wording next to new or changed bank details (business email compromise).</summary>
+    public const string FraudPaymentRedirection = "safety.fraud.paymentRedirection";
+    /// <summary>A request to confirm or enter a password or login details.</summary>
+    public const string FraudCredentialRequest = "safety.fraud.credentialRequest";
+    /// <summary>A threat to suspend or close an account, with a link or sign-in request.</summary>
+    public const string FraudAccountThreat = "safety.fraud.accountThreat";
+    /// <summary>A request to send or share a verification, one-time or access code.</summary>
+    public const string FraudCodeRequest = "safety.fraud.codeRequest";
+    /// <summary>Gift cards with a request to send their codes or photos.</summary>
+    public const string FraudGiftCards = "safety.fraud.giftCards";
+    /// <summary>Urgency and secrecy around a payment or purchase (CEO fraud).</summary>
+    public const string FraudPressurePayment = "safety.fraud.pressurePayment";
+    /// <summary>A threat combined with a cryptocurrency payment request (extortion).</summary>
+    public const string FraudExtortion = "safety.fraud.extortion";
+    /// <summary>Instructions to enable editing, content or macros (malware lure).</summary>
+    public const string FraudMacroLure = "safety.fraud.macroLure";
 }
 
 /// <summary>
@@ -338,6 +359,7 @@ internal static class SafetyGate
         }
 
         ScanCorrelated(text, source, hits, findings);
+        FraudSignals.Scan(text, folded.Text, folded.Map, source, findings, Excerpt);
         ScanEncoded(text, source, policy, findings);
         return findings;
     }
