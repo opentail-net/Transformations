@@ -100,7 +100,7 @@ public static class ComparableHelper
     /// </returns>
     public static float IsBetween(this float actual, float minValue, float maxValue, float defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -127,7 +127,7 @@ public static class ComparableHelper
     /// </returns>
     public static sbyte IsBetween(this sbyte actual, sbyte minValue, sbyte maxValue, sbyte defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -154,7 +154,7 @@ public static class ComparableHelper
     /// </returns>
     public static byte IsBetween(this byte actual, byte minValue, byte maxValue, byte defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -181,7 +181,7 @@ public static class ComparableHelper
     /// </returns>
     public static DateTime IsBetween(this DateTime actual, DateTime minValue, DateTime maxValue, DateTime defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -208,7 +208,7 @@ public static class ComparableHelper
     /// </returns>
     public static ushort IsBetween(this ushort actual, ushort minValue, ushort maxValue, ushort defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -235,7 +235,7 @@ public static class ComparableHelper
     /// </returns>
     public static short IsBetween(this short actual, short minValue, short maxValue, short defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -262,7 +262,7 @@ public static class ComparableHelper
     /// </returns>
     public static int IsBetween(this int actual, int minValue, int maxValue, int defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -289,7 +289,7 @@ public static class ComparableHelper
     /// </returns>
     public static ulong IsBetween(this ulong actual, ulong minValue, ulong maxValue, ulong defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -316,7 +316,7 @@ public static class ComparableHelper
     /// </returns>
     public static long IsBetween(this long actual, long minValue, long maxValue, long defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -343,7 +343,7 @@ public static class ComparableHelper
     /// </returns>
     public static double IsBetween(this double actual, double minValue, double maxValue, double defaultValue)
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -375,8 +375,16 @@ public static class ComparableHelper
     public static bool IsBetween<T>(this T actual, T minValue, T maxValue)
         where T : IComparable<T>
     {
-        return actual.CompareTo(minValue) >= 0 && actual.CompareTo(maxValue) <= 0;
+        return InRange(actual, minValue, maxValue);
     }
+
+    /// <summary>
+    /// Inclusive range check shared by every overload, so the library never calls its own deprecated
+    /// <c>IsBetween</c> overloads.
+    /// </summary>
+    private static bool InRange<T>(T actual, T minValue, T maxValue)
+        where T : IComparable<T>
+        => actual.CompareTo(minValue) >= 0 && actual.CompareTo(maxValue) <= 0;
 
     /// <summary>
     /// Checks if the specified value is between the specified range values (inclusive comparison, including the supplied values).
@@ -392,7 +400,7 @@ public static class ComparableHelper
     public static T IsBetween<T>(this T actual, T minValue, T maxValue, T defaultValue)
         where T : IComparable<T>
     {
-        return IsBetween(actual, minValue, maxValue) ? actual : defaultValue;
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>
@@ -406,7 +414,7 @@ public static class ComparableHelper
     public static bool IsBetweenInclusive<T>(this T actual, T minValue, T maxValue)
         where T : IComparable<T>
     {
-        return IsBetween(actual, minValue, maxValue);
+        return InRange(actual, minValue, maxValue);
     }
 
     /// <summary>
@@ -421,7 +429,7 @@ public static class ComparableHelper
     public static T IsBetweenInclusiveOrDefault<T>(this T actual, T minValue, T maxValue, T defaultValue)
         where T : IComparable<T>
     {
-        return IsBetween(actual, minValue, maxValue, defaultValue);
+        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
     }
 
     /// <summary>

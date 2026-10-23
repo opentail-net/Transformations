@@ -17,7 +17,7 @@ public static class RangeSemanticsHelper
     public static bool BetweenInclusive<T>(this T value, T minValue, T maxValue)
         where T : IComparable<T>
     {
-        return value.IsBetween(minValue, maxValue);
+        return value.IsBetweenInclusive(minValue, maxValue);
     }
 
     /// <summary>

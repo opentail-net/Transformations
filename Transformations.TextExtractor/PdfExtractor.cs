@@ -105,11 +105,11 @@ public class PdfExtractor : ITextExtractor
             if (string.IsNullOrWhiteSpace(letter.Value)) continue;
             string? how = null;
             if (letter.RenderingMode is TextRenderingMode.Neither or TextRenderingMode.NeitherClip
-                && !OverAnImage(letter.GlyphRectangle, imageAreas))
+                && !OverAnImage(letter.BoundingBox, imageAreas))
                 how = "render mode 3 (invisible)";
             else if (letter.PointSize is > 0 and < 1)
                 how = "font size below 1 pt";
-            else if (letter.GlyphRectangle is var r && (r.Right < bounds.Left || r.Left > bounds.Right
+            else if (letter.BoundingBox is var r && (r.Right < bounds.Left || r.Left > bounds.Right
                                                         || r.Top < bounds.Bottom || r.Bottom > bounds.Top))
                 how = "outside the page";
             if (how == null) continue;

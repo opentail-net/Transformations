@@ -33,6 +33,9 @@ namespace Transformations.Mapping.Generator
             isEnabledByDefault: true,
             description: "A target member exists but no source member was mapped to it.");
 
+        // Same rule as UnmappedMemberWarning, used only when the build sets TransformationsMappingUnmappedMembersAsErrors.
+        // Release tracking records one default severity per rule (Warning), so RS2001 does not apply to this variant.
+#pragma warning disable RS2001
         private static readonly DiagnosticDescriptor UnmappedMemberError = new DiagnosticDescriptor(
             id: "TXMAP001",
             title: "Unmapped target member",
@@ -41,6 +44,7 @@ namespace Transformations.Mapping.Generator
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true,
             description: "A target member exists but no source member was mapped to it.");
+#pragma warning restore RS2001
 
         private static readonly DiagnosticDescriptor UnsupportedConversion = new DiagnosticDescriptor(
             id: "TXMAP002",
@@ -1316,6 +1320,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <summary>");
             sb.AppendLine($"{indent}/// Maps this instance onto an existing {target.TargetClassName}.");
             sb.AppendLine($"{indent}/// </summary>");
+            sb.AppendLine($"{indent}/// <param name=\"source\">The source instance to map from.</param>");
             sb.AppendLine($"{indent}/// <param name=\"target\">The target instance to update.</param>");
             sb.AppendLine($"{indent}/// <returns>The updated {target.TargetClassName} instance.</returns>");
             sb.AppendLine($"{indent}public static {target.TargetFullName} MapTo{methodTypeParameters}(this {model.SourceFullName} source, {target.TargetFullName} target)");

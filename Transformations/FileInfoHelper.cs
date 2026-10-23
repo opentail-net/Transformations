@@ -207,7 +207,7 @@ public static class FileInfoHelper
                 {
                     file.Delete();
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     if (exceptionOption == OnException.ThrowEachError)
                     {

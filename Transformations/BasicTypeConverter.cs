@@ -14915,9 +14915,9 @@ public static class BasicTypeConverter
     /// It's pretty fast on it's own.
     /// </remarks>
     /// <param name="value">The value to convert from.</param>
-    /// <param name="defaultValue">The default value.</param>
+    /// <param name="result">The parsed boolean when the word is recognised; otherwise <c>false</c>.</param>
     /// <returns>
-    /// The object as the specified type.
+    /// <c>true</c> when <paramref name="value"/> is a recognised boolean word.
     /// </returns>
     private static bool TryParseBoolWord(string value, out bool result)
     {
