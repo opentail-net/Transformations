@@ -71,7 +71,8 @@ public class ImageExtractor : ITextExtractor
 
         ExtractionGuard.ThrowIfCancellationRequested(options);
         var result = engine.Recognize(image, options?.CancellationToken ?? default);
-        options?.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.OcrText, source,
+        if (!string.IsNullOrWhiteSpace(result.Text))
+            options?.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.OcrText, source,
             $"Text was produced by OCR{(result.MeanConfidence is float c ? $" (confidence {c:0.00})" : "")}; treat it as untrusted."));
         return result.Text;
     }

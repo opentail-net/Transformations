@@ -68,6 +68,17 @@ public class DocxExtractor : ITextExtractor
             }
         }
 
+        if (EmbeddedImageOcr.Enabled(options) && wordDoc.MainDocumentPart is { } main)
+        {
+            var counter = new EmbeddedImageOcr.Counter();
+            foreach (var image in main.ImageParts)
+            {
+                using var s = image.GetStream();
+                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "docx image", options!, counter);
+            }
+            EmbeddedImageOcr.ReportSkipped(options!, counter, "docx");
+        }
+
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenDocx, "docx",
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),

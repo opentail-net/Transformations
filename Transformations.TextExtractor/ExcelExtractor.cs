@@ -129,11 +129,29 @@ public class ExcelExtractor : ITextExtractor
         }
         while (reader.NextResult());
 
+        if (EmbeddedImageOcr.Enabled(options) && ExtractionGuard.IsZip(fileData))
+            AppendImages(fileData, sb, options!);
+
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenXlsx, "xlsx",
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
                 string.Join(", ", hidden.Select(h => h.How).Distinct()));
         return sb.ToString().Trim();
+    }
+
+    /// <summary>OCRs pictures placed on worksheets (drawing parts).</summary>
+    private static void AppendImages(byte[] fileData, StringBuilder sb, ExtractionOptions options)
+    {
+        using var ms = new MemoryStream(fileData);
+        using var doc = global::DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Open(ms, false);
+        var counter = new EmbeddedImageOcr.Counter();
+        foreach (var sheet in doc.WorkbookPart?.WorksheetParts ?? [])
+            foreach (var image in sheet.DrawingsPart?.ImageParts ?? [])
+            {
+                using var s = image.GetStream();
+                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "xlsx image", options, counter);
+            }
+        EmbeddedImageOcr.ReportSkipped(options, counter, "xlsx");
     }
 
     /// <summary>Columns with zero width (hidden). Formats that do not report widths have none.</summary>

@@ -51,7 +51,6 @@ public class TextExtractor : IDocumentTextExtractor
             new MarkdownExtractor(),
             new CsvExtractor(),
             new ExcelExtractor(),
-            new MsgExtractor(),
             new JsonExtractor(),
             new XmlExtractor(),
             new YamlExtractor(),
@@ -66,6 +65,7 @@ public class TextExtractor : IDocumentTextExtractor
         // pipeline so they can recursively extract nested documents without circular refs.
         // Insert before TxtExtractor (the catch-all) so Route finds them first.
         core.Insert(core.Count - 1, new EmlExtractor(core));
+        core.Insert(core.Count - 1, new MsgExtractor(core));
         core.Insert(core.Count - 1, new ZipExtractor(core));
         core.Insert(core.Count - 1, new EpubExtractor(core));
         return core;
@@ -480,7 +480,7 @@ public class TextExtractor : IDocumentTextExtractor
         var sniffed = ContentTypeDetector.SniffExtension(content);
         if (sniffed == null) return null;
         var alternative = _extractors.FirstOrDefault(e => e.CanHandle(sniffed) && e is not TxtExtractor);
-        if (alternative is null or ZipExtractor or EmlExtractor or EpubExtractor || ReferenceEquals(alternative, failed))
+        if (alternative is null or ZipExtractor or EmlExtractor or MsgExtractor or EpubExtractor || ReferenceEquals(alternative, failed))
             return null;
         return alternative;
     }
@@ -559,6 +559,7 @@ public class TextExtractor : IDocumentTextExtractor
         Require(options.MaxDecompressedBytes >= 0, nameof(ExtractionOptions.MaxDecompressedBytes), options.MaxDecompressedBytes, "must be >= 0");
         Require(options.MaxContainerEntries >= 0, nameof(ExtractionOptions.MaxContainerEntries), options.MaxContainerEntries, "must be >= 0");
         Require(options.MaxInputBytes is null or >= 0, nameof(ExtractionOptions.MaxInputBytes), options.MaxInputBytes, "must be >= 0");
+        Require(options.MaxOcrImages >= 0, nameof(ExtractionOptions.MaxOcrImages), options.MaxOcrImages, "must be >= 0");
         Require(options.MaxImagePixels >= 0, nameof(ExtractionOptions.MaxImagePixels), options.MaxImagePixels, "must be >= 0");
         Require(options.Timeout is null || options.Timeout > TimeSpan.Zero || options.Timeout == System.Threading.Timeout.InfiniteTimeSpan,
             nameof(ExtractionOptions.Timeout), options.Timeout, "must be positive or Timeout.InfiniteTimeSpan");
@@ -1174,6 +1175,19 @@ public sealed record ExtractionOptions
     /// <see cref="ExtractionErrorKind.LimitExceeded"/>. Default 64 MP; an A4 page scanned at 600 dpi is about 35 MP.
     /// </summary>
     public long MaxImagePixels { get; init; } = 64_000_000;
+
+    /// <summary>
+    /// With an available <see cref="OcrEngine"/>, also read images embedded in documents: DOCX, PPTX, XLSX, ODT/ODP,
+    /// PDF pages that have text, and HTML <c>data:</c> images. Images under 100×40 pixels (icons) are skipped.
+    /// Default <c>true</c>.
+    /// </summary>
+    public bool OcrEmbeddedImages { get; init; } = true;
+
+    /// <summary>
+    /// Most embedded images OCR'd per document (OCR takes around a second per page-sized image). Images over the limit
+    /// are reported with <see cref="ExtractionWarningCodes.NeedsOcr"/>. Default 20.
+    /// </summary>
+    public int MaxOcrImages { get; init; } = 20;
 
     /// <summary>
     /// Cancels extraction. The built-in extractors check it between pages, slides, rows, paragraphs and

@@ -111,12 +111,19 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         ref long totalDecodedBytes = ref (budget != null ? ref budget.Used : ref localBytes);
         ref int processedEntries = ref (budget != null ? ref budget.Entries : ref localEntries);
 
-        foreach (var entity in message.Attachments)
+        // Attachments, plus inline images (cid: pictures in HTML mail), which MimeKit does not count as attachments
+        // but which can carry text a reader sees, such as an image-only phishing mail.
+        var inlineImages = message.BodyParts.OfType<MimePart>()
+            .Where(p => !p.IsAttachment && p.ContentType.MediaType.Equals("image", StringComparison.OrdinalIgnoreCase));
+        int inlineIndex = 0;
+        foreach (var entity in message.Attachments.Concat(inlineImages))
         {
             ExtractionGuard.ThrowIfCancellationRequested(options);
             if (entity is not MimePart part || part.Content == null) continue;
 
             var fileName = part.FileName ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(fileName) && !part.IsAttachment)
+                fileName = $"inline image {++inlineIndex}.{part.ContentType.MediaSubtype.ToLowerInvariant()}";
             if (string.IsNullOrWhiteSpace(fileName)) continue;
 
             if (processedEntries >= maxEntries)
@@ -149,26 +156,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
             try
             {
                 byte[] attachmentBytes = DecodeContentWithLimit(part, maxBytes, ref totalDecodedBytes);
-
-                // A disguised attachment (invoice.pdf that is really an Office file) is a classic
-                // malware carrier. Report it; it is still parsed only as the format its name claims.
-                if (ContentTypeDetector.DetectMismatch(ext, attachmentBytes) is { } detected)
-                    Warn(options, ExtractionWarningCodes.ContentTypeMismatch, fileName,
-                        $"Attachment extension '{ext}' does not match its content, which is '{detected}'.");
-
-                using var scope = new SafetyScope(options, fileName);
-                var attachText = TextNormalizer.Normalize(extractor.ExtractText(attachmentBytes, scope.Options), preserveSpacing: extractor is CodeExtractor);
-                if (scope.Complete(attachText, fileName, scanText: extractor is not IPartGatedContainer) is { } withheld)
-                {
-                    sb.AppendLine();
-                    sb.AppendLine($"[Attachment: {fileName}] withheld: {withheld}");
-                }
-                else if (!string.IsNullOrWhiteSpace(attachText))
-                {
-                    sb.AppendLine();
-                    sb.AppendLine(extractor is ImageExtractor ? $"[Attachment: {fileName}] (OCR)" : $"[Attachment: {fileName}]");
-                    sb.AppendLine(attachText);
-                }
+                ExtractPart(sb, fileName, ext, attachmentBytes, extractor, options);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -191,6 +179,58 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         Warn(options, ExtractionWarningCodes.ContainerByteLimit, fileName,
             $"Stopped: EML attachments decoded past {maxBytes} bytes (ExtractionOptions.MaxDecompressedBytes).");
         return true;
+    }
+
+    /// <summary>
+    /// Extracts one attachment and appends it, gated on its own: a withheld attachment becomes a stub line. Shared with
+    /// <see cref="MsgExtractor"/>; failures are warnings, so one bad attachment does not fail the message.
+    /// </summary>
+    internal static void AppendPart(StringBuilder sb, string fileName, byte[] bytes, IReadOnlyList<ITextExtractor> innerExtractors,
+        ExtractionOptions? options, string containerKind)
+    {
+        var ext = Path.GetExtension(fileName);
+        var extractor = ResolveProcessor(innerExtractors, ext);
+        if (extractor is ImageExtractor && !ImageExtractor.OcrAvailable(options))
+            extractor = null; // recorded as a stub that needs OCR
+        if (extractor == null)
+        {
+            sb.AppendLine();
+            PartStub.Append(sb, $"[Attachment: {fileName}]", fileName, ext, bytes, bytes.Length, containerKind, options);
+            return;
+        }
+
+        try
+        {
+            ExtractPart(sb, fileName, ext, bytes, extractor, options);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Warn(options, ex is ExtractionLimitExceededException ? ExtractionWarningCodes.ContainerByteLimit : ExtractionWarningCodes.ContainerEntryFailed,
+                fileName, ex.Message);
+        }
+    }
+
+    private static void ExtractPart(StringBuilder sb, string fileName, string ext, byte[] bytes, ITextExtractor extractor, ExtractionOptions? options)
+    {
+        // A disguised attachment (invoice.pdf that is really an Office file) is a classic
+        // malware carrier. Report it; it is still parsed only as the format its name claims.
+        if (ContentTypeDetector.DetectMismatch(ext, bytes) is { } detected)
+            Warn(options, ExtractionWarningCodes.ContentTypeMismatch, fileName,
+                $"Attachment extension '{ext}' does not match its content, which is '{detected}'.");
+
+        using var scope = new SafetyScope(options, fileName);
+        var text = TextNormalizer.Normalize(extractor.ExtractText(bytes, scope.Options), preserveSpacing: extractor is CodeExtractor);
+        if (scope.Complete(text, fileName, scanText: extractor is not IPartGatedContainer) is { } withheld)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"[Attachment: {fileName}] withheld: {withheld}");
+        }
+        else if (!string.IsNullOrWhiteSpace(text))
+        {
+            sb.AppendLine();
+            sb.AppendLine(extractor is ImageExtractor ? $"[Attachment: {fileName}] (OCR)" : $"[Attachment: {fileName}]");
+            sb.AppendLine(text);
+        }
     }
 
     private static ITextExtractor? ResolveProcessor(IReadOnlyList<ITextExtractor> innerExtractors, string extension)

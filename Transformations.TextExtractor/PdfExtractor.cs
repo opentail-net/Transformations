@@ -38,6 +38,8 @@ public class PdfExtractor : ITextExtractor
         end = Math.Min(end, max);
         bool pageMarkers = options?.IncludePageMarkers == true;
         var hidden = new List<(string Source, string Text, string How)>();
+        var ocrCounter = new EmbeddedImageOcr.Counter();
+        bool ocrImages = EmbeddedImageOcr.Enabled(options);
 
         try
         {
@@ -58,6 +60,8 @@ public class PdfExtractor : ITextExtractor
                 {
                     sb.AppendLine(pageText);
                     sb.AppendLine();
+                    if (ocrImages)
+                        AppendEmbeddedImages(page, pageNum, sb, options!, ocrCounter);
                 }
                 else if (page.GetImages().Any() && ImageExtractor.OcrAvailable(options))
                 {
@@ -78,6 +82,8 @@ public class PdfExtractor : ITextExtractor
             throw new InvalidOperationException($"PDF extraction failed: {ex.Message}", ex);
         }
 
+        if (ocrImages)
+            EmbeddedImageOcr.ReportSkipped(options!, ocrCounter, "pdf");
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenPdf,
                 string.Join(", ", hidden.Select(h => h.Source).Distinct()),
@@ -156,6 +162,31 @@ public class PdfExtractor : ITextExtractor
             lineBottom = word.BoundingBox.Bottom;
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// OCRs pictures on a page that has a text layer (screenshots, scanned inserts). An image covering half the page or
+    /// more is the scan behind a searchable PDF's text layer, which already holds its text, so it is skipped. Sizes are
+    /// checked from the PDF's image dictionary before anything is decoded.
+    /// </summary>
+    private static void AppendEmbeddedImages(Page page, int pageNum, StringBuilder sb, ExtractionOptions options,
+        EmbeddedImageOcr.Counter counter)
+    {
+        double pageArea = Math.Max(1, page.Width * page.Height);
+        foreach (var image in page.GetImages())
+        {
+            var box = image.BoundingBox;
+            if (Math.Abs(box.Width * box.Height) >= pageArea / 2) continue;
+            if (image.WidthInSamples < EmbeddedImageOcr.MinWidth || image.HeightInSamples < EmbeddedImageOcr.MinHeight) continue;
+            if ((long)image.WidthInSamples * image.HeightInSamples > options.MaxImagePixels)
+            {
+                options.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, $"page {pageNum}",
+                    $"Image of {image.WidthInSamples}x{image.HeightInSamples} pixels not read; the limit is {options.MaxImagePixels} (ExtractionOptions.MaxImagePixels)."));
+                continue;
+            }
+            byte[] encoded = image.TryGetPng(out var png) ? png : image.RawBytes.ToArray();
+            EmbeddedImageOcr.Append(sb, encoded, $"page {pageNum} image", options, counter);
+        }
     }
 
     private static void AppendOcrPage(Page page, int pageNum, StringBuilder sb, ExtractionOptions options)

@@ -48,6 +48,8 @@ public class PptxExtractor : ITextExtractor
             return string.Empty;
 
         var hidden = new List<(string Text, string How)>();
+        var ocrCounter = new EmbeddedImageOcr.Counter();
+        bool ocrImages = EmbeddedImageOcr.Enabled(options);
         int slideNum = 1;
         foreach (SlideId slideId in presPart.Presentation.SlideIdList.Elements<SlideId>())
         {
@@ -62,6 +64,12 @@ public class PptxExtractor : ITextExtractor
             var slideSb = new StringBuilder();
             AppendSlideText(slidePart, slideSb, options, hidden);
             AppendNotesText(slidePart, slideSb);
+            if (ocrImages && slidePart.Slide.Show?.Value != false)
+                foreach (var image in slidePart.ImageParts)
+                {
+                    using var s = image.GetStream();
+                    EmbeddedImageOcr.Append(slideSb, EmbeddedImageOcr.ReadPart(s), $"slide {slideNum} image", options!, ocrCounter);
+                }
 
             if (slidePart.Slide.Show?.Value == false)
             {
@@ -84,6 +92,8 @@ public class PptxExtractor : ITextExtractor
             slideNum++;
         }
 
+        if (ocrImages)
+            EmbeddedImageOcr.ReportSkipped(options!, ocrCounter, "pptx");
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenPptx, "pptx",
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),

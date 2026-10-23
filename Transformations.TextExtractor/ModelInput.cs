@@ -40,7 +40,7 @@ public sealed record ModelInput(
     ExtractionErrorKind ErrorKind,
     string? ErrorMessage)
 {
-    private static readonly Regex Marker = new(@"^\[(?<kind>Page|Slide|Chapter) (?<n>\d+)\](?<ocr> \(OCR\))?[ \t]*\r?$",
+    private static readonly Regex Marker = new(@"^\[(?<kind>Page|Slide|Chapter|Image) (?<n>\d+)\](?<ocr> \(OCR\))?[ \t]*\r?$",
         RegexOptions.Multiline | RegexOptions.Compiled);
 
     /// <summary>Always <c>false</c>: document content never becomes trusted instructions.</summary>

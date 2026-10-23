@@ -54,7 +54,24 @@ public class OdtExtractor : ITextExtractor
         if (body == null) return string.Empty;
 
         var sb = new StringBuilder();
+        AppendBody(body, sb, tableMode, slideMarkers, options);
 
+        if (EmbeddedImageOcr.Enabled(options))
+        {
+            var counter = new EmbeddedImageOcr.Counter();
+            foreach (var entry in zip.Entries.Where(e => e.FullName.StartsWith("Pictures/", StringComparison.Ordinal) && e.Length > 0))
+            {
+                using var s = entry.Open();
+                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), entry.FullName, options!, counter);
+            }
+            EmbeddedImageOcr.ReportSkipped(options!, counter, "odt");
+        }
+
+        return sb.ToString().Trim();
+    }
+
+    private static void AppendBody(XElement body, StringBuilder sb, TableMode tableMode, bool slideMarkers, ExtractionOptions? options)
+    {
         var pages = body.Elements(DrawNs + "page").ToList();
         if (pages.Count > 0)
         {
@@ -83,8 +100,6 @@ public class OdtExtractor : ITextExtractor
         {
             ExtractContent(body, sb, tableMode, options);
         }
-
-        return sb.ToString().Trim();
     }
 
     private static void ExtractContent(XElement element, StringBuilder sb, TableMode tableMode, ExtractionOptions? options)

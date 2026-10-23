@@ -519,7 +519,20 @@ isolated worker process with OS memory/CPU limits and a concurrency limit.
 
 ### OCR
 
-Tesseract OCR is built in: text from images (attachments, ZIP entries, standalone files) and scanned PDF pages.
+Tesseract OCR is built in. With an engine set, images are read wherever they occur, and their text goes through the
+same safety gate as any other text (scored more strictly, as OCR):
+
+| Where the image is | Read as |
+|---|---|
+| Image file; EML/MSG attachment; EML inline (`cid:`) image; ZIP entry | its own part, gated and withheld on its own |
+| Scanned PDF page (no text layer) | `[Page N] (OCR)` |
+| Picture in DOCX, PPTX (shown slides), XLSX (sheet drawings), ODT/ODP; image on a PDF page that has text; HTML `data:` image | `[Image N] (OCR)` block in the document |
+
+Embedded pictures (the last row) are limited so a picture-heavy document stays fast (OCR takes around a second per
+page-sized image): at most `MaxOcrImages` per document (default 20; the rest are reported as `content.needsOcr`),
+icons under 100×40 pixels are skipped, a PDF image covering half a page or more on a page with text is treated as a
+searchable scan (its text layer is used), and `OcrEmbeddedImages = false` turns embedded OCR off. When a document
+contains OCR text, the safety gate scores instruction wording anywhere in it as OCR (Medium).
 
 ```csharp
 using Transformations.Text.Ocr;
@@ -750,6 +763,10 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 ## Changelog
 
 ### 2.0.5 (current)
+
+**Images everywhere:** with an OCR engine, EML inline images, MSG attachments (now extracted, each gated on its own)
+and pictures embedded in DOCX/PPTX/XLSX/ODT, PDF text pages and HTML `data:` URIs are OCR'd (`OcrEmbeddedImages`,
+`MaxOcrImages`). `content.ocr` is reported only when OCR produced text.
 
 **Packaging:** `Transformations.Text.Ocr` is merged into this package (same `Transformations.Text.Ocr` namespace, so code
 using `TesseractOcrEngine` compiles unchanged). Reference `Transformations.Text` only; drop any `Transformations.Text.Ocr`
