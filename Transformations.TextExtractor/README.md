@@ -157,6 +157,7 @@ var options = new ExtractionOptions
     EndPage             = 8,               // inclusive; stop after this page
     IncludePageMarkers  = true,            // insert [Page N], [Slide N], [Chapter N]
     TableMode           = TableMode.Csv,   // KeyValue | Markdown | Csv | Omit
+    TableHeaders        = TableHeaderMode.Auto, // Auto (format's header marker) | FirstRow | None
     MaxDecompressedBytes = 256 * 1024 * 1024, // ZIP bomb guard (default 512 MB)
     MaxContainerEntries = 5_000,           // archive/attachment guard (default 10,000)
     MaxInputBytes       = 50 * 1024 * 1024, // reject larger inputs before parsing (default 256 MB; null = no limit)
@@ -195,6 +196,8 @@ Failure kinds (`ExtractionErrorKind`):
 | `TooLarge` | The input is bigger than `MaxInputBytes`. It was not parsed; stream input stops being read once it passes the limit. |
 | `LimitExceeded` | A DOCX, XLSX/XLSM, PPTX, ODT or ODP file has more parts than `MaxContainerEntries` or expands past `MaxDecompressedBytes`. |
 | `TimedOut` | Parsing ran longer than `Timeout` and was stopped. |
+| `NeedsOcr` | The file is an image and no OCR engine is available (`OcrEngine`). |
+| `Quarantined` | The safety gate withheld the whole document (see [Safety gates and quarantine](#safety-gates-and-quarantine)). `Text` is empty; the reasons are in `Findings`. |
 | `PasswordProtected`, `Corrupted`, `ExtractionFailed` | The parser itself failed. |
 
 Cancelling `ExtractionOptions.CancellationToken` (or the `cancellationToken` argument of the async methods) throws `OperationCanceledException` instead of returning a result. The built-in extractors check the token between pages, slides, rows, paragraphs, HTML nodes and archive entries, so a cancelled or timed-out parse actually stops instead of running on in the background. A single library call that cannot be interrupted (for example, laying out one PDF page or loading one XML part) finishes before the check runs.
@@ -213,6 +216,72 @@ Stable warning codes are exposed as `ExtractionWarningCodes` constants:
 | `container.unsupportedEntry` | `ContainerUnsupportedEntry` | ZIP entry or EML attachment has no safe registered extractor. |
 | `container.entryFailed` | `ContainerEntryFailed` | An individual entry was selected for extraction but failed independently of the top-level document. |
 | `content.typeMismatch` | `ContentTypeMismatch` | The extension contradicts the content's binary signature (a DOCX named `invoice.pdf`, a PDF named `notes.txt`). Raised for the document itself, ZIP entries and EML attachments, on success and on failure. Disguised files are a common malware-delivery trick: quarantine or scan rather than index. |
+| `content.needsOcr` | `NeedsOcr` | An image part or scanned PDF page has no text layer and no OCR engine ran. |
+| `content.ocr` | `OcrText` | Text came from OCR. Treat it as untrusted. |
+| `safety.finding` | `SafetyFinding` | The safety gate found something; the full record is in `Findings`. |
+| `safety.withheld` | `ContentWithheld` | The safety gate withheld a part (replaced by a stub line) or the whole document. |
+
+### Safety gates and quarantine
+
+Every extraction runs a safety gate over the text it produced, aimed at content that tries to manipulate an AI
+reading it (hidden prompts). Each signal becomes a `SafetyFinding` (`Code`, `Severity`, `Source`, `Reason`,
+`Excerpt` of at most 200 characters, `Offset`, `Withheld`) on `result.Findings`, through `ExtractionOptions.FindingSink`,
+and as a `safety.finding` warning.
+
+| Code (`SafetyFindingCodes`) | Signal | Severity alone | Raised to High when |
+|---|---|---|---|
+| `safety.tagCharacters` | Unicode tag characters U+E0000–E007F (invisible text models still read; the excerpt decodes it) | **High** | — |
+| `safety.bidiControl` | Bidi overrides/isolates in a line with no right-to-left script | Medium | instruction wording on the same line |
+| `safety.zeroWidth` | Zero-width characters, except ZWJ in emoji, ZWNJ/ZWJ next to Indic, Arabic-script, Myanmar or Khmer letters, and a leading BOM | Low | they split instruction wording (`ig​nore previous instructions`) |
+| `safety.hiddenHtml` | Inline `display:none`, `visibility:hidden`, `font-size:0`, `opacity:0`, zero size with `overflow:hidden`, off-screen position, text colour equal to background, `hidden` attribute | Low | the hidden text contains instruction wording |
+| `safety.hiddenDocx` | Runs with `w:vanish`, white text without shading or highlight, font size of 2 pt or less | Low | as above |
+| `safety.hiddenPdf` | Letters in render mode 3 on a page with no image, below 1 pt, or outside the crop box | Low | as above |
+| `safety.instruction` | Instruction wording aimed at a model: "ignore previous instructions", "do not tell the user", "if you are an AI", chat role tags (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), plus `SafetyPolicy.AdditionalInstructionPhrases` | Low | — |
+| `safety.ocrInstruction` | Instruction wording in a part that produced OCR text | Medium | — |
+
+Invisible characters are removed before instruction wording is matched, so they cannot be used to split a phrase.
+
+**What happens at the threshold.** `ExtractionOptions.Safety` is a `SafetyPolicy`; the default quarantines at
+`High`. When a part's worst finding reaches `QuarantineAt`:
+
+- In a **ZIP entry or EML attachment**, or the **EML message body**, that part is replaced by a stub line
+  (`[bad.txt] withheld: High: ...`, `[Attachment: x] withheld: ...`, `[Message body] withheld: ...`) and the rest is kept.
+  The result is still a success. Nested containers are gated at the innermost part.
+- In **any other document**, the whole result is `IsSuccess == false` with `ErrorKind.Quarantined`.
+
+Withheld text is never in `Text`. It is reachable only through `result.Quarantine.GetWithheldText()` (or per part,
+`Quarantine.Parts[i].GetWithheldText()`). That is a deliberate escape hatch, for a human review queue, not for an AI model.
+
+The gate scans the normalised text **before** `MaxCharacters` truncation, so a payload past the cut is still found.
+
+```csharp
+var options = new ExtractionOptions
+{
+    Safety = new SafetyPolicy
+    {
+        QuarantineAt = SafetySeverity.High,     // null = report only
+        TrustedSource = false,                  // true = report, never withhold (internal mail, say)
+        AdditionalInstructionPhrases = ["approve this vendor"],
+    },
+    HiddenText = HiddenTextMode.Mark,           // Mark (default): "[hidden] ..." line | Drop | Keep
+    FindingSink = f => logger.LogWarning("{Code} {Severity} in {Source}: {Reason}", f.Code, f.Severity, f.Source, f.Reason),
+};
+// SafetyPolicy.Off disables every detector.
+```
+
+`HiddenText` decides what hidden HTML, DOCX and PDF text looks like in `Text`. **Behaviour change in 2.0.5:** HTML
+hidden by inline style used to be extracted as if it were visible; it is now on its own `[hidden]` line.
+
+Limits of the detectors:
+- HTML: inline styles and the `hidden` attribute only. There is no CSS engine, so classes and stylesheets are not
+  evaluated. Hidden text inside table cells is not separated.
+- DOCX: direct run formatting only; text hidden through a paragraph or character style is not detected.
+- PDF: a page with any image is assumed to be a searchable scan, so its render-mode-3 text counts as visible.
+  Hidden letters are regrouped into words and lines by position, so the text of such a page may be laid out
+  differently from the rest.
+- OCR: a document counts as OCR text if any part of it was OCR'd, so instruction wording on a normal page of a
+  partly scanned PDF is scored Medium.
+- Custom extractors get only the text-level detectors (tag, bidi, zero-width, instruction).
 
 ### Extension vs content
 
@@ -423,7 +492,28 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 
 ## Changelog
 
-### Unreleased
+### 2.0.5 (current)
+
+**Safety gates and quarantine (2.0.5.1):**
+- New safety gate: `ExtractionOptions.Safety` (`SafetyPolicy`), `HiddenText` (`HiddenTextMode`), `FindingSink`; `Findings` and `Quarantine` on both result types; `ExtractionErrorKind.Quarantined`; warning codes `safety.finding` and `safety.withheld`. See [Safety gates and quarantine](#safety-gates-and-quarantine).
+- **Behaviour change:** quarantine at High is on by default. Documents with Unicode tag characters, or hidden HTML/DOCX/PDF text containing instruction wording, now fail with `Quarantined`; in ZIP and EML only the offending part is withheld.
+- **Behaviour change:** HTML hidden by inline style, DOCX hidden runs and invisible PDF text are now on their own `[hidden] ...` line (`HiddenText = Keep` restores the old output).
+
+**Review fixes (2.0.5.1):**
+- **Behaviour change:** table header rows follow the format's marker (`ExtractionOptions.TableHeaders`, default `Auto`): HTML `<th>`/`<thead>`, DOCX "repeat header row" or the table style's header-row flag, ODT `table:table-header-rows`. An unmarked first row is now data instead of labels; `TableHeaders = FirstRow` restores the old behaviour. ODT header rows, previously dropped, are now read. Markdown output gives a header-less table an empty header row.
+- HTML tables nested in a cell no longer add their rows to the outer table.
+- ZIP and EPUB count every decompressed byte against `MaxDecompressedBytes`, including entries that fail, and stop once it is spent. EPUB package documents count too.
+- EPUB manifest hrefs are percent-decoded, lose `#fragment`/`?query`, and resolve `.`/`..`.
+- Scanned PDF pages check the image size the PDF declares against `MaxImagePixels` before converting it.
+- `ExtractionOptions.CancellationToken` cancels stream reads (sync and async). `HtmlExtractor.ExtractFromStream`, the stream overloads of `DocxExtractor`, `PptxExtractor`, `OdtExtractor` and the default `ITextExtractor.ExtractText(Stream)` enforce `MaxInputBytes` and, for Office/OpenDocument, the package limits.
+- JSON, YAML, XML, Markdown and MSG check cancellation, and the facade checks again after any extractor returns, so a parse that overran `Timeout` is `TimedOut`, not a success.
+- Text is detected as email only with at least two well-known headers followed by a blank line; `Date: tomorrow` in a `.txt` stays plain text. An Outlook MSG named `.doc` (or a `.msg` that is not one) is a `content.typeMismatch`.
+- `MarkdownStructureExtractor` ignores headings inside fenced code blocks and makes repeated anchors unique (`setup`, `setup-1`, ...).
+- `GetSupportedExtensions()` lists image formats; ODP honours `StartPage`/`EndPage`/`MaxPages`; a DOCX page break inside a paragraph puts the `[Page N]` marker where the break is.
+- EML with a whitespace-only plain-text part uses the HTML part. MSG HTML bodies get the safety and hidden-text checks.
+- CSV with repeated header names keeps every column. RTF `\'hh` escapes are decoded with `\ansicpg` and the font's `\fcharset` (including Shift-JIS, GBK, Big5, Korean), so `\'80` in Windows-1252 is `€`.
+- `TextChunker` sentence, paragraph and token chunks are exact slices of the input: `text[StartOffset..EndOffset] == Text`, with the original separators.
+- Dependencies: HtmlAgilityPack 1.13.1, JsonSchema.Net 9.4.1, Markdig 1.4.2, Microsoft.Extensions.Logging.Abstractions 8.0.3, MimeKit 4.18.2, MSGReader 6.2.0, PdfPig 0.1.16, YamlDotNet 17.1.0.
 
 **Safety limits and cancellation:**
 - `ExtractionOptions.CancellationToken` and `ExtractionOptions.Timeout`. The built-in extractors check the token while they work, so a cancelled parse stops. `GetTextBatchAsync` and the async methods pass their `cancellationToken` through to the parser as well.
@@ -452,7 +542,7 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 **Behaviour changes:**
 - PPTX and ODP slide markers (`[Slide N]`) now follow `IncludePageMarkers` like PDF/DOCX/EPUB; previously they were always emitted. Set `IncludePageMarkers = true` to keep them.
 
-### 2.0.4 (current)
+### 2.0.4
 
 **New formats (zero new dependencies):**
 - `RtfExtractor` — Rich Text Format `.rtf`; self-contained state machine parser handles control words, hex/Unicode escapes, and skips metadata groups (`\fonttbl`, `\info`, etc.)

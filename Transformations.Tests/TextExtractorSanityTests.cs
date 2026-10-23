@@ -664,7 +664,9 @@ public class TextExtractorSanityTests
         using (var wordDoc = WordprocessingDocument.Create(mem, WordprocessingDocumentType.Document))
         {
             var mainPart = wordDoc.AddMainDocumentPart();
+            // Word marks the header row through the table style's first-row flag (on by default for new tables).
             var table = new DocumentFormat.OpenXml.Wordprocessing.Table(
+                new TableProperties(new TableLook { FirstRow = true }),
                 new TableRow(
                     new TableCell(new Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(new DocumentFormat.OpenXml.Wordprocessing.Text("Name")))),
                     new TableCell(new Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(new DocumentFormat.OpenXml.Wordprocessing.Text("City"))))),

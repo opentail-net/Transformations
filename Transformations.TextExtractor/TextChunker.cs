@@ -72,7 +72,7 @@ public static class TextChunker
             throw new ArgumentOutOfRangeException(nameof(overlapTokens), "Must be >= 0 and < maxTokens.");
 
         var segments = SplitParagraphs(text);
-        return BuildTokenChunks(segments, maxTokens, tokenCounter, overlapTokens);
+        return BuildTokenChunks(text, segments, maxTokens, tokenCounter, overlapTokens);
     }
 
     /// <summary>
@@ -166,39 +166,56 @@ public static class TextChunker
             int end = m.Index + m.Length;
             if (end > start)
             {
-                result.Add((text[start..end].Trim(), start));
+                AddSegment(result, text, start, end);
                 start = end;
-                while (start < text.Length && char.IsWhiteSpace(text[start]))
-                    start++;
             }
         }
 
         if (start < text.Length)
-            result.Add((text[start..].Trim(), start));
+            AddSegment(result, text, start, text.Length);
 
         return result;
     }
+
+    private static readonly Regex ParagraphBreak = new(@"\r?\n\r?\n", RegexOptions.Compiled);
 
     private static IReadOnlyList<(string Text, int Start)> SplitParagraphs(string text)
     {
         var result = new List<(string, int)>();
-        var pattern = new Regex(@"\r?\n\r?\n", RegexOptions.Compiled);
 
         int start = 0;
-        foreach (Match m in pattern.Matches(text))
+        foreach (Match m in ParagraphBreak.Matches(text))
         {
             if (m.Index > start)
-                result.Add((text[start..m.Index].Trim(), start));
+                AddSegment(result, text, start, m.Index);
             start = m.Index + m.Length;
         }
 
         if (start < text.Length)
-            result.Add((text[start..].Trim(), start));
+            AddSegment(result, text, start, text.Length);
 
         return result;
     }
 
+    /// <summary>
+    /// Adds <c>text[start..end]</c> without its surrounding whitespace, with the offset of its first kept character,
+    /// so <c>text.Substring(Start, Text.Length) == Text</c>. Whitespace-only ranges are dropped.
+    /// </summary>
+    private static void AddSegment(List<(string, int)> result, string text, int start, int end)
+    {
+        while (start < end && char.IsWhiteSpace(text[start])) start++;
+        while (end > start && char.IsWhiteSpace(text[end - 1])) end--;
+        if (end > start)
+            result.Add((text[start..end], start));
+    }
+
+    private static int SegmentEnd((string Text, int Start) segment) => segment.Start + segment.Text.Length;
+
+    // Chunks built from segments are slices of the original text, from the first segment's start to the last
+    // segment's end, so StartOffset/EndOffset point at exactly the chunk's text and the original separators survive.
+
     private static IReadOnlyList<TextChunk> BuildTokenChunks(
+        string text,
         IReadOnlyList<(string Text, int Start)> segments,
         int maxTokens,
         Func<string, int> tokenCounter,
@@ -210,33 +227,19 @@ public static class TextChunker
 
         while (i < segments.Count)
         {
-            var sb = new System.Text.StringBuilder();
             int chunkStart = segments[i].Start;
             int j = i;
 
             while (j < segments.Count)
             {
-                string candidate = sb.Length == 0
-                    ? segments[j].Text
-                    : sb + "\n\n" + segments[j].Text;
-
-                if (tokenCounter(candidate) > maxTokens && sb.Length > 0)
+                if (j > i && tokenCounter(text[chunkStart..SegmentEnd(segments[j])]) > maxTokens)
                     break;
-
-                if (sb.Length > 0) sb.Append("\n\n");
-                sb.Append(segments[j].Text);
                 j++;
             }
 
-            // Oversized single segment — emit it whole to prevent an infinite loop
-            if (j == i)
-            {
-                sb.Append(segments[i].Text);
-                j = i + 1;
-            }
-
-            int chunkEnd = segments[j - 1].Start + segments[j - 1].Text.Length;
-            chunks.Add(new TextChunk(chunkIndex++, sb.ToString(), chunkStart, chunkEnd));
+            // An oversized single segment is still emitted whole (j == i + 1), which prevents an infinite loop.
+            int chunkEnd = SegmentEnd(segments[j - 1]);
+            chunks.Add(new TextChunk(chunkIndex++, text[chunkStart..chunkEnd], chunkStart, chunkEnd));
 
             if (overlapTokens > 0)
             {
@@ -271,31 +274,18 @@ public static class TextChunker
 
         while (i < segments.Count)
         {
-            var sb = new System.Text.StringBuilder();
             int chunkStart = segments[i].Start;
             int j = i;
 
             while (j < segments.Count)
             {
-                string candidate = sb.Length == 0
-                    ? segments[j].Text
-                    : sb + " " + segments[j].Text;
-
-                if (candidate.Length > maxLength && sb.Length > 0)
+                if (j > i && SegmentEnd(segments[j]) - chunkStart > maxLength)
                     break;
-
-                if (sb.Length > 0) sb.Append(' ');
-                sb.Append(segments[j].Text);
                 j++;
             }
 
-            int chunkEnd = j > 0
-                ? segments[j - 1].Start + segments[j - 1].Text.Length
-                : chunkStart + sb.Length;
-
-            chunks.Add(new TextChunk(chunkIndex++, sb.ToString(), chunkStart, chunkEnd));
-
-            if (j == i) { i++; continue; }
+            int chunkEnd = SegmentEnd(segments[j - 1]);
+            chunks.Add(new TextChunk(chunkIndex++, text[chunkStart..chunkEnd], chunkStart, chunkEnd));
 
             if (overlapMode == OverlapMode.Segment)
             {

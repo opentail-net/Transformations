@@ -13,20 +13,26 @@ public class JsonExtractor : ITextExtractor
         extension.Equals(".json", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    /// <inheritdoc />
+    /// <remarks>Parsing is one library call; cancellation is checked before it and while the result is flattened.</remarks>
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         using var stream = new MemoryStream(fileData);
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         var jsonString = reader.ReadToEnd();
 
         using var document = JsonDocument.Parse(jsonString);
         var sb = new StringBuilder();
-        FlattenElement(document.RootElement, sb, string.Empty);
+        FlattenElement(document.RootElement, sb, string.Empty, options);
         return sb.ToString().Trim();
     }
 
-    private void FlattenElement(JsonElement element, StringBuilder sb, string prefix)
+    private void FlattenElement(JsonElement element, StringBuilder sb, string prefix, ExtractionOptions? options)
     {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
@@ -35,7 +41,7 @@ public class JsonExtractor : ITextExtractor
                     string propName = string.IsNullOrEmpty(prefix)
                         ? property.Name
                         : $"{prefix}.{property.Name}";
-                    FlattenElement(property.Value, sb, propName);
+                    FlattenElement(property.Value, sb, propName, options);
                 }
                 break;
 
@@ -43,7 +49,7 @@ public class JsonExtractor : ITextExtractor
                 int index = 0;
                 foreach (var item in element.EnumerateArray())
                 {
-                    FlattenElement(item, sb, $"{prefix}[{index++}]");
+                    FlattenElement(item, sb, $"{prefix}[{index++}]", options);
                 }
                 break;
 

@@ -41,7 +41,8 @@ public class CsvExtractor : ITextExtractor
         while (csv.Read())
         {
             ExtractionGuard.ThrowIfCancellationRequested(options);
-            rows.Add(headers.Select(h => csv.GetField(h) ?? string.Empty).ToArray());
+            // By column index, not header name: a repeated header ("Name,Name") would otherwise read the first column twice.
+            rows.Add(headers.Select((_, i) => csv.GetField(i) ?? string.Empty).ToArray());
         }
 
         // A header-only file has nothing to label; emit the header row instead of returning nothing.

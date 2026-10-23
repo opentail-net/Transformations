@@ -211,7 +211,8 @@ public class TextExtractor : IDocumentTextExtractor
         ".cs", ".py", ".js", ".ts", ".cpp", ".h", ".java", ".ps1", ".sh",
         ".go", ".rs", ".sql", ".rb", ".php", ".swift", ".kt", ".scala",
         ".fs", ".vb", ".lua", ".r", ".m", ".dart",
-        ".zip", ".odt", ".odp", ".rtf", ".epub", ".txt"
+        ".zip", ".odt", ".odp", ".rtf", ".epub", ".txt",
+        ".png", ".jpg", ".jpeg", ".jpe", ".gif", ".bmp", ".dib", ".tif", ".tiff", ".webp"
     ];
 
     /// <inheritdoc />
@@ -246,20 +247,29 @@ public class TextExtractor : IDocumentTextExtractor
             return ExtractionResult.Failure(rejected.Message, rejected.Kind, processor?.GetType().Name);
 
         var warnings = new List<ExtractionWarning>();
+        var safety = new SafetyCollector();
         var mismatch = ContentTypeDetector.DetectMismatch(Path.GetExtension(fileName), content);
         using var cancellation = new ExtractionCancellationScope(options, callerToken);
-        var effectiveOptions = WithWarningCapture(options, warnings) with { CancellationToken = cancellation.Token };
+        var effectiveOptions = WithWarningCapture(options, warnings, safety) with { CancellationToken = cancellation.Token };
 
         _logger.LogDebug("Extracting {FileName} using {Extractor}", fileName, processor!.GetType().Name);
         var sw = Stopwatch.StartNew();
         try
         {
-            var text = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, ref processor);
+            var text = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, ref processor, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
+            if (withheld != null)
+            {
+                _logger.LogWarning("Safety gate withheld {FileName}: {Reason}", fileName, withheld);
+                return ExtractionResult.Failure(WithheldMessage(withheld), ExtractionErrorKind.Quarantined,
+                    processor.GetType().Name, sw.Elapsed) with { Warnings = warnings, Findings = safety.Findings, Quarantine = safety.Quarantine };
+            }
+            text = Truncate(text, options);
             _logger.LogDebug("Extracted {CharCount} chars from {FileName} in {ElapsedMs}ms",
                 text.Length, fileName, sw.ElapsedMilliseconds);
-            return ExtractionResult.Success(text, processor.GetType().Name, sw.Elapsed, warnings);
+            return ExtractionResult.Success(text, processor.GetType().Name, sw.Elapsed, warnings)
+                with { Findings = safety.Findings, Quarantine = safety.Quarantine };
         }
         catch (OperationCanceledException) when (cancellation.CallerCancelled)
         {
@@ -270,7 +280,8 @@ public class TextExtractor : IDocumentTextExtractor
             sw.Stop();
             var (message, kind) = DescribeFailure(ex, cancellation, options, fileName, processor);
             ReportMismatch(fileName, mismatch, effectiveOptions);
-            return ExtractionResult.Failure(message, kind, processor.GetType().Name, sw.Elapsed) with { Warnings = warnings };
+            return ExtractionResult.Failure(message, kind, processor.GetType().Name, sw.Elapsed)
+                with { Warnings = warnings, Findings = safety.Findings };
         }
     }
 
@@ -283,16 +294,24 @@ public class TextExtractor : IDocumentTextExtractor
             return ExtractionMetadataResult.Failure(rejected.Message, rejected.Kind, processor?.GetType().Name);
 
         var warnings = new List<ExtractionWarning>();
+        var safety = new SafetyCollector();
         var mismatch = ContentTypeDetector.DetectMismatch(Path.GetExtension(fileName), content);
         using var cancellation = new ExtractionCancellationScope(options, callerToken);
-        var effectiveOptions = WithWarningCapture(options, warnings) with { CancellationToken = cancellation.Token };
+        var effectiveOptions = WithWarningCapture(options, warnings, safety) with { CancellationToken = cancellation.Token };
 
         var sw = Stopwatch.StartNew();
         try
         {
-            var normalizedText = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, ref processor!);
+            var normalizedText = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, ref processor!, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
+            if (withheld != null)
+            {
+                _logger.LogWarning("Safety gate withheld {FileName}: {Reason}", fileName, withheld);
+                return ExtractionMetadataResult.Failure(WithheldMessage(withheld), ExtractionErrorKind.Quarantined,
+                    processor!.GetType().Name, sw.Elapsed) with { Warnings = warnings, Findings = safety.Findings, Quarantine = safety.Quarantine };
+            }
+            normalizedText = Truncate(normalizedText, options);
             var metadata = BuildMetadata(fileName, content, normalizedText, processor);
             if (mismatch != null)
                 metadata["file.detectedFormat"] = mismatch;
@@ -303,8 +322,15 @@ public class TextExtractor : IDocumentTextExtractor
                 metadata["extraction.warningCount"] = warnings.Count.ToString();
                 metadata["extraction.warnings"] = string.Join(" | ", warnings.Select(w => $"{w.Code}:{w.Source}:{w.Message}"));
             }
+            if (safety.Findings.Count > 0)
+            {
+                metadata["safety.findingCount"] = safety.Findings.Count.ToString();
+                metadata["safety.maxSeverity"] = safety.Findings.Max(f => f.Severity).ToString();
+            }
+            if (safety.Quarantine != null)
+                metadata["safety.withheldParts"] = safety.Quarantine.Parts.Count.ToString();
             return ExtractionMetadataResult.Success(normalizedText, metadata,
-                processor.GetType().Name, sw.Elapsed, warnings);
+                processor.GetType().Name, sw.Elapsed, warnings) with { Findings = safety.Findings, Quarantine = safety.Quarantine };
         }
         catch (OperationCanceledException) when (cancellation.CallerCancelled)
         {
@@ -315,7 +341,8 @@ public class TextExtractor : IDocumentTextExtractor
             sw.Stop();
             var (message, kind) = DescribeFailure(ex, cancellation, options, fileName, processor!);
             ReportMismatch(fileName, mismatch, effectiveOptions);
-            return ExtractionMetadataResult.Failure(message, kind, processor!.GetType().Name, sw.Elapsed) with { Warnings = warnings };
+            return ExtractionMetadataResult.Failure(message, kind, processor!.GetType().Name, sw.Elapsed)
+                with { Warnings = warnings, Findings = safety.Findings };
         }
     }
 
@@ -357,13 +384,14 @@ public class TextExtractor : IDocumentTextExtractor
     /// deliberately narrow: it is skipped when <see cref="ExtractionOptions.RetryWithDetectedFormat"/> is off,
     /// when the first attempt hit a safety limit, and when the detected format is a container
     /// (ZIP, EML, EPUB) that would unpack further content. It shares the first attempt's timeout.
+    /// <paramref name="withheld"/> is the safety gate's reason for withholding the whole document, or <c>null</c>.
     /// </summary>
     private string ExtractWithContentFallback(string fileName, byte[] content, ExtractionOptions options,
-        List<ExtractionWarning> warnings, ref ITextExtractor processor)
+        List<ExtractionWarning> warnings, SafetyCollector safety, ref ITextExtractor processor, out string? withheld)
     {
         try
         {
-            return Extract(processor, content, options);
+            return ExtractGated(processor, content, options, fileName, out withheld);
         }
         catch (Exception ex) when (options.RetryWithDetectedFormat
                                    && ex is not (OperationCanceledException or ExtractionLimitExceededException)
@@ -371,11 +399,32 @@ public class TextExtractor : IDocumentTextExtractor
         {
             _logger.LogWarning(ex, "{Extractor} failed on {FileName}; content looks like {Alternative}, retrying",
                 processor.GetType().Name, fileName, alternative.GetType().Name);
-            warnings.Clear(); // warnings from the failed attempt describe the wrong format
+            warnings.Clear(); // warnings and findings from the failed attempt describe the wrong format
+            safety.Clear();
             processor = alternative;
-            return Extract(alternative, content, options);
+            return ExtractGated(alternative, content, options, fileName, out withheld);
         }
     }
+
+    /// <summary>
+    /// Extracts and runs the safety gate over the whole text: normalised, and before
+    /// <see cref="ExtractionOptions.MaxCharacters"/> so nothing escapes the scan by truncation.
+    /// Containers that gate their own parts are not scanned again.
+    /// </summary>
+    private static string ExtractGated(ITextExtractor processor, byte[] content, ExtractionOptions options, string fileName,
+        out string? withheld)
+    {
+        using var scope = new SafetyScope(options);
+        var text = Extract(processor, content, scope.Options);
+        withheld = scope.Complete(text, fileName, scanText: processor is not IPartGatedContainer);
+        return text;
+    }
+
+    private static string Truncate(string text, ExtractionOptions options)
+        => options.MaxCharacters is int max && text.Length > max ? text[..max] : text;
+
+    private static string WithheldMessage(string reason)
+        => $"Withheld by the safety gate ({reason}). The text is in Quarantine.GetWithheldText(); do not pass it to an AI model unchecked.";
 
     private void ReportMismatch(string fileName, string? detected, ExtractionOptions options)
     {
@@ -399,10 +448,11 @@ public class TextExtractor : IDocumentTextExtractor
     private static string Extract(ITextExtractor processor, byte[] content, ExtractionOptions options)
     {
         options.CancellationToken.ThrowIfCancellationRequested();
-        var text = TextNormalizer.Normalize(processor.ExtractText(content, options));
-        if (options.MaxCharacters is int max && text.Length > max)
-            text = text[..max];
-        return text;
+        var text = processor.ExtractText(content, options);
+        // Some parsers (JSON, YAML, XML, Markdown, MSG libraries) cannot be interrupted. Checking again here means a
+        // parse that ran past the timeout is reported as TimedOut, not as a normal success.
+        options.CancellationToken.ThrowIfCancellationRequested();
+        return TextNormalizer.Normalize(text);
     }
 
     private (string Message, ExtractionErrorKind Kind) DescribeFailure(Exception ex, ExtractionCancellationScope cancellation,
@@ -522,11 +572,15 @@ public class TextExtractor : IDocumentTextExtractor
         if (limit is long known && stream.CanSeek && stream.Length - stream.Position > known)
             return null;
 
+        // A synchronous read cannot be interrupted, but the token is checked between reads so a stalled
+        // or endless stream stops at the next chunk.
+        var token = (options ?? ExtractionOptions.Default).CancellationToken;
         using var ms = new MemoryStream();
         var buffer = new byte[81920];
         int read;
         while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
+            token.ThrowIfCancellationRequested();
             if (limit is long max && ms.Length + read > max)
                 return null;
             ms.Write(buffer, 0, read);
@@ -537,19 +591,55 @@ public class TextExtractor : IDocumentTextExtractor
     private static string TooLargeMessage(ExtractionOptions? options)
         => $"File exceeds the limit of {(options ?? ExtractionOptions.Default).MaxInputBytes} bytes (ExtractionOptions.MaxInputBytes).";
 
-    private static ExtractionOptions WithWarningCapture(ExtractionOptions? options, List<ExtractionWarning> warnings)
+    private static ExtractionOptions WithWarningCapture(ExtractionOptions? options, List<ExtractionWarning> warnings,
+        SafetyCollector safety)
     {
         options ??= ExtractionOptions.Default;
         var callerSink = options.WarningSink;
+        var callerFindingSink = options.FindingSink;
+
+        void Warn(ExtractionWarning warning)
+        {
+            warnings.Add(warning);
+            callerSink?.Invoke(warning);
+        }
 
         return options with
         {
-            WarningSink = warning =>
+            WarningSink = Warn,
+            FindingSink = finding =>
             {
-                warnings.Add(warning);
-                callerSink?.Invoke(warning);
-            }
+                safety.Add(finding);
+                Warn(new ExtractionWarning(ExtractionWarningCodes.SafetyFinding, finding.Source,
+                    $"{finding.Code} ({finding.Severity}{(finding.Withheld ? ", withheld" : "")}): {finding.Reason}"));
+                callerFindingSink?.Invoke(finding);
+            },
+            WithheldSink = part =>
+            {
+                safety.Add(part);
+                Warn(new ExtractionWarning(ExtractionWarningCodes.ContentWithheld, part.Source,
+                    $"Withheld by the safety gate: {SafetyGate.Describe(part.Findings.Where(f => f.Withheld))}"));
+            },
         };
+    }
+
+    /// <summary>Findings and withheld parts collected over one extraction.</summary>
+    private sealed class SafetyCollector
+    {
+        private readonly List<SafetyFinding> _findings = [];
+        private readonly List<QuarantinedPart> _withheld = [];
+
+        public IReadOnlyList<SafetyFinding> Findings => _findings.ToArray();
+        public QuarantinedContent? Quarantine => _withheld.Count == 0 ? null : new QuarantinedContent(_withheld.ToArray());
+
+        public void Add(SafetyFinding finding) => _findings.Add(finding);
+        public void Add(QuarantinedPart part) => _withheld.Add(part);
+
+        public void Clear()
+        {
+            _findings.Clear();
+            _withheld.Clear();
+        }
     }
 
     private static async Task<byte[]?> ReadStreamAsync(Stream stream, ExtractionOptions? options, CancellationToken ct)
@@ -559,10 +649,17 @@ public class TextExtractor : IDocumentTextExtractor
         if (limit is long known && stream.CanSeek && stream.Length - stream.Position > known)
             return null;
 
+        // Both the method's token and ExtractionOptions.CancellationToken cancel the read itself.
+        var optionsToken = (options ?? ExtractionOptions.Default).CancellationToken;
+        using var linked = optionsToken.CanBeCanceled && ct.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(optionsToken, ct)
+            : null;
+        var token = linked?.Token ?? (optionsToken.CanBeCanceled ? optionsToken : ct);
+
         using var ms = new MemoryStream();
         var buffer = new byte[81920];
         int read;
-        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+        while ((read = await stream.ReadAsync(buffer, token)) > 0)
         {
             if (limit is long max && ms.Length + read > max)
                 return null;
@@ -590,7 +687,8 @@ public class TextExtractor : IDocumentTextExtractor
             JsonExtractor => ".json",
             _ => Path.GetExtension(fileName),
         };
-        string sourceText = GetSourceText(content);
+        // Only Markdown and JSON metadata need the source as text; decoding a large PDF or image as a string would
+        // allocate for nothing.
         metadata["file.name"] = fileName;
         metadata["file.extension"] = Path.GetExtension(fileName);
         metadata["file.bytes"] = content.Length.ToString();
@@ -601,7 +699,7 @@ public class TextExtractor : IDocumentTextExtractor
         if (extension.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase))
         {
-            var normalizedMarkdown = MarkdownStructureExtractor.NormalizeMarkdown(sourceText);
+            var normalizedMarkdown = MarkdownStructureExtractor.NormalizeMarkdown(GetSourceText(content));
             var headings = MarkdownStructureExtractor.BuildHeadingMap(normalizedMarkdown);
             var sections = MarkdownStructureExtractor.ExtractSections(normalizedMarkdown);
             metadata["markdown.headingCount"] = headings.Count.ToString();
@@ -611,7 +709,7 @@ public class TextExtractor : IDocumentTextExtractor
 
         if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
         {
-            var json = JsonSchemaValidator.NormalizeJson(sourceText);
+            var json = JsonSchemaValidator.NormalizeJson(GetSourceText(content));
             try
             {
                 using var document = JsonDocument.Parse(json);
@@ -887,7 +985,12 @@ public enum ExtractionErrorKind
     /// <summary>Parsing took longer than <see cref="ExtractionOptions.Timeout"/> and was stopped.</summary>
     TimedOut,
     /// <summary>The file is an image (recognised by content); any text in it can only be read with OCR.</summary>
-    NeedsOcr
+    NeedsOcr,
+    /// <summary>
+    /// The safety gate withheld the document (see <see cref="ExtractionOptions.Safety"/>): <c>Text</c> is empty, the
+    /// reasons are in <c>Findings</c>, and the text is reachable only through <c>Quarantine.GetWithheldText()</c>.
+    /// </summary>
+    Quarantined
 }
 
 /// <summary>Controls how tables are rendered in extracted text.</summary>
@@ -928,6 +1031,13 @@ public sealed record ExtractionOptions
 
     /// <summary>How tables are rendered. Defaults to <see cref="TableMode.KeyValue"/>.</summary>
     public TableMode TableMode { get; init; } = TableMode.KeyValue;
+
+    /// <summary>
+    /// Which table rows are header rows (HTML, DOCX, ODT). Default <see cref="TableHeaderMode.Auto"/>: only rows the
+    /// format marks as headers, so an unmarked first row stays data. <see cref="TableHeaderMode.FirstRow"/> restores
+    /// the pre-2.0.5 behaviour.
+    /// </summary>
+    public TableHeaderMode TableHeaders { get; init; } = TableHeaderMode.Auto;
 
     /// <summary>
     /// Decompression guard. ZIP, EPUB and EML attachments stop (with a warning) after this many total bytes;
@@ -984,6 +1094,24 @@ public sealed record ExtractionOptions
 
     /// <summary>Optional callback invoked when extraction skips part of a container or recovers from a non-fatal issue.</summary>
     public Action<ExtractionWarning>? WarningSink { get; init; }
+
+    /// <summary>
+    /// Safety gate: detectors for content aimed at manipulating an AI reader, and when to withhold it.
+    /// Default: on, quarantine at <see cref="SafetySeverity.High"/>. <see cref="SafetyPolicy.Off"/> disables it.
+    /// </summary>
+    public SafetyPolicy Safety { get; init; } = SafetyPolicy.Default;
+
+    /// <summary>What to do with text the document hides from human readers. Default <see cref="HiddenTextMode.Mark"/>.</summary>
+    public HiddenTextMode HiddenText { get; init; } = HiddenTextMode.Mark;
+
+    /// <summary>
+    /// Optional callback invoked for each <see cref="SafetyFinding"/>, including findings in container parts.
+    /// The results also carry them in <c>Findings</c>.
+    /// </summary>
+    public Action<SafetyFinding>? FindingSink { get; init; }
+
+    /// <summary>Receives parts the safety gate withheld, with their text. Set by the facade.</summary>
+    internal Action<QuarantinedPart>? WithheldSink { get; init; }
 }
 
 /// <summary>
@@ -1039,6 +1167,12 @@ public static class ExtractionWarningCodes
     /// text-level check saw before OCR, so OCR text must go through the same safety checks as any other text.
     /// </summary>
     public const string OcrText = "content.ocr";
+
+    /// <summary>The safety gate found something (a <see cref="SafetyFinding"/>); the message gives its code and severity.</summary>
+    public const string SafetyFinding = "safety.finding";
+
+    /// <summary>The safety gate withheld a part, which a stub line replaces in the text, or the whole document.</summary>
+    public const string ContentWithheld = "safety.withheld";
 }
 
 /// <summary>
@@ -1060,6 +1194,15 @@ public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage
     /// parsing started also carry warnings, notably <see cref="ExtractionWarningCodes.ContentTypeMismatch"/>.
     /// </summary>
     public IReadOnlyList<ExtractionWarning> Warnings { get; init; } = Array.Empty<ExtractionWarning>();
+
+    /// <summary>Safety findings (see <see cref="ExtractionOptions.Safety"/>). Findings below the threshold leave <c>IsSuccess</c> unchanged.</summary>
+    public IReadOnlyList<SafetyFinding> Findings { get; init; } = Array.Empty<SafetyFinding>();
+
+    /// <summary>
+    /// Text the safety gate withheld: the whole document (<see cref="ExtractionErrorKind.Quarantined"/>) or container
+    /// parts replaced by stub lines. <c>null</c> when nothing was withheld.
+    /// </summary>
+    public QuarantinedContent? Quarantine { get; init; }
 
     /// <summary>Creates a successful extraction result.</summary>
     public static ExtractionResult Success(string text, string? extractorName = null, TimeSpan duration = default,
@@ -1090,6 +1233,15 @@ public record ExtractionMetadataResult(bool IsSuccess, string Text, Dictionary<s
 
     /// <summary>Non-fatal issues encountered during extraction, such as skipped archive entries.</summary>
     public IReadOnlyList<ExtractionWarning> Warnings { get; init; } = Array.Empty<ExtractionWarning>();
+
+    /// <summary>Safety findings (see <see cref="ExtractionOptions.Safety"/>). Findings below the threshold leave <c>IsSuccess</c> unchanged.</summary>
+    public IReadOnlyList<SafetyFinding> Findings { get; init; } = Array.Empty<SafetyFinding>();
+
+    /// <summary>
+    /// Text the safety gate withheld: the whole document (<see cref="ExtractionErrorKind.Quarantined"/>) or container
+    /// parts replaced by stub lines. <c>null</c> when nothing was withheld.
+    /// </summary>
+    public QuarantinedContent? Quarantine { get; init; }
 
     /// <summary>Creates a successful metadata extraction result.</summary>
     public static ExtractionMetadataResult Success(string text, Dictionary<string, string> metadata,

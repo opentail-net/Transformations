@@ -13,8 +13,13 @@ public class MsgExtractor : ITextExtractor
         extension.Equals(".msg", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    /// <inheritdoc />
+    /// <remarks>MSGReader parses in calls that cannot be interrupted; cancellation is checked between them.</remarks>
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         using var stream = new MemoryStream(fileData);
         using var msg = new Storage.Message(stream);
 
@@ -39,11 +44,13 @@ public class MsgExtractor : ITextExtractor
         if (sb.Length > 0)
             sb.AppendLine();
 
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         var body = msg.BodyText;
         if (string.IsNullOrWhiteSpace(body) && !string.IsNullOrWhiteSpace(msg.BodyHtml))
         {
+            ExtractionGuard.ThrowIfCancellationRequested(options);
             var htmlExtractor = new HtmlExtractor();
-            body = htmlExtractor.ExtractFromHtml(msg.BodyHtml, null);
+            body = htmlExtractor.ExtractFromHtml(msg.BodyHtml, options);
         }
 
         if (!string.IsNullOrWhiteSpace(body))

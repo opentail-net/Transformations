@@ -14,18 +14,24 @@ public class XmlExtractor : ITextExtractor
         extension.Equals(".config", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    /// <inheritdoc />
+    /// <remarks>Loading is one library call; cancellation is checked before it and while elements are flattened.</remarks>
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         using var stream = new MemoryStream(fileData);
         var doc = XDocument.Load(stream);
         var sb = new StringBuilder();
         if (doc.Root != null)
-            FlattenElement(doc.Root, sb, string.Empty);
+            FlattenElement(doc.Root, sb, string.Empty, options);
         return sb.ToString().Trim();
     }
 
-    private void FlattenElement(XElement element, StringBuilder sb, string prefix)
+    private void FlattenElement(XElement element, StringBuilder sb, string prefix, ExtractionOptions? options)
     {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         string currentPath = string.IsNullOrEmpty(prefix)
             ? element.Name.LocalName
             : $"{prefix}.{element.Name.LocalName}";
@@ -52,6 +58,6 @@ public class XmlExtractor : ITextExtractor
             sb.AppendLine($"{currentPath}: {ownText}");
 
         foreach (var child in element.Elements())
-            FlattenElement(child, sb, currentPath);
+            FlattenElement(child, sb, currentPath, options);
     }
 }

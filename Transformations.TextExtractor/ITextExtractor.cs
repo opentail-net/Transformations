@@ -27,13 +27,9 @@ public interface ITextExtractor
     string ExtractText(byte[] data, ExtractionOptions? options) => ExtractText(data);
 
     /// <summary>
-    /// Extracts text from a stream. The default implementation buffers to a byte array;
+    /// Extracts text from a stream. The default implementation buffers to a byte array, stopping with
+    /// <see cref="ExtractionLimitExceededException"/> past the default <see cref="ExtractionOptions.MaxInputBytes"/>;
     /// override for streaming-capable formats.
     /// </summary>
-    string ExtractText(Stream stream)
-    {
-        using var ms = new MemoryStream();
-        stream.CopyTo(ms);
-        return ExtractText(ms.ToArray());
-    }
+    string ExtractText(Stream stream) => ExtractText(ExtractionGuard.ReadInput(stream, null));
 }

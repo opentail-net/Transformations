@@ -50,7 +50,7 @@ public class EpubExtractor : ITextExtractor
         using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
 
         // 1. Find the OPF path via META-INF/container.xml
-        var opfPath = FindOpfPath(zip, maxBytes);
+        var opfPath = FindOpfPath(zip, maxBytes, ref totalBytes, options);
         if (opfPath == null)
         {
             Warn(options, ExtractionWarningCodes.ContainerManifestMissing, "META-INF/container.xml", "EPUB package manifest could not be found or read.");
@@ -58,7 +58,7 @@ public class EpubExtractor : ITextExtractor
         }
 
         // 2. Parse the OPF to get the spine (reading order)
-        var spineItems = ParseSpine(zip, opfPath, maxBytes);
+        var spineItems = ParseSpine(zip, opfPath, maxBytes, ref totalBytes, options);
         if (spineItems.Count == 0)
             Warn(options, ExtractionWarningCodes.ContainerSpineEmpty, opfPath, "EPUB spine was empty or could not be read.");
 
@@ -103,12 +103,10 @@ public class EpubExtractor : ITextExtractor
 
             try
             {
-                using var entryStream = entry.Open();
-                using var entryMs = CopyToMemoryWithLimit(entryStream, maxBytes - totalBytes, out long copiedBytes);
-                totalBytes += copiedBytes;
-                entryMs.Position = 0;
-
-                var text = _htmlExtractor.ExtractFromStream(entryMs, options);
+                // The budget counts every byte read, including chapters that fail, so headers that under-report
+                // sizes cannot spend it again on each later chapter.
+                var chapter = ExtractionGuard.ReadEntryWithBudget(entry, maxBytes, ref totalBytes, options);
+                var text = _htmlExtractor.ExtractText(chapter, options);
                 if (!string.IsNullOrWhiteSpace(text))
                 {
                     if (pageMarkers)
@@ -119,6 +117,12 @@ public class EpubExtractor : ITextExtractor
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (totalBytes >= maxBytes)
+                {
+                    Warn(options, ExtractionWarningCodes.ContainerByteLimit, entry.FullName,
+                        $"Stopped: EPUB chapters expanded past {maxBytes} decompressed bytes, whatever their headers declared.");
+                    break;
+                }
                 Warn(options, ExtractionWarningCodes.ContainerEntryFailed, entry.FullName, ex.Message);
             }
         }
@@ -126,31 +130,32 @@ public class EpubExtractor : ITextExtractor
         return sb.ToString().Trim();
     }
 
-    private static string? FindOpfPath(ZipArchive zip, long maxBytes)
+    private static string? FindOpfPath(ZipArchive zip, long maxBytes, ref long totalBytes, ExtractionOptions? options)
     {
         var containerEntry = FindEntry(zip, "META-INF/container.xml");
         if (containerEntry == null) return null;
 
         try
         {
-            using var s = ExtractionGuard.OpenLimited(containerEntry, maxBytes);
+            using var s = new MemoryStream(ExtractionGuard.ReadEntryWithBudget(containerEntry, maxBytes, ref totalBytes, options));
             var doc = XDocument.Load(s);
             // <rootfile full-path="..." media-type="application/oebps-package+xml"/>
             var rootfile = doc.Descendants()
                 .FirstOrDefault(e => e.Name.LocalName == "rootfile");
             return rootfile?.Attribute("full-path")?.Value;
         }
-        catch { return null; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
     }
 
-    private static IReadOnlyList<(string Href, string MediaType)> ParseSpine(ZipArchive zip, string opfPath, long maxBytes)
+    private static IReadOnlyList<(string Href, string MediaType)> ParseSpine(ZipArchive zip, string opfPath, long maxBytes,
+        ref long totalBytes, ExtractionOptions? options)
     {
         var entry = FindEntry(zip, opfPath);
         if (entry == null) return [];
 
         try
         {
-            using var s = ExtractionGuard.OpenLimited(entry, maxBytes);
+            using var s = new MemoryStream(ExtractionGuard.ReadEntryWithBudget(entry, maxBytes, ref totalBytes, options));
             var doc = XDocument.Load(s);
 
             // Build id → href + media-type map from manifest
@@ -172,7 +177,7 @@ public class EpubExtractor : ITextExtractor
                 .ToList()
                 .AsReadOnly();
         }
-        catch { return []; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return []; }
     }
 
     private static ZipArchiveEntry? FindEntry(ZipArchive zip, string path)
@@ -183,44 +188,40 @@ public class EpubExtractor : ITextExtractor
                 string.Equals(e.FullName, path, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string ResolveRelativePath(string opfPath, string href)
+    /// <summary>
+    /// Resolves a manifest <c>href</c> (a URL relative to the OPF file) to an archive path: drops any fragment or query,
+    /// percent-decodes it, and resolves <c>.</c> and <c>..</c> segments. A path that climbs above the archive root
+    /// resolves to nothing.
+    /// </summary>
+    internal static string ResolveRelativePath(string opfPath, string href)
     {
         if (string.IsNullOrEmpty(href)) return href;
+        int cut = href.IndexOfAny(['#', '?']);
+        if (cut >= 0) href = href[..cut];
+        try { href = Uri.UnescapeDataString(href); }
+        catch (UriFormatException) { }
+
         var dir = Path.GetDirectoryName(opfPath)?.Replace('\\', '/') ?? string.Empty;
-        return string.IsNullOrEmpty(dir) ? href : $"{dir}/{href}";
+        var combined = href.StartsWith('/') ? href.TrimStart('/') : (string.IsNullOrEmpty(dir) ? href : $"{dir}/{href}");
+
+        var segments = new List<string>();
+        foreach (var segment in combined.Replace('\\', '/').Split('/'))
+        {
+            if (segment is "" or ".") continue;
+            if (segment == "..")
+            {
+                if (segments.Count == 0) return string.Empty;
+                segments.RemoveAt(segments.Count - 1);
+            }
+            else
+                segments.Add(segment);
+        }
+        return string.Join('/', segments);
     }
 
     private static bool IsHtmlMediaType(string mediaType) =>
         mediaType.Contains("html", StringComparison.OrdinalIgnoreCase) ||
         mediaType.Contains("xhtml", StringComparison.OrdinalIgnoreCase);
-
-    private static MemoryStream CopyToMemoryWithLimit(Stream source, long remainingBytes, out long copiedBytes)
-    {
-        var destination = new MemoryStream();
-        var buffer = new byte[81920];
-        copiedBytes = 0;
-
-        try
-        {
-            while (true)
-            {
-                int read = source.Read(buffer, 0, buffer.Length);
-                if (read == 0)
-                    return destination;
-
-                if (copiedBytes + read > remainingBytes)
-                    throw new InvalidDataException("EPUB chapter exceeded the configured decompression byte limit.");
-
-                destination.Write(buffer, 0, read);
-                copiedBytes += read;
-            }
-        }
-        catch
-        {
-            destination.Dispose();
-            throw;
-        }
-    }
 
     private static void Warn(ExtractionOptions? options, string code, string source, string message)
         => options?.WarningSink?.Invoke(new ExtractionWarning(code, source, message));

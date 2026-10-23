@@ -14,11 +14,18 @@ public class MarkdownExtractor : ITextExtractor
         extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public string ExtractText(byte[] fileData)
+    public string ExtractText(byte[] fileData) => ExtractText(fileData, null);
+
+    /// <inheritdoc />
+    /// <remarks>Markdig converts in one call that cannot be interrupted; cancellation is checked before and after it.</remarks>
+    public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
         using var stream = new MemoryStream(fileData);
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         string markdown = reader.ReadToEnd();
-        return Markdown.ToPlainText(markdown) ?? string.Empty;
+        var text = Markdown.ToPlainText(markdown) ?? string.Empty;
+        ExtractionGuard.ThrowIfCancellationRequested(options);
+        return text;
     }
 }

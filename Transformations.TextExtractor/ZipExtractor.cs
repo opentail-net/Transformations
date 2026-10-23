@@ -5,8 +5,10 @@ namespace Transformations.Text;
 
 /// <summary>
 /// Extracts text from ZIP archives by routing each entry through the normal extraction pipeline.
+/// Each entry goes through the safety gate on its own: an entry that reaches <see cref="SafetyPolicy.QuarantineAt"/>
+/// is replaced by a <c>[name] withheld: reason</c> line and the rest of the archive is kept.
 /// </summary>
-public class ZipExtractor : ITextExtractor
+public class ZipExtractor : ITextExtractor, IPartGatedContainer
 {
     private static readonly HashSet<string> PlainTextExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -72,27 +74,30 @@ public class ZipExtractor : ITextExtractor
                 byte[]? stubBytes = null;
                 try
                 {
-                    using var stubStream = entry.Open();
-                    stubBytes = CopyToMemoryWithLimit(stubStream, maxBytes - totalDecompressed, out long stubCopied);
-                    totalDecompressed += stubCopied;
+                    stubBytes = ExtractionGuard.ReadEntryWithBudget(entry, maxBytes, ref totalDecompressed, options);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { }
                 PartStub.Append(sb, $"[{entry.FullName}]", entry.FullName, ext, stubBytes, entry.Length, "ZIP entry", options);
+                if (BudgetSpent(options, entry, totalDecompressed, maxBytes)) break;
                 continue;
             }
 
             try
             {
-                using var entryStream = entry.Open();
-                byte[] entryBytes = CopyToMemoryWithLimit(entryStream, maxBytes - totalDecompressed, out long copiedBytes);
-                totalDecompressed += copiedBytes;
+                byte[] entryBytes = ExtractionGuard.ReadEntryWithBudget(entry, maxBytes, ref totalDecompressed, options);
 
                 if (ContentTypeDetector.DetectMismatch(ext, entryBytes) is { } detected)
                     Warn(options, ExtractionWarningCodes.ContentTypeMismatch, entry.FullName,
                         $"Entry extension '{ext}' does not match its content, which is '{detected}'.");
 
-                var text = TextNormalizer.Normalize(processor.ExtractText(entryBytes, options));
-                if (!string.IsNullOrWhiteSpace(text))
+                using var scope = new SafetyScope(options);
+                var text = TextNormalizer.Normalize(processor.ExtractText(entryBytes, scope.Options));
+                if (scope.Complete(text, entry.FullName, scanText: processor is not IPartGatedContainer) is { } withheld)
+                {
+                    sb.AppendLine($"[{entry.FullName}] withheld: {withheld}");
+                    sb.AppendLine();
+                }
+                else if (!string.IsNullOrWhiteSpace(text))
                 {
                     sb.AppendLine(processor is ImageExtractor ? $"[{entry.FullName}] (OCR)" : $"[{entry.FullName}]");
                     sb.AppendLine(text);
@@ -101,6 +106,7 @@ public class ZipExtractor : ITextExtractor
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (BudgetSpent(options, entry, totalDecompressed, maxBytes)) break;
                 Warn(options, ExtractionWarningCodes.ContainerEntryFailed, entry.FullName, ex.Message);
             }
         }
@@ -108,31 +114,23 @@ public class ZipExtractor : ITextExtractor
         return sb.ToString().Trim();
     }
 
+    /// <summary>
+    /// True once the archive's decompression budget is used up, counting bytes read by entries that failed. A header
+    /// that under-reports an entry's size cannot make the extractor spend the budget again on every later entry.
+    /// </summary>
+    private static bool BudgetSpent(ExtractionOptions? options, ZipArchiveEntry entry, long total, long maxBytes)
+    {
+        if (total < maxBytes) return false;
+        Warn(options, ExtractionWarningCodes.ContainerByteLimit, entry.FullName,
+            $"Stopped: ZIP entries expanded past {maxBytes} decompressed bytes, whatever their headers declared.");
+        return true;
+    }
+
     private ITextExtractor? ResolveProcessor(string extension)
         => _extractors.FirstOrDefault(e => e.CanHandle(extension) && e is not TxtExtractor)
             ?? (PlainTextExtensions.Contains(extension)
                 ? _extractors.FirstOrDefault(e => e is TxtExtractor)
                 : null);
-
-    private static byte[] CopyToMemoryWithLimit(Stream source, long remainingBytes, out long copiedBytes)
-    {
-        using var destination = new MemoryStream();
-        var buffer = new byte[81920];
-        copiedBytes = 0;
-
-        while (true)
-        {
-            int read = source.Read(buffer, 0, buffer.Length);
-            if (read == 0)
-                return destination.ToArray();
-
-            if (copiedBytes + read > remainingBytes)
-                throw new InvalidDataException("ZIP entry exceeded the configured decompression byte limit.");
-
-            destination.Write(buffer, 0, read);
-            copiedBytes += read;
-        }
-    }
 
     private static void Warn(ExtractionOptions? options, string code, string source, string message)
         => options?.WarningSink?.Invoke(new ExtractionWarning(code, source, message));

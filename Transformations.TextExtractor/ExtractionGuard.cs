@@ -87,6 +87,67 @@ internal static class ExtractionGuard
         }
     }
 
+    /// <summary>
+    /// Decompresses <paramref name="entry"/> against a budget shared by the whole container. Bytes are added to
+    /// <paramref name="total"/> as they are read, so a failed or oversized entry still uses up the budget, whatever its
+    /// header declared. Throws <see cref="ExtractionLimitExceededException"/> once <paramref name="total"/> passes
+    /// <paramref name="maxBytes"/>; callers then stop processing the container.
+    /// </summary>
+    internal static byte[] ReadEntryWithBudget(ZipArchiveEntry entry, long maxBytes, ref long total, ExtractionOptions? options)
+    {
+        using var source = entry.Open();
+        using var destination = new MemoryStream();
+        var buffer = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            int read;
+            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                total += read;
+                if (total > maxBytes)
+                    throw new ExtractionLimitExceededException(
+                        $"Container entries expanded past {maxBytes} decompressed bytes (ExtractionOptions.MaxDecompressedBytes).");
+                destination.Write(buffer, 0, read);
+                ThrowIfCancellationRequested(options);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+        return destination.ToArray();
+    }
+
+    /// <summary>
+    /// Buffers a caller's stream for the public stream overloads of individual extractors, with the same input limit
+    /// (<see cref="ExtractionOptions.MaxInputBytes"/>, default 256 MB) and cancellation checks as the facade.
+    /// </summary>
+    internal static byte[] ReadInput(Stream stream, ExtractionOptions? options)
+    {
+        long? limit = (options ?? ExtractionOptions.Default).MaxInputBytes;
+        if (limit is long known && stream.CanSeek && stream.Length - stream.Position > known)
+            throw new ExtractionLimitExceededException($"Input is larger than {known} bytes (ExtractionOptions.MaxInputBytes).");
+
+        using var ms = new MemoryStream();
+        var buffer = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                ThrowIfCancellationRequested(options);
+                if (limit is long max && ms.Length + read > max)
+                    throw new ExtractionLimitExceededException($"Input is larger than {max} bytes (ExtractionOptions.MaxInputBytes).");
+                ms.Write(buffer, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+        return ms.ToArray();
+    }
+
     /// <summary>Opens a ZIP entry for reading, failing once more than <paramref name="maxBytes"/> are read from it.</summary>
     internal static Stream OpenLimited(ZipArchiveEntry entry, long maxBytes)
         => new LimitedReadStream(entry.Open(), maxBytes);

@@ -44,15 +44,48 @@ internal static class ContentTypeDetector
                 prefix.StartsWith("<html", StringComparison.OrdinalIgnoreCase))
                 return ".html";
 
-            // EML: RFC 2822 headers
-            if (prefix.StartsWith("MIME-Version:", StringComparison.OrdinalIgnoreCase) ||
-                prefix.StartsWith("From:", StringComparison.Ordinal) ||
-                prefix.StartsWith("Received:", StringComparison.OrdinalIgnoreCase) ||
-                prefix.StartsWith("Date:", StringComparison.OrdinalIgnoreCase))
+            if (LooksLikeEmail(data))
                 return ".eml";
         }
 
         return null;
+    }
+
+    private static readonly HashSet<string> EmailHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "From", "To", "Cc", "Bcc", "Subject", "Date", "Received", "Return-Path", "Message-ID", "MIME-Version",
+        "Content-Type", "Content-Transfer-Encoding", "Reply-To", "Sender", "In-Reply-To", "References", "Delivered-To",
+    };
+
+    /// <summary>
+    /// RFC 5322 message: the text starts with a block of header lines (<c>Name: value</c>, folded continuation lines)
+    /// that contains at least two distinct well-known email headers and ends at a blank line. One header-like line
+    /// (a note starting with <c>Date: tomorrow</c>) is not enough.
+    /// </summary>
+    private static bool LooksLikeEmail(byte[] data)
+    {
+        var head = Encoding.ASCII.GetString(data, 0, Math.Min(data.Length, 8192));
+        var lines = head.Split('\n');
+        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // The last line may be cut off by the 8 KB window, so it is not judged.
+        for (int i = 0; i < lines.Length - 1; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            if (line.Length == 0)
+                return i > 0 && known.Count >= 2; // header/body separator
+            if (line[0] is ' ' or '\t')
+            {
+                if (i == 0) return false;
+                continue; // folded header continuation
+            }
+            int colon = line.IndexOf(':');
+            if (colon <= 0 || !line.AsSpan(0, colon).ToString().All(c => c is > ' ' and < (char)127 && c != ':'))
+                return false;
+            var name = line[..colon];
+            if (EmailHeaders.Contains(name)) known.Add(name);
+        }
+        // No blank line inside the window: a long header block, judged on what was seen.
+        return lines.Length > 1 && known.Count >= 3;
     }
 
     // Stream names are stored UTF-16LE in the compound file's directory sectors.
@@ -111,7 +144,11 @@ internal static class ContentTypeDetector
         // [Content_Types].xml, and archives/packages are ZIPs by definition.
         ("zip", [".zip", ".odt", ".ods", ".odp", ".odg", ".jar", ".apk", ".nupkg", ".vsix", ".xpi", ".whl", ".kmz", ".3mf"]),
         ("image", [".png", ".jpg", ".jpeg", ".jpe", ".gif", ".bmp", ".dib", ".tif", ".tiff", ".webp"]),
-        ("ole", [".msg", ".doc", ".dot", ".xls", ".xlt", ".ppt", ".pps", ".pot", ".msi", ".vsd", ".pub"]));
+        // Outlook messages are recognised by their unique "__substg1.0_" property streams, so an MSG disguised as a
+        // .doc (or a .msg that is not one) is a mismatch. Word, Excel and PowerPoint files stay one family: they
+        // embed each other as OLE objects, so a stream name alone cannot tell them apart.
+        ("ole-msg", [".msg"]),
+        ("ole", [".doc", ".dot", ".xls", ".xlt", ".ppt", ".pps", ".pot", ".msi", ".vsd", ".pub"]));
 
     private static Dictionary<string, string> BuildFamilies(params (string Family, string[] Extensions)[] groups)
     {

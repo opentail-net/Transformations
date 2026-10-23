@@ -1,7 +1,23 @@
-# Transformations.Text — Phase 3: safety gates and quarantine (plan, not built)
+# Transformations.Text — Phase 3: safety gates and quarantine (BUILT 2026-10-23, version 2.0.5.1)
 
-Written 2026-10-23. Companion to OCR_AND_QUARANTINE_PLAN.md (phases 1–2 built). Not yet reviewed against the code with
-`planning_review`, which is still to do.
+Written 2026-10-23. Companion to OCR_AND_QUARANTINE_PLAN.md (phases 1–2 built). Build steps 1–4 are built; tests in
+`Transformations.Tests/TextExtractorSafetyGateTests.cs`. The README section "Safety gates and quarantine" is the user-facing
+description. Not built: `RejectAt` (dropped: `QuarantineAt` plus `TrustedSource` cover the cases), an analyzer rule for
+`GetWithheldText()` (documented as an escape hatch in XML docs and README instead).
+
+### How it was built (differences from the plan below)
+- Per-part quarantine does not record spans in the facade. Instead ZIP and EML (`IPartGatedContainer`) gate each part
+  themselves through `SafetyScope`, which captures findings raised while that part is extracted, scans its text, and
+  withholds it. The facade scans the whole text only for non-container documents. EPUB is gated as one document.
+- The EML message body (headers + body) is its own part, `message body`.
+- Combination with instruction wording (D7) is proximity-based, not document-wide: zero-width characters must sit inside
+  the matched phrase, bidi controls on the same line, and hidden-text findings (D4–D6) check the hidden text itself.
+  Document-wide combination would quarantine ordinary pages with a stray ZWSP that quote a jailbreak phrase.
+- "you are now" alone is not instruction wording ("you are now subscribed"); only role-switching continuations are.
+- D8 (OCR) applies when any `content.ocr` warning was raised in the part.
+- Open questions answered by default: the reader is assumed to be an AI pipeline; caller phrases are supported
+  (`SafetyPolicy.AdditionalInstructionPhrases`). PdfPig 0.1.9 `Letter.RenderingMode`, `PointSize`, `GlyphRectangle`
+  and `Page.CropBox` were verified in the package's XML docs.
 
 ## Goal
 Detect content aimed at manipulating an AI reader (hidden prompts) and other high-risk signals. Give each result,

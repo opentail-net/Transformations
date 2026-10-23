@@ -33,7 +33,9 @@ public class OdtExtractor : ITextExtractor
     }
 
     /// <inheritdoc />
-    public string ExtractText(Stream stream) => ExtractFromStream(stream, null);
+    /// <remarks>The stream is buffered (up to the default <see cref="ExtractionOptions.MaxInputBytes"/>) and checked against the
+    /// decompression limits, exactly like the byte-array overload.</remarks>
+    public string ExtractText(Stream stream) => ExtractText(ExtractionGuard.ReadInput(stream, null), null);
 
     private static string ExtractFromStream(Stream stream, ExtractionOptions? options)
     {
@@ -56,9 +58,17 @@ public class OdtExtractor : ITextExtractor
         var pages = body.Elements(DrawNs + "page").ToList();
         if (pages.Count > 0)
         {
+            // StartPage, EndPage and MaxPages select slides, as they do for PPTX.
+            int start = options?.StartPage ?? 1;
+            int end = options?.EndPage ?? int.MaxValue;
+            if (options?.MaxPages is int maxPages)
+                end = Math.Min(end, (start - 1) + maxPages);
+
             int slideNum = 1;
             foreach (var page in pages)
             {
+                if (slideNum < start) { slideNum++; continue; }
+                if (slideNum > end) break;
                 var pageName = page.Attribute(DrawNs + "name")?.Value
                     ?? page.Attribute(PresentationNs + "class")?.Value
                     ?? $"Slide {slideNum}";
@@ -92,7 +102,7 @@ public class OdtExtractor : ITextExtractor
             else if (name == TableNs + "table")
             {
                 if (tableMode != TableMode.Omit)
-                    AppendTable(child, sb, tableMode);
+                    AppendTable(child, sb, tableMode, options);
             }
             else
             {
@@ -101,59 +111,33 @@ public class OdtExtractor : ITextExtractor
         }
     }
 
-    private static void AppendTable(XElement table, StringBuilder sb, TableMode mode)
+    /// <summary>
+    /// Renders an ODF table. Rows in <c>table:table-header-rows</c> are header rows; rows may also be grouped in
+    /// <c>table:table-rows</c> or <c>table:table-row-group</c>. Without header rows, every row is data
+    /// (see <see cref="ExtractionOptions.TableHeaders"/>).
+    /// </summary>
+    private static void AppendTable(XElement table, StringBuilder sb, TableMode mode, ExtractionOptions? options)
     {
-        var rows = table.Elements(TableNs + "table-row").ToList();
+        var headerRows = table.Elements(TableNs + "table-header-rows").Elements(TableNs + "table-row").ToList();
+        var rows = headerRows.Concat(OwnRows(table)).ToList();
         if (rows.Count == 0) return;
 
         var grid = rows.Select(r => r.Elements(TableNs + "table-cell")
             .Select(c => c.Value.Trim())
             .ToArray()).ToList();
 
-        if (grid.Count == 0) return;
-        var headers = grid[0];
+        TableRenderer.Append(sb, grid, mode, TableRenderer.HasHeaderRow(grid.Count, headerRows.Count > 0, options));
+    }
 
-        switch (mode)
+    private static IEnumerable<XElement> OwnRows(XElement container)
+    {
+        foreach (var child in container.Elements())
         {
-            case TableMode.Markdown:
-                var mdHeaders = headers.Select(h => h.Replace("|", "\\|")).ToArray();
-                sb.Append("| ").Append(string.Join(" | ", mdHeaders)).AppendLine(" |");
-                sb.Append("| ").Append(string.Join(" | ", mdHeaders.Select(_ => "---"))).AppendLine(" |");
-                for (int r = 1; r < grid.Count; r++)
-                {
-                    if (grid[r].All(c => string.IsNullOrWhiteSpace(c))) continue;
-                    sb.Append("| ").Append(string.Join(" | ", grid[r].Select(v => v.Replace("|", "\\|")))).AppendLine(" |");
-                }
-                sb.AppendLine();
-                break;
-
-            case TableMode.Csv:
-                sb.AppendLine(string.Join(",", headers.Select(DocxExtractor.EscapeCsv)));
-                for (int r = 1; r < grid.Count; r++)
-                    sb.AppendLine(string.Join(",", grid[r].Select(DocxExtractor.EscapeCsv)));
-                sb.AppendLine();
-                break;
-
-            default: // KeyValue
-                // A one-row table has no data rows to label, so its only row is content, not headers.
-                bool hasHeaders = grid.Count > 1 && headers.Any(h => !string.IsNullOrWhiteSpace(h));
-                int startRow = hasHeaders ? 1 : 0;
-                for (int r = startRow; r < grid.Count; r++)
-                {
-                    var cells = grid[r];
-                    var parts = new List<string>();
-                    for (int c = 0; c < cells.Length; c++)
-                    {
-                        if (string.IsNullOrWhiteSpace(cells[c])) continue;
-                        if (hasHeaders && c < headers.Length && !string.IsNullOrWhiteSpace(headers[c]))
-                            parts.Add($"{headers[c]}: {cells[c]}");
-                        else
-                            parts.Add(cells[c]);
-                    }
-                    if (parts.Count > 0)
-                        sb.AppendLine(string.Join(" | ", parts));
-                }
-                break;
+            if (child.Name == TableNs + "table-row")
+                yield return child;
+            else if (child.Name == TableNs + "table-rows" || child.Name == TableNs + "table-row-group")
+                foreach (var row in OwnRows(child))
+                    yield return row;
         }
     }
 }

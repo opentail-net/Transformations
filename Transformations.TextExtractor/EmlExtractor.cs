@@ -5,8 +5,10 @@ namespace Transformations.Text;
 
 /// <summary>
 /// Extracts text and metadata from EML files, optionally parsing attachments.
+/// The safety gate checks the message (headers and body) and each attachment on its own: a part that reaches
+/// <see cref="SafetyPolicy.QuarantineAt"/> is replaced by a <c>withheld: reason</c> line and the rest is kept.
 /// </summary>
-public class EmlExtractor : ITextExtractor
+public class EmlExtractor : ITextExtractor, IPartGatedContainer
 {
     private static readonly HashSet<string> PlainTextExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -43,6 +45,22 @@ public class EmlExtractor : ITextExtractor
     {
         using var stream = new MemoryStream(fileData);
         var message = MimeMessage.Load(stream);
+
+        using var bodyScope = new SafetyScope(options);
+        var messageText = TextNormalizer.Normalize(ExtractMessageText(message, bodyScope.Options));
+        var sb = new StringBuilder();
+        sb.Append(bodyScope.Complete(messageText, "message body", scanText: true) is { } withheld
+            ? $"[Message body] withheld: {withheld}"
+            : messageText);
+
+        if (_innerExtractors != null)
+            AppendAttachments(message, sb, _innerExtractors, options);
+
+        return sb.ToString().Trim();
+    }
+
+    private static string ExtractMessageText(MimeMessage message, ExtractionOptions options)
+    {
         var sb = new StringBuilder();
 
         string formattedFrom = FormatSenders(message);
@@ -61,8 +79,9 @@ public class EmlExtractor : ITextExtractor
         if (sb.Length > 0)
             sb.AppendLine();
 
+        // A plain-text part that is only whitespace is a placeholder; the HTML part then carries the message.
         string bodyText = string.Empty;
-        if (!string.IsNullOrEmpty(message.TextBody))
+        if (!string.IsNullOrWhiteSpace(message.TextBody))
         {
             bodyText = message.TextBody;
         }
@@ -73,11 +92,7 @@ public class EmlExtractor : ITextExtractor
         }
 
         sb.Append(bodyText);
-
-        if (_innerExtractors != null)
-            AppendAttachments(message, sb, _innerExtractors, options);
-
-        return sb.ToString().Trim();
+        return sb.ToString();
     }
 
     private static void AppendAttachments(
@@ -137,8 +152,14 @@ public class EmlExtractor : ITextExtractor
                     Warn(options, ExtractionWarningCodes.ContentTypeMismatch, fileName,
                         $"Attachment extension '{ext}' does not match its content, which is '{detected}'.");
 
-                var attachText = extractor.ExtractText(attachmentBytes, options);
-                if (!string.IsNullOrWhiteSpace(attachText))
+                using var scope = new SafetyScope(options);
+                var attachText = TextNormalizer.Normalize(extractor.ExtractText(attachmentBytes, scope.Options));
+                if (scope.Complete(attachText, fileName, scanText: extractor is not IPartGatedContainer) is { } withheld)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"[Attachment: {fileName}] withheld: {withheld}");
+                }
+                else if (!string.IsNullOrWhiteSpace(attachText))
                 {
                     sb.AppendLine();
                     sb.AppendLine(extractor is ImageExtractor ? $"[Attachment: {fileName}] (OCR)" : $"[Attachment: {fileName}]");

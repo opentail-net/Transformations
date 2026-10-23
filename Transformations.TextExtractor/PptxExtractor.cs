@@ -27,7 +27,9 @@ public class PptxExtractor : ITextExtractor
     }
 
     /// <inheritdoc />
-    public string ExtractText(Stream stream) => ExtractFromStream(stream, null);
+    /// <remarks>The stream is buffered (up to the default <see cref="ExtractionOptions.MaxInputBytes"/>) and checked against the
+    /// decompression limits, exactly like the byte-array overload.</remarks>
+    public string ExtractText(Stream stream) => ExtractText(ExtractionGuard.ReadInput(stream, null), null);
 
     private static string ExtractFromStream(Stream stream, ExtractionOptions? options)
     {
