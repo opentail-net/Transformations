@@ -174,7 +174,7 @@ internal static class SafetyGate
         var folded = Fold(text);
         var instructions = FindInstructions(folded, policy);
 
-        ScanTagCharacters(text, source, findings);
+        ScanTagCharacters(text, source, policy, findings);
         ScanBidi(text, source, instructions, folded, findings);
         ScanZeroWidth(text, source, instructions, folded, findings);
 
@@ -251,53 +251,195 @@ internal static class SafetyGate
 
     // ── D1: tag characters ───────────────────────────────────────────────────
 
-    private static void ScanTagCharacters(string text, string source, List<SafetyFinding> findings)
+    // Emoji tag sequences that are standard (RGI) flags: black flag U+1F3F4, the subdivision code as tag letters,
+    // CANCEL TAG U+E007F. These are the only tag sequences in Unicode's recommended emoji set.
+    private static readonly HashSet<string> StandardFlagTags = new(StringComparer.Ordinal) { "gbeng", "gbsct", "gbwls" };
+
+    // Words that do not occur in real subdivision codes but do in instructions spelt across chained flags.
+    private static readonly string[] FlagKeywords =
+        ["ignore", "disregard", "instruct", "prompt", "assistant", "jailbreak", "override", "donottell", "previous"];
+
+    /// <summary>
+    /// Tag characters are invisible but models read them, so hidden text spelt with them is High. Flag emoji are the
+    /// one legitimate use: the England, Scotland and Wales flags are ignored; any other well-formed flag sequence
+    /// (black flag, 2–6 tag letters/digits, CANCEL TAG) is Low. Tag characters outside such a sequence, or flag
+    /// sequences whose decoded letters contain instruction wording, are High.
+    /// </summary>
+    private static void ScanTagCharacters(string text, string source, SafetyPolicy policy, List<SafetyFinding> findings)
     {
-        int first = -1, count = 0;
+        int first = -1, stray = 0, flagSequences = 0, firstFlag = -1;
         var decoded = new StringBuilder();
+        var flagText = new StringBuilder();
         for (int i = 0; i < text.Length - 1; i++)
         {
-            if (!char.IsHighSurrogate(text[i]) || !char.IsLowSurrogate(text[i + 1])) continue;
-            int cp = char.ConvertToUtf32(text[i], text[i + 1]);
-            if (cp is < 0xE0000 or > 0xE007F) continue;
+            if (TagSequenceLength(text, i) is var (length, spec))
+            {
+                if (!StandardFlagTags.Contains(spec))
+                {
+                    flagSequences++;
+                    if (firstFlag < 0) firstFlag = i;
+                    flagText.Append(spec).Append(' ');
+                }
+                i += length - 1;
+                continue;
+            }
+
+            if (TagCodePoint(text, i) is not int cp) continue;
             if (first < 0) first = i;
-            count++;
+            stray++;
             if (cp is >= 0xE0020 and <= 0xE007E && decoded.Length < MaxExcerpt)
                 decoded.Append((char)(cp - 0xE0000));
             i++;
         }
-        if (count == 0) return;
 
-        findings.Add(new SafetyFinding(SafetyFindingCodes.TagCharacters, SafetySeverity.High, source,
-            $"{count} invisible Unicode tag characters (U+E0000–E007F); they spell hidden text an AI model can read.",
-            decoded.Length > 0 ? Truncate(decoded.ToString()) : Excerpt(text, first, 40)) { Offset = first });
+        if (stray > 0)
+            findings.Add(new SafetyFinding(SafetyFindingCodes.TagCharacters, SafetySeverity.High, source,
+                $"{stray} invisible Unicode tag characters (U+E0000–E007F) outside a flag emoji; they spell hidden text an AI model can read.",
+                decoded.Length > 0 ? Truncate(decoded.ToString()) : Excerpt(text, first, 40)) { Offset = first });
+
+        if (flagSequences > 0)
+        {
+            // Non-standard flags could be chained to spell words. Tag letters carry no spaces, so the run of letters is
+            // checked for instruction keywords rather than for whole phrases.
+            var spelled = flagText.ToString().Trim();
+            var letters = spelled.Replace(" ", "");
+            bool instruction = FlagKeywords.Any(k => letters.Contains(k, StringComparison.Ordinal))
+                || ContainsInstruction(spelled, policy);
+            findings.Add(new SafetyFinding(SafetyFindingCodes.TagCharacters,
+                instruction ? SafetySeverity.High : SafetySeverity.Low, source,
+                instruction
+                    ? $"{flagSequences} non-standard flag emoji whose hidden tag letters spell instruction wording."
+                    : $"{flagSequences} non-standard flag emoji (tag sequences other than the England, Scotland and Wales flags).",
+                Truncate(spelled)) { Offset = firstFlag });
+        }
+    }
+
+    private static int? TagCodePoint(string text, int i)
+    {
+        if (i + 1 >= text.Length || !char.IsHighSurrogate(text[i]) || !char.IsLowSurrogate(text[i + 1])) return null;
+        int cp = char.ConvertToUtf32(text[i], text[i + 1]);
+        return cp is >= 0xE0000 and <= 0xE007F ? cp : null;
+    }
+
+    /// <summary>
+    /// A flag emoji tag sequence at <paramref name="i"/>: U+1F3F4, 2–6 tag characters for a–z or 0–9, U+E007F.
+    /// Returns its length in UTF-16 units and the decoded subdivision code, or <c>null</c>.
+    /// </summary>
+    private static (int Length, string Spec)? TagSequenceLength(string text, int i)
+    {
+        if (i + 1 >= text.Length || !char.IsHighSurrogate(text[i]) || !char.IsLowSurrogate(text[i + 1])
+            || char.ConvertToUtf32(text[i], text[i + 1]) != 0x1F3F4)
+            return null;
+
+        var spec = new StringBuilder();
+        int j = i + 2;
+        while (TagCodePoint(text, j) is int cp)
+        {
+            if (cp == 0xE007F)
+                return spec.Length is >= 2 and <= 6 ? (j + 2 - i, spec.ToString()) : null;
+            char c = (char)(cp - 0xE0000);
+            if (c is not (>= 'a' and <= 'z' or >= '0' and <= '9') || spec.Length >= 6)
+                return null;
+            spec.Append(c);
+            j += 2;
+        }
+        return null;
     }
 
     // ── D2: bidi controls ────────────────────────────────────────────────────
 
-    private static bool IsBidiControl(char c) => c is >= '‪' and <= '‮' or >= '⁦' and <= '⁩';
+    private static bool IsBidiControl(char c) => c is >= '\u202A' and <= '\u202E' or >= '\u2066' and <= '\u2069';
 
+    /// <summary>
+    /// Bidi controls are judged in their local context, not by whether the line contains any right-to-left letter
+    /// (one Hebrew letter elsewhere on the line must not excuse a control):
+    /// <list type="bullet">
+    /// <item>An override (LRO U+202D, RLO U+202E) is suspicious when the text it governs contains letters of the
+    /// opposite direction: that reverses what a reader sees (the "Trojan Source" trick).</item>
+    /// <item>An embedding or isolate (U+202A, U+202B, U+2066–2068) is legitimate when the text it governs, or the
+    /// nearest letter on either side, is right-to-left: that is ordinary mixed-direction writing.</item>
+    /// </list>
+    /// Terminators (PDF U+202C, PDI U+2069) only close spans and are not counted. Any control whose span overlaps
+    /// instruction wording, and any suspicious control on the same line as instruction wording, is High.
+    /// </summary>
     private static void ScanBidi(string text, string source, List<Match> instructions, Folded folded, List<SafetyFinding> findings)
     {
         int count = 0, first = -1;
         bool nearInstruction = false;
         for (int i = 0; i < text.Length; i++)
         {
-            if (!IsBidiControl(text[i])) continue;
+            if (!IsBidiOpener(text[i])) continue;
             var (lineStart, lineEnd) = LineAround(text, i);
-            if (HasRightToLeft(text, lineStart, lineEnd)) continue; // genuine RTL text uses these
+            int spanEnd = GovernedEnd(text, i, lineEnd);
+
+            bool overlapsInstruction = instructions.Any(m => InstructionStart(folded, m) < spanEnd && InstructionEnd(folded, m) > i);
+            bool suspicious = !IsLegitimateBidi(text, i, spanEnd, lineStart, lineEnd);
+            if (!suspicious && !overlapsInstruction) continue;
+
             count++;
             if (first < 0) first = i;
-            nearInstruction |= instructions.Any(m => folded.Map[m.Index] < lineEnd && folded.Map[m.Index + m.Length - 1] >= lineStart);
+            nearInstruction |= overlapsInstruction
+                || instructions.Any(m => InstructionStart(folded, m) < lineEnd && InstructionEnd(folded, m) > lineStart);
         }
         if (count == 0) return;
 
         findings.Add(new SafetyFinding(SafetyFindingCodes.BidiControl,
             nearInstruction ? SafetySeverity.High : SafetySeverity.Medium, source,
             nearInstruction
-                ? $"{count} bidi override/isolate characters in left-to-right text, on the same line as instruction wording."
-                : $"{count} bidi override/isolate characters in left-to-right text; they can make text read differently than it displays.",
+                ? $"{count} bidi override/embedding characters around or on the same line as instruction wording."
+                : $"{count} bidi override/embedding characters that make text read differently than it displays.",
             Excerpt(text, Math.Max(0, first - 40), 80)) { Offset = first });
+    }
+
+    private static bool IsBidiOpener(char c) => c is >= '\u202A' and <= '\u202E' and not '\u202C' or >= '\u2066' and <= '\u2068';
+
+    private static int InstructionStart(Folded folded, Match m) => folded.Map[m.Index];
+    private static int InstructionEnd(Folded folded, Match m) => folded.Map[m.Index + m.Length - 1] + 1;
+
+    /// <summary>End (exclusive) of the text a bidi opener governs: its matching PDF/PDI, or the end of the line.</summary>
+    private static int GovernedEnd(string text, int opener, int lineEnd)
+    {
+        bool isolate = text[opener] is >= '\u2066' and <= '\u2068';
+        char close = isolate ? '\u2069' : '\u202C';
+        int depth = 0;
+        for (int j = opener + 1; j < lineEnd; j++)
+        {
+            char c = text[j];
+            if (isolate ? c is >= '\u2066' and <= '\u2068' : c is >= '\u202A' and <= '\u202E' and not '\u202C')
+                depth++;
+            else if (c == close && depth-- == 0)
+                return j;
+        }
+        return lineEnd;
+    }
+
+    private static bool IsLegitimateBidi(string text, int opener, int spanEnd, int lineStart, int lineEnd)
+    {
+        bool spanRtl = false, spanLtr = false;
+        for (int j = opener + 1; j < spanEnd; j++)
+        {
+            char c = text[j];
+            if (IsRightToLeft(c)) spanRtl = true;
+            else if (char.IsLetterOrDigit(c)) spanLtr = true; // an override reverses digits too: 0001 shows as 1000
+        }
+
+        char control = text[opener];
+        if (control == '\u202E') return !spanLtr; // RLO over left-to-right letters reverses them
+        if (control == '\u202D') return !spanRtl; // LRO over right-to-left letters reverses them
+
+        if (spanRtl) return true;
+        return NearestLetterIsRtl(text, opener - 1, lineStart, -1) || NearestLetterIsRtl(text, spanEnd + 1, lineEnd, +1);
+    }
+
+    private static bool NearestLetterIsRtl(string text, int from, int limit, int step)
+    {
+        for (int j = from; step < 0 ? j >= limit : j < limit; j += step)
+        {
+            char c = text[j];
+            if (IsRightToLeft(c)) return true;
+            if (char.IsLetter(c)) return false;
+        }
+        return false;
     }
 
     private static (int Start, int End) LineAround(string text, int i)
@@ -307,19 +449,12 @@ internal static class SafetyGate
         return (start, end < 0 ? text.Length : end);
     }
 
-    private static bool HasRightToLeft(string text, int start, int end)
-    {
-        for (int i = start; i < end; i++)
-            if (IsRightToLeft(text[i])) return true;
-        return false;
-    }
-
     private static bool IsRightToLeft(char c)
         => c is >= '֐' and <= 'ࣿ' or >= 'יִ' and <= '﷿' or >= 'ﹰ' and <= '﻾';
 
     // ── D3: zero-width characters ────────────────────────────────────────────
 
-    private static bool IsZeroWidth(char c) => c is '​' or '‌' or '‍' or '⁠' or '﻿';
+    private static bool IsZeroWidth(char c) => c is '\u200B' or '\u200C' or '\u200D' or '\u2060' or '\uFEFF';
 
     private static void ScanZeroWidth(string text, string source, List<Match> instructions, Folded folded, List<SafetyFinding> findings)
     {
@@ -333,7 +468,7 @@ internal static class SafetyGate
         }
         if (count == 0) return;
 
-        // Zero-width characters inside instruction wording are a filter-evasion trick ("ig​nore previous instructions").
+        // Zero-width characters inside instruction wording are a filter-evasion trick ("ig\u200Bnore previous instructions").
         bool insideInstruction = instructions.Any(m =>
         {
             int start = folded.Map[m.Index], end = folded.Map[m.Index + m.Length - 1];
@@ -353,14 +488,14 @@ internal static class SafetyGate
     private static bool IsLegitimateZeroWidth(string text, int i)
     {
         char c = text[i];
-        if (c == '﻿' && i == 0) return true; // byte-order mark
-        if (c is not ('‌' or '‍')) return false;
+        if (c == '\uFEFF' && i == 0) return true; // byte-order mark
+        if (c is not ('\u200C' or '\u200D')) return false;
 
         char prev = i > 0 ? text[i - 1] : '\0';
         char next = i + 1 < text.Length ? text[i + 1] : '\0';
 
-        // ZWJ joins emoji into one glyph (👩‍💻, family emoji): surrogate pairs, symbols, variation selector 16.
-        if (c == '‍' && IsEmojiSide(prev) && IsEmojiSide(next)) return true;
+        // ZWJ joins emoji into one glyph (👩\u200D💻, family emoji): surrogate pairs, symbols, variation selector 16.
+        if (c == '\u200D' && IsEmojiSide(prev) && IsEmojiSide(next)) return true;
 
         // ZWNJ/ZWJ are required spelling in Indic, Arabic-script (Persian, Urdu), Myanmar, Khmer and Sinhala text.
         return IsJoiningScript(prev) || IsJoiningScript(next);
@@ -371,7 +506,7 @@ internal static class SafetyGate
            || CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.OtherSymbol;
 
     private static bool IsJoiningScript(char c)
-        => c is >= '؀' and <= 'ࣿ' or >= 'ऀ' and <= '෿' or >= 'က' and <= '႟'
+        => c is >= '\u0600' and <= 'ࣿ' or >= 'ऀ' and <= '෿' or >= 'က' and <= '႟'
             or >= 'ក' and <= '៿' or >= 'ﭐ' and <= '﷿' or >= 'ﹰ' and <= '﻾';
 
     // ── Folding: drop invisible characters so they cannot split instruction wording ──
@@ -385,7 +520,7 @@ internal static class SafetyGate
         for (int i = 0; i < text.Length; i++)
         {
             char c = text[i];
-            if (IsZeroWidth(c) || IsBidiControl(c) || c == '­') continue;
+            if (IsZeroWidth(c) || IsBidiControl(c) || c == '\u00AD') continue;
             if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])
                 && char.ConvertToUtf32(c, text[i + 1]) is >= 0xE0000 and <= 0xE007F)
             {

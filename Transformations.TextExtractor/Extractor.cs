@@ -250,13 +250,13 @@ public class TextExtractor : IDocumentTextExtractor
         var safety = new SafetyCollector();
         var mismatch = ContentTypeDetector.DetectMismatch(Path.GetExtension(fileName), content);
         using var cancellation = new ExtractionCancellationScope(options, callerToken);
-        var effectiveOptions = WithWarningCapture(options, warnings, safety) with { CancellationToken = cancellation.Token };
+        var effectiveOptions = WithWarningCapture(options, warnings, safety, out var callerSinks) with { CancellationToken = cancellation.Token };
 
         _logger.LogDebug("Extracting {FileName} using {Extractor}", fileName, processor!.GetType().Name);
         var sw = Stopwatch.StartNew();
         try
         {
-            var text = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, ref processor, out var withheld);
+            var text = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, callerSinks, ref processor, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
             if (withheld != null)
@@ -297,12 +297,12 @@ public class TextExtractor : IDocumentTextExtractor
         var safety = new SafetyCollector();
         var mismatch = ContentTypeDetector.DetectMismatch(Path.GetExtension(fileName), content);
         using var cancellation = new ExtractionCancellationScope(options, callerToken);
-        var effectiveOptions = WithWarningCapture(options, warnings, safety) with { CancellationToken = cancellation.Token };
+        var effectiveOptions = WithWarningCapture(options, warnings, safety, out var callerSinks) with { CancellationToken = cancellation.Token };
 
         var sw = Stopwatch.StartNew();
         try
         {
-            var normalizedText = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, ref processor!, out var withheld);
+            var normalizedText = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, callerSinks, ref processor!, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
             if (withheld != null)
@@ -385,10 +385,14 @@ public class TextExtractor : IDocumentTextExtractor
     /// when the first attempt hit a safety limit, and when the detected format is a container
     /// (ZIP, EML, EPUB) that would unpack further content. It shares the first attempt's timeout.
     /// <paramref name="withheld"/> is the safety gate's reason for withholding the whole document, or <c>null</c>.
+    /// When a retry is possible, the caller's sinks are buffered during the first attempt: delivered if it succeeds
+    /// (or fails for good), discarded if it is retried, so the sinks only ever see what the final result contains.
     /// </summary>
     private string ExtractWithContentFallback(string fileName, byte[] content, ExtractionOptions options,
-        List<ExtractionWarning> warnings, SafetyCollector safety, ref ITextExtractor processor, out string? withheld)
+        List<ExtractionWarning> warnings, SafetyCollector safety, CallerSinks callerSinks, ref ITextExtractor processor,
+        out string? withheld)
     {
+        callerSinks.Buffering = options.RetryWithDetectedFormat && SniffedAlternative(content, processor) != null;
         try
         {
             return ExtractGated(processor, content, options, fileName, out withheld);
@@ -401,8 +405,13 @@ public class TextExtractor : IDocumentTextExtractor
                 processor.GetType().Name, fileName, alternative.GetType().Name);
             warnings.Clear(); // warnings and findings from the failed attempt describe the wrong format
             safety.Clear();
+            callerSinks.Discard();
             processor = alternative;
             return ExtractGated(alternative, content, options, fileName, out withheld);
+        }
+        finally
+        {
+            callerSinks.Flush();
         }
     }
 
@@ -452,7 +461,7 @@ public class TextExtractor : IDocumentTextExtractor
         // Some parsers (JSON, YAML, XML, Markdown, MSG libraries) cannot be interrupted. Checking again here means a
         // parse that ran past the timeout is reported as TimedOut, not as a normal success.
         options.CancellationToken.ThrowIfCancellationRequested();
-        return TextNormalizer.Normalize(text);
+        return TextNormalizer.Normalize(text, preserveSpacing: processor is CodeExtractor);
     }
 
     private (string Message, ExtractionErrorKind Kind) DescribeFailure(Exception ex, ExtractionCancellationScope cancellation,
@@ -591,17 +600,17 @@ public class TextExtractor : IDocumentTextExtractor
     private static string TooLargeMessage(ExtractionOptions? options)
         => $"File exceeds the limit of {(options ?? ExtractionOptions.Default).MaxInputBytes} bytes (ExtractionOptions.MaxInputBytes).";
 
+    /// <summary>Options whose sinks collect into this extraction's lists and forward to the caller's sinks.</summary>
     private static ExtractionOptions WithWarningCapture(ExtractionOptions? options, List<ExtractionWarning> warnings,
-        SafetyCollector safety)
+        SafetyCollector safety, out CallerSinks callerSinks)
     {
         options ??= ExtractionOptions.Default;
-        var callerSink = options.WarningSink;
-        var callerFindingSink = options.FindingSink;
+        var sinks = callerSinks = new CallerSinks(options.WarningSink, options.FindingSink);
 
         void Warn(ExtractionWarning warning)
         {
             warnings.Add(warning);
-            callerSink?.Invoke(warning);
+            sinks.Warning(warning);
         }
 
         return options with
@@ -612,7 +621,7 @@ public class TextExtractor : IDocumentTextExtractor
                 safety.Add(finding);
                 Warn(new ExtractionWarning(ExtractionWarningCodes.SafetyFinding, finding.Source,
                     $"{finding.Code} ({finding.Severity}{(finding.Withheld ? ", withheld" : "")}): {finding.Reason}"));
-                callerFindingSink?.Invoke(finding);
+                sinks.Finding(finding);
             },
             WithheldSink = part =>
             {
@@ -621,6 +630,47 @@ public class TextExtractor : IDocumentTextExtractor
                     $"Withheld by the safety gate: {SafetyGate.Describe(part.Findings.Where(f => f.Withheld))}"));
             },
         };
+    }
+
+    /// <summary>
+    /// The caller's <see cref="ExtractionOptions.WarningSink"/> and <see cref="ExtractionOptions.FindingSink"/>, called live
+    /// except while <see cref="Buffering"/>: then notifications wait for <see cref="Flush"/> or are dropped by <see cref="Discard"/>.
+    /// </summary>
+    private sealed class CallerSinks(Action<ExtractionWarning>? warningSink, Action<SafetyFinding>? findingSink)
+    {
+        private readonly List<object> _pending = [];
+
+        public bool Buffering { get; set; }
+
+        public void Warning(ExtractionWarning warning)
+        {
+            if (Buffering) _pending.Add(warning);
+            else warningSink?.Invoke(warning);
+        }
+
+        public void Finding(SafetyFinding finding)
+        {
+            if (Buffering) _pending.Add(finding);
+            else findingSink?.Invoke(finding);
+        }
+
+        public void Flush()
+        {
+            Buffering = false;
+            var pending = _pending.ToArray();
+            _pending.Clear();
+            foreach (var item in pending)
+            {
+                if (item is ExtractionWarning w) warningSink?.Invoke(w);
+                else if (item is SafetyFinding f) findingSink?.Invoke(f);
+            }
+        }
+
+        public void Discard()
+        {
+            _pending.Clear();
+            Buffering = false;
+        }
     }
 
     /// <summary>Findings and withheld parts collected over one extraction.</summary>
@@ -1092,7 +1142,12 @@ public sealed record ExtractionOptions
     /// </summary>
     public CancellationToken CancellationToken { get; init; }
 
-    /// <summary>Optional callback invoked when extraction skips part of a container or recovers from a non-fatal issue.</summary>
+    /// <summary>
+    /// Optional callback invoked when extraction skips part of a container or recovers from a non-fatal issue. It is
+    /// called as extraction goes, with the same warnings the result carries. When the first extractor may be retried
+    /// with the content-detected format (<see cref="RetryWithDetectedFormat"/>), that attempt's warnings are held back
+    /// until it succeeds, and dropped if it is retried, so the callback never reports a failed attempt.
+    /// </summary>
     public Action<ExtractionWarning>? WarningSink { get; init; }
 
     /// <summary>
@@ -1105,8 +1160,8 @@ public sealed record ExtractionOptions
     public HiddenTextMode HiddenText { get; init; } = HiddenTextMode.Mark;
 
     /// <summary>
-    /// Optional callback invoked for each <see cref="SafetyFinding"/>, including findings in container parts.
-    /// The results also carry them in <c>Findings</c>.
+    /// Optional callback invoked for each <see cref="SafetyFinding"/>, including findings in container parts, with the
+    /// same findings the result carries (held back for a first attempt that may be retried, like <see cref="WarningSink"/>).
     /// </summary>
     public Action<SafetyFinding>? FindingSink { get; init; }
 

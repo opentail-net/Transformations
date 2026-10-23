@@ -88,22 +88,24 @@ public class PdfExtractor : ITextExtractor
 
     /// <summary>
     /// The page's text, with letters that are not drawn handled by <see cref="ExtractionOptions.HiddenText"/> and
-    /// collected in <paramref name="hidden"/>. Not drawn: render mode 3 (invisible) on a page with no image, a point
-    /// size below 1, or a glyph entirely outside the crop box. Render mode 3 over an image is the text layer of a
-    /// searchable scan, which is normal, so it is not treated as hidden.
+    /// collected in <paramref name="hidden"/>. Not drawn: render mode 3 (invisible) that does not sit over an image,
+    /// a point size below 1, or a glyph entirely outside the crop box. Invisible text whose glyph centre lies inside
+    /// an image's placement rectangle is the text layer of a searchable scan, which is normal, so it is not hidden;
+    /// invisible text elsewhere on the same page still is.
     /// </summary>
     private static string PageText(Page page, int pageNum, ExtractionOptions? options,
         List<(string Source, string Text, string How)> hidden)
     {
         var bounds = page.CropBox.Bounds;
-        bool hasImages = page.NumberOfImages > 0;
+        var imageAreas = page.NumberOfImages > 0 ? page.GetImages().Select(i => i.BoundingBox).ToList() : [];
         var invisible = new List<Letter>();
         var hows = new HashSet<string>();
         foreach (var letter in page.Letters)
         {
             if (string.IsNullOrWhiteSpace(letter.Value)) continue;
             string? how = null;
-            if (!hasImages && letter.RenderingMode is TextRenderingMode.Neither or TextRenderingMode.NeitherClip)
+            if (letter.RenderingMode is TextRenderingMode.Neither or TextRenderingMode.NeitherClip
+                && !OverAnImage(letter.GlyphRectangle, imageAreas))
                 how = "render mode 3 (invisible)";
             else if (letter.PointSize is > 0 and < 1)
                 how = "font size below 1 pt";
@@ -131,6 +133,12 @@ public class PdfExtractor : ITextExtractor
         return SafetyGate.RenderHidden(options, hiddenText) is { } marked
             ? (string.IsNullOrWhiteSpace(visible) ? marked : visible + Environment.NewLine + marked)
             : visible;
+    }
+
+    private static bool OverAnImage(PdfRectangle glyph, List<PdfRectangle> imageAreas)
+    {
+        var centre = glyph.Centroid;
+        return imageAreas.Any(a => centre.X >= a.Left && centre.X <= a.Right && centre.Y >= a.Bottom && centre.Y <= a.Top);
     }
 
     /// <summary>Joins words into lines, top to bottom and left to right, starting a line when the baseline moves.</summary>

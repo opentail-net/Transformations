@@ -5,9 +5,14 @@ namespace Transformations.Text;
 
 /// <summary>
 /// Extracts and flattens text content from XML documents.
+/// Elements nested deeper than <see cref="MaxDepth"/> levels fail with <see cref="ExtractionLimitExceededException"/>,
+/// so a deeply nested file cannot overflow the stack while it is flattened.
 /// </summary>
 public class XmlExtractor : ITextExtractor
 {
+    /// <summary>Deepest element nesting accepted.</summary>
+    public const int MaxDepth = 256;
+
     /// <inheritdoc />
     public bool CanHandle(string extension) =>
         extension.Equals(".xml", StringComparison.OrdinalIgnoreCase) ||
@@ -25,13 +30,15 @@ public class XmlExtractor : ITextExtractor
         var doc = XDocument.Load(stream);
         var sb = new StringBuilder();
         if (doc.Root != null)
-            FlattenElement(doc.Root, sb, string.Empty, options);
+            FlattenElement(doc.Root, sb, string.Empty, options, 1);
         return sb.ToString().Trim();
     }
 
-    private void FlattenElement(XElement element, StringBuilder sb, string prefix, ExtractionOptions? options)
+    private void FlattenElement(XElement element, StringBuilder sb, string prefix, ExtractionOptions? options, int depth)
     {
         ExtractionGuard.ThrowIfCancellationRequested(options);
+        if (depth > MaxDepth)
+            throw new ExtractionLimitExceededException($"XML nests deeper than {MaxDepth} elements.");
         string currentPath = string.IsNullOrEmpty(prefix)
             ? element.Name.LocalName
             : $"{prefix}.{element.Name.LocalName}";
@@ -58,6 +65,6 @@ public class XmlExtractor : ITextExtractor
             sb.AppendLine($"{currentPath}: {ownText}");
 
         foreach (var child in element.Elements())
-            FlattenElement(child, sb, currentPath, options);
+            FlattenElement(child, sb, currentPath, options, depth + 1);
     }
 }

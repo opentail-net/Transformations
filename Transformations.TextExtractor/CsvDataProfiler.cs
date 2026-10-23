@@ -11,12 +11,21 @@ public static class CsvDataProfiler
 {
     /// <summary>
     /// Profiles CSV content and returns column types, distributions, and data issues.
+    /// Whether the first row is a header is inferred; use <see cref="ProfileCsv(string, bool)"/> when you know.
     /// </summary>
-    public static CsvProfileResult ProfileCsv(string csvText)
+    public static CsvProfileResult ProfileCsv(string csvText) => Profile(ParseCsv(csvText, null));
+
+    /// <summary>
+    /// Profiles CSV content whose first row is (<paramref name="hasHeader"/> <c>true</c>) or is not a header row.
+    /// Header inference is a heuristic; an all-text table with one data row (<c>alice,red / bob,blue</c>) is
+    /// ambiguous, so pass this when the layout is known.
+    /// </summary>
+    public static CsvProfileResult ProfileCsv(string csvText, bool hasHeader) => Profile(ParseCsv(csvText, hasHeader));
+
+    private static CsvProfileResult Profile(CsvParsedTable table)
     {
-        var table = ParseCsv(csvText);
-        var columnTypes = InferColumnTypes(csvText);
-        var issues = DetectDataIssues(csvText);
+        var columnTypes = InferColumnTypes(table);
+        var issues = DetectDataIssues(table);
         var distributions = BuildDistributions(table);
 
         return new CsvProfileResult(
@@ -32,9 +41,10 @@ public static class CsvDataProfiler
     /// <summary>
     /// Infers data type for each column in the CSV payload.
     /// </summary>
-    public static Dictionary<string, CsvColumnType> InferColumnTypes(string csvText)
+    public static Dictionary<string, CsvColumnType> InferColumnTypes(string csvText) => InferColumnTypes(ParseCsv(csvText, null));
+
+    private static Dictionary<string, CsvColumnType> InferColumnTypes(CsvParsedTable table)
     {
-        var table = ParseCsv(csvText);
         var result = new Dictionary<string, CsvColumnType>(StringComparer.OrdinalIgnoreCase);
 
         for (int c = 0; c < table.Headers.Count; c++)
@@ -49,9 +59,10 @@ public static class CsvDataProfiler
     /// <summary>
     /// Detects common tabular data issues such as missing values, duplicate rows, and row width mismatches.
     /// </summary>
-    public static List<CsvDataIssue> DetectDataIssues(string csvText)
+    public static List<CsvDataIssue> DetectDataIssues(string csvText) => DetectDataIssues(ParseCsv(csvText, null));
+
+    private static List<CsvDataIssue> DetectDataIssues(CsvParsedTable table)
     {
-        var table = ParseCsv(csvText);
         var issues = new List<CsvDataIssue>();
 
         if (table.Rows.Count == 0)
@@ -186,7 +197,7 @@ public static class CsvDataProfiler
         return numericLike > 0 ? CsvColumnType.Mixed : CsvColumnType.String;
     }
 
-    private static CsvParsedTable ParseCsv(string csvText)
+    private static CsvParsedTable ParseCsv(string csvText, bool? hasHeaderOverride)
     {
         if (string.IsNullOrWhiteSpace(csvText))
             return new CsvParsedTable(false, new List<string>(), new List<List<string>>(), new List<List<string>>(), new List<string>());
@@ -220,7 +231,7 @@ public static class CsvDataProfiler
 
         int width = allRows.Max(r => r.Count);
         var first = NormalizeWidth(allRows[0], width);
-        bool hasHeader = LooksLikeHeader(first, allRows.Skip(1).FirstOrDefault() ?? new List<string>(), width);
+        bool hasHeader = hasHeaderOverride ?? LooksLikeHeader(first, allRows.Skip(1).Take(50).Select(r => NormalizeWidth(r, width)).ToList(), width);
 
         var originalHeaders = hasHeader
             ? NormalizeWidth(first, width).Select(h => h.Trim()).ToList()
@@ -236,20 +247,66 @@ public static class CsvDataProfiler
         return new CsvParsedTable(hasHeader, headers, normalizedRows, rawDataRows, originalHeaders);
     }
 
-    private static bool LooksLikeHeader(List<string> firstRow, List<string> secondRow, int width)
+    /// <summary>
+    /// Header inference. The first row must be mostly label-like (text, not numbers or dates), must not repeat its
+    /// values in its own column further down, and at least one column must give positive evidence:
+    /// <list type="bullet">
+    /// <item>the label sits over data-like values (numbers, dates, booleans, GUIDs);</item>
+    /// <item>the label sits over a column that is empty in every data row;</item>
+    /// <item>the label is identifier-like while the values are not (punctuation, quotes, commas);</item>
+    /// <item>the label is capitalised while every value starts lower-case;</item>
+    /// <item>with two or more data rows, the values all have one length and the label another.</item>
+    /// </list>
+    /// An all-text table with no such evidence (<c>alice,red / bob,blue</c>) is treated as data, so no row is lost.
+    /// </summary>
+    private static bool LooksLikeHeader(List<string> firstRow, List<List<string>> dataRows, int width)
     {
         if (firstRow.Count == 0)
             return false;
 
-        if (secondRow.Count == 0)
+        if (dataRows.Count == 0)
             return firstRow.All(v => string.IsNullOrWhiteSpace(v) || IsLabelLike(v));
 
-        int firstLabelish = firstRow.Count(v => IsLabelLike(v));
-        int firstDataLike = firstRow.Count(v => IsDataLike(v));
-        int secondDataLike = NormalizeWidth(secondRow, width).Count(v => IsDataLike(v));
+        int firstLabelish = firstRow.Count(IsLabelLike);
+        if (firstLabelish < Math.Max(1, width / 2))
+            return false;
 
-        return firstLabelish >= Math.Max(1, width / 2) && secondDataLike >= firstDataLike;
+        int evidence = 0;
+        for (int c = 0; c < width; c++)
+        {
+            var label = firstRow[c].Trim();
+            if (!IsLabelLike(label)) continue;
+
+            var values = dataRows.Select(r => r[c].Trim()).ToList();
+            var nonEmpty = values.Where(v => v.Length > 0).ToList();
+
+            // A data value that equals the would-be label means the first row is just more data.
+            if (nonEmpty.Any(v => string.Equals(v, label, StringComparison.OrdinalIgnoreCase)))
+                return false;
+
+            if (nonEmpty.Count == 0)
+            {
+                evidence++;
+                continue;
+            }
+
+            if (nonEmpty.Count(IsDataLike) * 2 >= nonEmpty.Count)
+                evidence++;
+            else if (IsIdentifierLike(label) && nonEmpty.Any(v => !IsIdentifierLike(v)))
+                evidence++;
+            else if (char.IsUpper(label[0]) && nonEmpty.All(v => char.IsLower(v[0])))
+                evidence++;
+            else if (nonEmpty.Count >= 2 && nonEmpty.Select(v => v.Length).Distinct().Count() == 1 && nonEmpty[0].Length != label.Length)
+                evidence++;
+        }
+
+        return evidence > 0;
     }
+
+    /// <summary>Letters, digits, spaces, '_', '-', '.', '#', '/' and parentheses, starting with a letter: how column names look.</summary>
+    private static bool IsIdentifierLike(string value)
+        => value.Length > 0 && char.IsLetter(value[0])
+           && value.All(ch => char.IsLetterOrDigit(ch) || ch is ' ' or '_' or '-' or '.' or '#' or '/' or '(' or ')');
 
     private static bool IsLabelLike(string value)
     {
@@ -277,18 +334,22 @@ public static class CsvDataProfiler
             .Select((h, i) => string.IsNullOrWhiteSpace(h) ? $"Column{i + 1}" : h.Trim())
             .ToList();
 
-        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // Suffixes are checked against every name in the row, so "Name,Name,Name_2" becomes Name, Name_3, Name_2
+        // rather than two columns called Name_2.
+        var taken = new HashSet<string>(headers, StringComparer.OrdinalIgnoreCase);
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < headers.Count; i++)
         {
             var header = headers[i];
-            if (!seen.ContainsKey(header))
-            {
-                seen[header] = 1;
+            if (used.Add(header))
                 continue;
-            }
 
-            seen[header]++;
-            headers[i] = $"{header}_{seen[header]}";
+            int n = 2;
+            string candidate;
+            do candidate = $"{header}_{n++}"; while (taken.Contains(candidate) || used.Contains(candidate));
+            headers[i] = candidate;
+            used.Add(candidate);
+            taken.Add(candidate);
         }
 
         return headers;

@@ -184,7 +184,29 @@ Extraction has three outcomes:
 |---------|--------------|---------|
 | Full success | `IsSuccess == true`, `Warnings.Count == 0` | The selected extractor completed without known skipped content. |
 | Partial success | `IsSuccess == true`, `Warnings.Count > 0` | The top-level document was readable, but some container content was skipped, missing, unsupported, or over a configured limit. |
+| Success with withheld parts | `IsSuccess == true`, `Quarantine != null` | ZIP entries, EML attachments or the EML body were withheld by the safety gate; stub lines mark them in `Text`. |
+| Quarantined | `IsSuccess == false`, `ErrorKind == Quarantined` | The whole document was withheld by the safety gate. `Text` is empty; the text is only in `Quarantine`. |
 | Failure | `IsSuccess == false`, `ErrorKind != None` | The top-level document could not be extracted. `Text` is empty and `ErrorMessage` explains the failure. |
+
+`Findings` can be non-empty in every outcome: findings below the threshold are reported without withholding anything.
+A pipeline that feeds an AI model can handle all outcomes like this:
+
+```csharp
+var result = extractor.GetText(name, bytes);
+
+if (result.ErrorKind == ExtractionErrorKind.Quarantined)
+    reviewQueue.Add(name, result.Findings, result.Quarantine!);   // never send it to the model
+else if (!result.IsSuccess)
+    log.Warn($"{name}: {result.ErrorKind}: {result.ErrorMessage}");
+else
+{
+    if (result.Quarantine != null)
+        reviewQueue.Add(name, result.Findings, result.Quarantine); // parts were withheld; Text has stubs instead
+    if (result.Findings.Any(f => f.Severity >= SafetySeverity.Medium))
+        log.Warn($"{name}: {result.Findings.Count} safety findings below the quarantine threshold");
+    model.Ingest(result.Text);                                     // Text never contains withheld content
+}
+```
 
 Failure kinds (`ExtractionErrorKind`):
 
@@ -276,9 +298,13 @@ Limits of the detectors:
 - HTML: inline styles and the `hidden` attribute only. There is no CSS engine, so classes and stylesheets are not
   evaluated. Hidden text inside table cells is not separated.
 - DOCX: direct run formatting only; text hidden through a paragraph or character style is not detected.
-- PDF: a page with any image is assumed to be a searchable scan, so its render-mode-3 text counts as visible.
+- PDF: invisible (render mode 3) text whose glyph centre lies inside an image's placement rectangle is treated as the
+  text layer of a searchable scan and counts as visible, so an instruction hidden under a picture is not detected as
+  hidden text (instruction wording in it is still reported as Low). Invisible text anywhere else on the page is hidden.
   Hidden letters are regrouped into words and lines by position, so the text of such a page may be laid out
   differently from the rest.
+- Flag emoji: the England, Scotland and Wales flags (the only standard emoji tag sequences) are ignored; other
+  well-formed flag tag sequences are Low unless their tag letters spell instruction keywords.
 - OCR: a document counts as OCR text if any part of it was OCR'd, so instruction wording on a normal page of a
   partly scanned PDF is scored Medium.
 - Custom extractors get only the text-level detectors (tag, bidi, zero-width, instruction).
@@ -513,6 +539,19 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 - EML with a whitespace-only plain-text part uses the HTML part. MSG HTML bodies get the safety and hidden-text checks.
 - CSV with repeated header names keeps every column. RTF `\'hh` escapes are decoded with `\ansicpg` and the font's `\fcharset` (including Shift-JIS, GBK, Big5, Korean), so `\'80` in Windows-1252 is `€`.
 - `TextChunker` sentence, paragraph and token chunks are exact slices of the input: `text[StartOffset..EndOffset] == Text`, with the original separators.
+- Nesting limits: YAML deeper than 64 levels, XML deeper than 256 elements and HTML deeper than 512 elements fail with `LimitExceeded` instead of overflowing the stack; YAML aliases that expand past 1,000,000 values ("billion laughs") fail the same way.
+- Safety gate: hidden HTML table cells, rows (`<tr>`, `<tbody>`) and hidden elements inside cells are detected and follow `HiddenText`. Bidi controls are judged locally: an override over opposite-direction letters or digits is suspicious whatever else is on the line, and any control whose span covers instruction wording is High.
+- EML attachments that fail part-way count against `MaxDecompressedBytes`; once it is spent, no further attachment is decoded.
+- Source code keeps its indentation and spacing; all text keeps leading indentation (only runs of 3+ spaces inside a line are collapsed).
+- `CsvDataProfiler`: an all-text table needs evidence before its first row counts as a header (`alice,red / bob,blue` is data); new `ProfileCsv(csv, hasHeader)` overload; generated header names never collide (`Name,Name,Name_2`).
+- OpenDocument text and presentations are recognised by their `mimetype` entry, so an ODT without an extension is read as ODT.
+- `JsonSchemaValidator`: empty input no longer validates against an object schema, and `HasChanged("", "{}")` is `true`.
+- `TesseractOcrEngine.Dispose` can no longer race an in-flight call into leaking a native engine.
+- Flag emoji (England, Scotland, Wales) no longer quarantine a document; stray tag characters still do.
+- `CodeExtractor` strips copyright `/* */` comments only from the leading file header, never from string literals or later code.
+- `WarningSink`/`FindingSink` never report a first attempt that failed and was retried with the detected format.
+- PDF invisible text is exempt as a scan's text layer only where it lies over an image.
+- `Transformations.Tests` runs on .NET 8, 9 and 10, and includes mutation fuzzing of every built-in format.
 - Dependencies: HtmlAgilityPack 1.13.1, JsonSchema.Net 9.4.1, Markdig 1.4.2, Microsoft.Extensions.Logging.Abstractions 8.0.3, MimeKit 4.18.2, MSGReader 6.2.0, PdfPig 0.1.16, YamlDotNet 17.1.0.
 
 **Safety limits and cancellation:**

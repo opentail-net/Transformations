@@ -131,20 +131,19 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
                 byte[]? stubBytes = null;
                 try
                 {
-                    stubBytes = DecodeContentWithLimit(part, maxBytes - totalDecodedBytes, out long stubDecoded);
-                    totalDecodedBytes += stubDecoded;
+                    stubBytes = DecodeContentWithLimit(part, maxBytes, ref totalDecodedBytes);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { }
                 sb.AppendLine();
                 PartStub.Append(sb, $"[Attachment: {fileName}]", fileName, ext, stubBytes, stubBytes?.Length ?? 0,
                     "EML attachment", options);
+                if (BudgetSpent(options, fileName, totalDecodedBytes, maxBytes)) break;
                 continue;
             }
 
             try
             {
-                byte[] attachmentBytes = DecodeContentWithLimit(part, maxBytes - totalDecodedBytes, out long decodedBytes);
-                totalDecodedBytes += decodedBytes;
+                byte[] attachmentBytes = DecodeContentWithLimit(part, maxBytes, ref totalDecodedBytes);
 
                 // A disguised attachment (invoice.pdf that is really an Office file) is a classic
                 // malware carrier. Report it; it is still parsed only as the format its name claims.
@@ -153,7 +152,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
                         $"Attachment extension '{ext}' does not match its content, which is '{detected}'.");
 
                 using var scope = new SafetyScope(options);
-                var attachText = TextNormalizer.Normalize(extractor.ExtractText(attachmentBytes, scope.Options));
+                var attachText = TextNormalizer.Normalize(extractor.ExtractText(attachmentBytes, scope.Options), preserveSpacing: extractor is CodeExtractor);
                 if (scope.Complete(attachText, fileName, scanText: extractor is not IPartGatedContainer) is { } withheld)
                 {
                     sb.AppendLine();
@@ -168,6 +167,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (BudgetSpent(options, fileName, totalDecodedBytes, maxBytes)) break;
                 var code = ex is InvalidDataException or ExtractionLimitExceededException
                     ? ExtractionWarningCodes.ContainerByteLimit
                     : ExtractionWarningCodes.ContainerEntryFailed;
@@ -176,24 +176,43 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         }
     }
 
+    /// <summary>
+    /// True once the message's decoding budget is used up, counting attachments that failed part-way. Later
+    /// attachments are then not decoded at all, so over-limit attachments cannot each spend the budget again.
+    /// </summary>
+    private static bool BudgetSpent(ExtractionOptions? options, string fileName, long total, long maxBytes)
+    {
+        if (total < maxBytes) return false;
+        Warn(options, ExtractionWarningCodes.ContainerByteLimit, fileName,
+            $"Stopped: EML attachments decoded past {maxBytes} bytes (ExtractionOptions.MaxDecompressedBytes).");
+        return true;
+    }
+
     private static ITextExtractor? ResolveProcessor(IReadOnlyList<ITextExtractor> innerExtractors, string extension)
         => innerExtractors.FirstOrDefault(e => e.CanHandle(extension) && e is not TxtExtractor)
             ?? (PlainTextExtensions.Contains(extension)
                 ? innerExtractors.FirstOrDefault(e => e is TxtExtractor)
                 : null);
 
-    private static byte[] DecodeContentWithLimit(MimePart part, long remainingBytes, out long decodedBytes)
+    /// <summary>
+    /// Decodes an attachment against the message-wide budget. Every byte the decoder produced is added to
+    /// <paramref name="total"/>, including the write that crossed the limit, whether or not decoding succeeds.
+    /// </summary>
+    private static byte[] DecodeContentWithLimit(MimePart part, long maxBytes, ref long total)
     {
         if (part.Content == null)
-        {
-            decodedBytes = 0;
             return [];
-        }
 
-        using var stream = new LimitedMemoryStream(remainingBytes);
-        part.Content.DecodeTo(stream);
-        decodedBytes = stream.Length;
-        return stream.ToArray();
+        using var stream = new LimitedMemoryStream(maxBytes - total);
+        try
+        {
+            part.Content.DecodeTo(stream);
+            return stream.ToArray();
+        }
+        finally
+        {
+            total += stream.Attempted;
+        }
     }
 
     private static string FormatSenders(MimeMessage message)
@@ -230,20 +249,20 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
             _maxBytes = maxBytes;
         }
 
+        /// <summary>Bytes the decoder tried to write, including a write that was refused for crossing the limit.</summary>
+        public long Attempted { get; private set; }
+
         public override void Write(byte[] buffer, int offset, int count)
         {
+            Attempted += count;
             if (Length + count > _maxBytes)
                 throw new InvalidDataException("EML attachment exceeded the configured decompression byte limit.");
 
             base.Write(buffer, offset, count);
         }
 
-        public override void Write(ReadOnlySpan<byte> buffer)
-        {
-            if (Length + buffer.Length > _maxBytes)
-                throw new InvalidDataException("EML attachment exceeded the configured decompression byte limit.");
-
-            base.Write(buffer);
-        }
+        // MemoryStream routes span writes on a derived type back through Write(byte[], int, int); doing the work only
+        // there avoids the two overrides calling each other.
+        public override void Write(ReadOnlySpan<byte> buffer) => Write(buffer.ToArray(), 0, buffer.Length);
     }
 }

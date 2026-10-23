@@ -54,11 +54,25 @@ public class HtmlExtractor : ITextExtractor
     public string ExtractFromStream(Stream stream, ExtractionOptions? options = null)
         => ExtractFromHtml(Decode(ExtractionGuard.ReadInput(stream, options)), options);
 
+    /// <summary>
+    /// Deepest element nesting accepted. Deeper documents (tens of thousands of unclosed tags, say) fail with
+    /// <see cref="ExtractionLimitExceededException"/> instead of overflowing the stack while they are walked.
+    /// </summary>
+    public const int MaxDepth = 512;
+
     /// <summary>Extracts text from HTML that has already been decoded, such as an email body.</summary>
     internal string ExtractFromHtml(string html, ExtractionOptions? options)
     {
-        var doc = new HtmlDocument();
-        doc.LoadHtml(html);
+        var doc = new HtmlDocument { OptionMaxNestedChildNodes = MaxDepth };
+        try
+        {
+            doc.LoadHtml(html);
+        }
+        // HtmlAgilityPack throws a plain Exception ("Document has more than N nested tags") at the limit.
+        catch (Exception ex) when (ex.GetType() == typeof(Exception) && ex.Message.Contains("nested tags", StringComparison.Ordinal))
+        {
+            throw new ExtractionLimitExceededException($"HTML nests deeper than {MaxDepth} elements.");
+        }
 
         var nodesToRemove = doc.DocumentNode.SelectNodes("//script|//style|//noscript|//comment()");
         if (nodesToRemove != null)
@@ -84,7 +98,7 @@ public class HtmlExtractor : ITextExtractor
         ExtractionGuard.ThrowIfCancellationRequested(options);
         if (node.NodeType == HtmlNodeType.Element && HiddenBy(node) is { } how)
         {
-            var hiddenText = Regex.Replace(HtmlEntity.DeEntitize(node.InnerText), @"\s+", " ").Trim();
+            var hiddenText = CollapsedText(node);
             if (hiddenText.Length == 0) return;
             hidden.Add((hiddenText, how));
 
@@ -120,7 +134,7 @@ public class HtmlExtractor : ITextExtractor
         else if (node.Name == "table")
         {
             if (tableMode != TableMode.Omit)
-                AppendHtmlTable(node, sb, tableMode, options);
+                AppendHtmlTable(node, sb, tableMode, options, hidden);
         }
         else if (node.HasChildNodes)
         {
@@ -140,24 +154,65 @@ public class HtmlExtractor : ITextExtractor
     /// Renders a table from its own rows and cells only: rows of a table nested in a cell belong to that inner table
     /// (whose text stays inside its cell), not to this grid. The first row is a header row when it sits in
     /// <c>&lt;thead&gt;</c> or all its cells are <c>&lt;th&gt;</c> (see <see cref="ExtractionOptions.TableHeaders"/>).
+    /// Cell content goes through the same walk as the rest of the page, so hidden cells, rows and elements inside
+    /// cells are detected and handled by <see cref="ExtractionOptions.HiddenText"/> like hidden text anywhere else.
     /// </summary>
-    private static void AppendHtmlTable(HtmlNode tableNode, StringBuilder sb, TableMode mode, ExtractionOptions? options)
+    private void AppendHtmlTable(HtmlNode tableNode, StringBuilder sb, TableMode mode, ExtractionOptions? options,
+        List<(string Text, string How)> hidden)
     {
         var rows = tableNode.Descendants("tr")
             .Where(tr => tr.Ancestors("table").FirstOrDefault() == tableNode)
-            .Select(tr => tr.ChildNodes.Where(c => c.Name is "td" or "th").ToList())
-            .Where(cells => cells.Count > 0)
+            .Select(tr => (Row: tr, Cells: tr.ChildNodes.Where(c => c.Name is "td" or "th").ToList()))
+            .Where(r => r.Cells.Count > 0)
             .ToList();
         if (rows.Count == 0) return;
 
-        var grid = rows
-            .Select(cells => cells.Select(cell => HtmlEntity.DeEntitize(cell.InnerText.Trim())).ToArray())
-            .ToList();
+        var hiddenMode = options?.HiddenText ?? HiddenTextMode.Mark;
+        var grid = new List<string[]>();
+        foreach (var (row, cells) in rows)
+        {
+            // A row hidden by itself or by its <thead>/<tbody>/<tfoot>.
+            if (RowHiddenBy(row, tableNode) is { } how)
+            {
+                var hiddenText = string.Join(" ", cells.Select(CollapsedText).Where(t => t.Length > 0));
+                if (hiddenText.Length > 0)
+                    hidden.Add((hiddenText, how));
+                if (hiddenMode == HiddenTextMode.Drop)
+                    continue;
+                if (hiddenMode == HiddenTextMode.Mark)
+                {
+                    grid.Add(cells.Select(c => CollapsedText(c) is { Length: > 0 } t ? "[hidden] " + t : string.Empty).ToArray());
+                    continue;
+                }
+            }
+            grid.Add(cells.Select(cell => CellText(cell, options, hidden)).ToArray());
+        }
+        if (grid.Count == 0) return;
 
-        var first = rows[0];
+        var first = rows[0].Cells;
         bool marked = first.All(c => c.Name == "th") || first[0].ParentNode?.ParentNode?.Name == "thead";
         TableRenderer.Append(sb, grid, mode, TableRenderer.HasHeaderRow(grid.Count, marked, options));
     }
+
+    /// <summary>A cell's text on one line, walked like the rest of the page (hidden-text checks included).</summary>
+    private string CellText(HtmlNode cell, ExtractionOptions? options, List<(string Text, string How)> hidden)
+    {
+        var cellSb = new StringBuilder();
+        ExtractTextFromNode(cell, cellSb, options?.TableMode ?? TableMode.KeyValue, options, hidden);
+        return Regex.Replace(cellSb.ToString(), @"\s+", " ").Trim();
+    }
+
+    private static string? RowHiddenBy(HtmlNode row, HtmlNode table)
+    {
+        for (var node = row; node != null && node != table; node = node.ParentNode)
+            if (HiddenBy(node) is { } how)
+                return how;
+        return null;
+    }
+
+    /// <summary>The element's text with entities decoded and whitespace collapsed.</summary>
+    private static string CollapsedText(HtmlNode node)
+        => Regex.Replace(HtmlEntity.DeEntitize(node.InnerText), @"\s+", " ").Trim();
 
     private static string Decode(byte[] data)
     {

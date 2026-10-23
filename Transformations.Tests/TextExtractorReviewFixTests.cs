@@ -96,7 +96,8 @@ public class TextExtractorReviewFixTests
         Assert.That(result.Text, Does.Contain("int importantValue = 42;"));
         Assert.That(result.Text, Does.Contain("Ordinary explanatory comment"));
         Assert.That(result.Text, Does.Contain("Console.WriteLine(importantValue);"));
-        Assert.That(result.Text, Does.Not.Contain("Copyright"));
+        // Only the leading header is stripped; a copyright comment after code is part of the source.
+        Assert.That(result.Text, Does.Contain("/* Copyright 2026 Example Corp. */"));
     }
 
     [Test]

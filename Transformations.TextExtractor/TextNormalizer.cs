@@ -9,12 +9,23 @@ namespace Transformations.Text;
 /// </summary>
 public static class TextNormalizer
 {
+    // 3+ spaces or tabs after the first visible character of a line. Leading indentation is never touched.
+    private static readonly Regex InnerSpaceRun = new(@"(?<=\S)[ \t]{3,}", RegexOptions.Compiled);
+
     /// <summary>
     /// Standardizes whitespace, collapses bloat, and normalizes line endings.
+    /// Indentation at the start of a line is kept, so nested lists and indentation-sensitive text survive.
     /// </summary>
     /// <param name="input">The raw text string extracted from a document.</param>
     /// <returns>A cleaned, token-efficient string.</returns>
-    public static string Normalize(string input)
+    public static string Normalize(string input) => Normalize(input, preserveSpacing: false);
+
+    /// <summary>
+    /// <paramref name="preserveSpacing"/> keeps every run of spaces and tabs (source code: indentation and
+    /// alignment inside string literals carry meaning) and the first line's indentation; line endings, trailing
+    /// whitespace and blank-line runs are still normalized.
+    /// </summary>
+    internal static string Normalize(string input, bool preserveSpacing)
     {
         // Guard against null or empty input to prevent Regex exceptions.
         if (string.IsNullOrWhiteSpace(input))
@@ -26,10 +37,11 @@ public static class TextNormalizer
         string result = Regex.Replace(input, @"\r\n|\n|\r", Environment.NewLine);
 
         // 2. HORIZONTAL BLOAT REDUCTION:
-        // Replaces 3 or more consecutive spaces or tabs with a single space.
-        // This preserves basic indentation but removes "Alignment Bloat" common in 
-        // fixed-width reports or poorly parsed PDFs, significantly saving LLM tokens.
-        result = Regex.Replace(result, @"[ \t]{3,}", " ");
+        // Replaces 3 or more consecutive spaces or tabs inside a line with a single space. This removes
+        // "Alignment Bloat" common in fixed-width reports or poorly parsed PDFs, significantly saving LLM tokens,
+        // while indentation at the start of a line is preserved.
+        if (!preserveSpacing)
+            result = InnerSpaceRun.Replace(result, " ");
 
         // 3. TRAILING WHITESPACE PRUNING:
         // Iterates through every individual line to remove invisible trailing characters.
@@ -46,7 +58,7 @@ public static class TextNormalizer
         string pattern = $"({Regex.Escape(Environment.NewLine)}){{3,}}";
         result = Regex.Replace(result, pattern, Environment.NewLine + Environment.NewLine);
 
-        // Final trim to ensure no leading/trailing vertical noise remains.
-        return result.Trim();
+        // Final trim to ensure no leading/trailing vertical noise remains. Code keeps its first line's indentation.
+        return preserveSpacing ? result.Trim('\r', '\n') : result.Trim();
     }
 }

@@ -188,13 +188,18 @@ internal static class ContentTypeDetector
             using var ms = new MemoryStream(data);
             using var zip = new ZipArchive(ms, ZipArchiveMode.Read);
 
-            // EPUB has a "mimetype" entry whose content is "application/epub+zip"
+            // EPUB and OpenDocument name their type in a "mimetype" entry; OpenDocument has no [Content_Types].xml.
             var mimeEntry = zip.GetEntry("mimetype");
             if (mimeEntry != null)
             {
                 using var mr = new StreamReader(ExtractionGuard.OpenLimited(mimeEntry, SniffEntryLimit));
-                if (mr.ReadToEnd().Trim().Equals("application/epub+zip", StringComparison.OrdinalIgnoreCase))
-                    return ".epub";
+                switch (mr.ReadToEnd().Trim().ToLowerInvariant())
+                {
+                    case "application/epub+zip": return ".epub";
+                    case "application/vnd.oasis.opendocument.text": return ".odt";
+                    case "application/vnd.oasis.opendocument.presentation": return ".odp";
+                    // Spreadsheets have no extractor; as ".zip" their parts are still read by ZipExtractor.
+                }
             }
 
             var contentTypes = zip.GetEntry("[Content_Types].xml");

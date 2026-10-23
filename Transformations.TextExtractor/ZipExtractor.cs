@@ -91,7 +91,7 @@ public class ZipExtractor : ITextExtractor, IPartGatedContainer
                         $"Entry extension '{ext}' does not match its content, which is '{detected}'.");
 
                 using var scope = new SafetyScope(options);
-                var text = TextNormalizer.Normalize(processor.ExtractText(entryBytes, scope.Options));
+                var text = TextNormalizer.Normalize(processor.ExtractText(entryBytes, scope.Options), preserveSpacing: processor is CodeExtractor);
                 if (scope.Complete(text, entry.FullName, scanText: processor is not IPartGatedContainer) is { } withheld)
                 {
                     sb.AppendLine($"[{entry.FullName}] withheld: {withheld}");

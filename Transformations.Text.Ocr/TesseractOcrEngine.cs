@@ -21,6 +21,7 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
     private readonly string _tessdataPath;
     private readonly string _languages;
     private readonly ConcurrentBag<Engine> _pool = new();
+    private readonly object _poolLock = new();
     private volatile bool _disposed;
 
     /// <param name="tessdataPath">Folder containing <c>&lt;language&gt;.traineddata</c> files.</param>
@@ -62,17 +63,25 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
         }
         finally
         {
-            if (_disposed) engine.Dispose();
-            else _pool.Add(engine);
+            // Under the same lock as Dispose: otherwise Dispose could drain the pool between the _disposed check
+            // and the Add, and this native engine would never be disposed.
+            lock (_poolLock)
+            {
+                if (_disposed) engine.Dispose();
+                else _pool.Add(engine);
+            }
         }
     }
 
-    /// <summary>Disposes the pooled native engines.</summary>
+    /// <summary>Disposes the pooled native engines. Engines still in use are disposed when their call returns.</summary>
     public void Dispose()
     {
-        _disposed = true;
-        while (_pool.TryTake(out var engine))
-            engine.Dispose();
+        lock (_poolLock)
+        {
+            _disposed = true;
+            while (_pool.TryTake(out var engine))
+                engine.Dispose();
+        }
     }
 
     private static string? FindUnavailableReason(string tessdataPath, string languages)

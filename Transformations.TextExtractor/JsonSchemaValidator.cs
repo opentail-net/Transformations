@@ -22,6 +22,13 @@ public static class JsonSchemaValidator
     {
         var errors = new List<string>();
 
+        // Empty input is not an empty object: it must not satisfy an object schema.
+        if (IsEmpty(rawJson))
+        {
+            errors.Add("Invalid JSON Format: the input is empty.");
+            return errors;
+        }
+
         string normalizedJson = NormalizeJson(rawJson);
         JsonElement instance;
         try
@@ -62,6 +69,8 @@ public static class JsonSchemaValidator
 
     /// <summary>
     /// Normalizes JSON text by stripping surrounding markdown code blocks and trimming whitespace.
+    /// Blank input returns <c>{}</c>; <see cref="ListSchemaErrors"/> and <see cref="HasChanged"/> treat empty input
+    /// as empty, not as an empty object.
     /// </summary>
     public static string NormalizeJson(string input)
     {
@@ -84,12 +93,21 @@ public static class JsonSchemaValidator
     /// <summary>
     /// Returns <c>true</c> when the two JSON payloads differ structurally or by value.
     /// </summary>
+    /// <remarks>Empty input (blank, or an empty code fence) differs from any JSON value, including <c>{}</c>.</remarks>
     public static bool HasChanged(string leftJson, string rightJson)
     {
+        bool leftEmpty = IsEmpty(leftJson), rightEmpty = IsEmpty(rightJson);
+        if (leftEmpty || rightEmpty)
+            return leftEmpty != rightEmpty;
+
         var left = JsonNode.Parse(NormalizeJson(leftJson));
         var right = JsonNode.Parse(NormalizeJson(rightJson));
         return !JsonNode.DeepEquals(left, right);
     }
+
+    /// <summary>Blank, or nothing but an empty markdown code fence.</summary>
+    private static bool IsEmpty(string? json)
+        => string.IsNullOrWhiteSpace(json) || NormalizeJson(json).Length == 0;
 
     /// <inheritdoc cref="HasChanged"/>
     [Obsolete("Use HasChanged instead — CompareJson returns true when content differs, which is unintuitive.")]
