@@ -36,10 +36,11 @@ public class DocxExtractor : ITextExtractor
         var tableMode = options?.TableMode ?? TableMode.KeyValue;
         bool pageMarkers = options?.IncludePageMarkers == true;
         int pageNumber = 1;
-        var hidden = new List<(string Text, string How)>();
+        var hidden = new DocxHidden();
 
         using var wordDoc = WordprocessingDocument.Open(stream, false);
         var body = wordDoc.MainDocumentPart?.Document?.Body;
+        hidden.VanishStyles = VanishingStyles(wordDoc.MainDocumentPart?.StyleDefinitionsPart?.Styles);
         if (body == null) return string.Empty;
 
         if (pageMarkers)
@@ -80,9 +81,9 @@ public class DocxExtractor : ITextExtractor
     /// <paramref name="hidden"/>. Elements without hidden runs keep their plain <c>InnerText</c>.
     /// Only direct run formatting is read; hiding through a style is not detected.
     /// </summary>
-    private static string VisibleText(OpenXmlElement element, ExtractionOptions? options, List<(string Text, string How)> hidden)
+    private static string VisibleText(OpenXmlElement element, ExtractionOptions? options, DocxHidden hidden)
     {
-        var runs = element.Descendants<Run>().Select(r => (Run: r, How: HiddenBy(r))).ToList();
+        var runs = element.Descendants<Run>().Select(r => (Run: r, How: HiddenBy(r, hidden))).ToList();
         if (runs.All(r => r.How == null))
             return element.InnerText;
 
@@ -104,7 +105,7 @@ public class DocxExtractor : ITextExtractor
     /// each break. Hidden runs are handled per segment, as in <see cref="VisibleText"/>.
     /// </summary>
     private static void AppendSplitAtPageBreaks(Paragraph para, StringBuilder sb, ref int pageNumber, ExtractionOptions? options,
-        List<(string Text, string How)> hidden)
+        DocxHidden hidden)
     {
         var mode = options?.HiddenText ?? HiddenTextMode.Mark;
         var all = new StringBuilder();
@@ -132,7 +133,7 @@ public class DocxExtractor : ITextExtractor
 
         foreach (var run in para.Descendants<Run>())
         {
-            var how = HiddenBy(run);
+            var how = HiddenBy(run, hidden);
             foreach (var child in run.ChildElements)
             {
                 if (child is Break { Type.Value: var type } && type == BreakValues.Page)
@@ -164,8 +165,21 @@ public class DocxExtractor : ITextExtractor
         Flush();
     }
 
-    private static string? HiddenBy(Run run)
+    private static string? HiddenBy(Run run, DocxHidden context)
     {
+        // Tracked deletions are not shown in the document as it reads now, but InnerText includes their text.
+        if (run.Parent is DeletedRun || run.GetFirstChild<DeletedText>() != null) return "tracked deletion";
+
+        var styles = context.VanishStyles;
+        if (styles.Count > 0)
+        {
+            if (run.RunProperties?.RunStyle?.Val?.Value is { } runStyle && styles.Contains(runStyle))
+                return $"style '{runStyle}' with w:vanish";
+            if (run.Ancestors<Paragraph>().FirstOrDefault()?.ParagraphProperties?.ParagraphStyleId?.Val?.Value is { } paraStyle
+                && styles.Contains(paraStyle))
+                return $"style '{paraStyle}' with w:vanish";
+        }
+
         var props = run.RunProperties;
         if (props == null) return null;
         if (props.Vanish is { } vanish && (vanish.Val == null || vanish.Val.Value)) return "w:vanish";
@@ -178,7 +192,7 @@ public class DocxExtractor : ITextExtractor
     }
 
     private static void AppendTable(Table table, StringBuilder sb, TableMode mode, ExtractionOptions? options,
-        List<(string Text, string How)> hidden)
+        DocxHidden hidden)
     {
         var rows = table.Elements<TableRow>().ToList();
         if (rows.Count == 0) return;
@@ -206,4 +220,39 @@ public class DocxExtractor : ITextExtractor
     }
 
     internal static string EscapeCsv(string value) => TableRenderer.EscapeCsv(value);
+
+    /// <summary>Hidden text found in one document, plus the styles that hide their text.</summary>
+    private sealed class DocxHidden : List<(string Text, string How)>
+    {
+        public HashSet<string> VanishStyles { get; set; } = [];
+    }
+
+    /// <summary>
+    /// Style IDs whose run properties set <c>w:vanish</c>, directly or through <c>w:basedOn</c> (followed at most ten
+    /// levels). A style that sets <c>w:vanish w:val="false"</c> stops the inheritance.
+    /// </summary>
+    private static HashSet<string> VanishingStyles(Styles? styles)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        if (styles == null) return result;
+        var byId = styles.Elements<Style>()
+            .Where(st => st.StyleId?.Value != null)
+            .GroupBy(st => st.StyleId!.Value!)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        foreach (var (id, style) in byId)
+        {
+            var current = style;
+            for (int depth = 0; current != null && depth < 10; depth++)
+            {
+                if (current.StyleRunProperties?.GetFirstChild<Vanish>() is { } vanish)
+                {
+                    if (vanish.Val == null || vanish.Val.Value) result.Add(id);
+                    break;
+                }
+                current = current.BasedOn?.Val?.Value is { } parent && byId.TryGetValue(parent, out var next) ? next : null;
+            }
+        }
+        return result;
+    }
 }

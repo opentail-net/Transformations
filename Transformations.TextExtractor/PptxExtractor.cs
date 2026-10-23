@@ -7,7 +7,9 @@ namespace Transformations.Text;
 
 /// <summary>
 /// Extracts text from PowerPoint presentations (.pptx files): text shapes (including shapes inside
-/// groups), tables, and speaker notes. Charts, SmartArt and embedded objects are not extracted.
+/// groups), tables, and speaker notes. Charts, SmartArt, alternative text and embedded objects are not extracted.
+/// Hidden slides (<c>show="0"</c>) and hidden shapes are reported as hidden text and follow
+/// <see cref="ExtractionOptions.HiddenText"/>.
 /// </summary>
 public class PptxExtractor : ITextExtractor
 {
@@ -45,6 +47,7 @@ public class PptxExtractor : ITextExtractor
         if (presPart?.Presentation?.SlideIdList == null)
             return string.Empty;
 
+        var hidden = new List<(string Text, string How)>();
         int slideNum = 1;
         foreach (SlideId slideId in presPart.Presentation.SlideIdList.Elements<SlideId>())
         {
@@ -56,18 +59,40 @@ public class PptxExtractor : ITextExtractor
             if (presPart.GetPartById(relId) is not SlidePart slidePart) { slideNum++; continue; }
             if (slidePart.Slide == null) { slideNum++; continue; }
 
-            if (slideMarkers)
-                sb.AppendLine($"[Slide {slideNum}]");
-            AppendSlideText(slidePart, sb);
-            AppendNotesText(slidePart, sb);
-            sb.AppendLine();
+            var slideSb = new StringBuilder();
+            AppendSlideText(slidePart, slideSb, options, hidden);
+            AppendNotesText(slidePart, slideSb);
+
+            if (slidePart.Slide.Show?.Value == false)
+            {
+                // A hidden slide is not shown in a presentation; its text is hidden content.
+                var hiddenText = slideSb.ToString().Trim();
+                if (hiddenText.Length > 0)
+                    hidden.Add((hiddenText, "hidden slide"));
+                slideSb.Clear();
+                if (SafetyGate.RenderHidden(options, hiddenText.ReplaceLineEndings(" ")) is { } rendered && hiddenText.Length > 0)
+                    slideSb.AppendLine(rendered);
+            }
+
+            if (slideSb.Length > 0 || slideMarkers)
+            {
+                if (slideMarkers)
+                    sb.AppendLine($"[Slide {slideNum}]");
+                sb.Append(slideSb);
+                sb.AppendLine();
+            }
             slideNum++;
         }
 
+        if (hidden.Count > 0)
+            SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenPptx, "pptx",
+                string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
+                string.Join(", ", hidden.Select(h => h.How).Distinct()));
         return sb.ToString().Trim();
     }
 
-    private static void AppendSlideText(SlidePart slidePart, StringBuilder sb)
+    private static void AppendSlideText(SlidePart slidePart, StringBuilder sb, ExtractionOptions? options,
+        List<(string Text, string How)> hidden)
     {
         var shapeTree = slidePart.Slide?.CommonSlideData?.ShapeTree;
         if (shapeTree == null) return;
@@ -93,6 +118,15 @@ public class PptxExtractor : ITextExtractor
 
             if (texts.Count == 0) continue;
 
+            if (IsHiddenShape(shape))
+            {
+                var hiddenText = string.Join(" ", texts);
+                hidden.Add((hiddenText, "hidden shape"));
+                if (SafetyGate.RenderHidden(options, hiddenText) is { } rendered)
+                    sb.AppendLine(rendered);
+                continue;
+            }
+
             if (isTitle)
                 sb.AppendLine($"Title: {string.Join(" ", texts)}");
             else
@@ -112,6 +146,14 @@ public class PptxExtractor : ITextExtractor
                     sb.AppendLine(string.Join(" | ", cells));
             }
         }
+    }
+
+    /// <summary>A shape hidden itself (selection pane) or inside a hidden group.</summary>
+    private static bool IsHiddenShape(Shape shape)
+    {
+        if (shape.NonVisualShapeProperties?.NonVisualDrawingProperties?.Hidden?.Value == true) return true;
+        return shape.Ancestors<GroupShape>().Any(g =>
+            g.NonVisualGroupShapeProperties?.NonVisualDrawingProperties?.Hidden?.Value == true);
     }
 
     private static void AppendNotesText(SlidePart slidePart, StringBuilder sb)

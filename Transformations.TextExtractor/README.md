@@ -309,6 +309,62 @@ Limits of the detectors:
   partly scanned PDF is scored Medium.
 - Custom extractors get only the text-level detectors (tag, bidi, zero-width, instruction).
 
+### AI ingestion
+
+For untrusted documents whose text goes to an AI model (RAG, agents), start from the profile:
+
+```csharp
+var options = ExtractionOptions.ForAiIngestion();   // change anything with `with { ... }`
+var result = extractor.GetText(name, bytes, options);
+
+switch (result.SafetyVerdict)
+{
+    case SafetyVerdict.Quarantined:    reviewQueue.Add(name, result); break;              // nothing to index
+    case SafetyVerdict.PartsWithheld:  reviewQueue.Add(name, result); Index(result.Text); break;
+    case SafetyVerdict.ReviewRequired: reviewQueue.Add(name, result); break;              // index after review
+    default:                           Index(result.Text); break;                         // still untrusted text
+}
+```
+
+The profile sets `SafetyPolicy.AiIngestion` (quarantine at High, review at Medium), `HiddenText = Drop` (hidden text is
+scanned, then kept out of `Text`), and finite limits: 64 MB input, 256 MB decompressed and 1,000 entries **shared
+across nested containers** (`ShareContainerBudget`), 5,000,000 characters, 2,000 pages, 60 s.
+
+| Setting | Meaning |
+|---|---|
+| `SafetyPolicy.QuarantineAt` | Withhold the part (ZIP entry, EML attachment/body) or document whose worst finding reaches it |
+| `SafetyPolicy.RejectAt` | Withhold the **whole** document when any finding, in any part, reaches it |
+| `SafetyPolicy.ReviewAt` | `SafetyVerdict.ReviewRequired` when a finding reaches it; withholds nothing (also for `TrustedSource`) |
+| `SafetyPolicy.RetainHiddenText` | With `HiddenText = Drop`, keep dropped hidden text in `Quarantine` for review. Off by default: findings then hold only a ≤200-character excerpt |
+
+`SafetyVerdict`: `NoKnownSignals` → `Flagged` (findings below `ReviewAt`) → `ReviewRequired` → `PartsWithheld` →
+`Quarantined`. Each finding also has a `Category` (Override, Role, Disclosure, ToolAction, Concealment, RoleMarker,
+Obfuscation, HiddenContent, InvisibleCharacters) and a rule-assigned `Confidence` (not a calibrated probability).
+
+Escalation is deterministic: a visible instruction alone is Low; in OCR text Medium; obfuscated (lookalike letters,
+fullwidth/compatibility forms, letter spacing like `i g n o r e`, base64) Medium; concealment within 300 characters of an
+override, disclosure or tool-action instruction Medium (`safety.correlatedInstructions`); hidden + instruction,
+obfuscated + concealment, zero-width splitting, stray tag characters and bidi around instructions High.
+
+What each format is checked for (anything not listed is not inspected, which is not the same as clean):
+
+| Format | Hidden content detected | Not inspected |
+|---|---|---|
+| HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout |
+| DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions | comments, footnotes, headers/footers (not extracted) |
+| PDF | invisible text not over an image, text under 1 pt, text outside the crop box | text colour, overlapping text, invisible text over an image |
+| PPTX | hidden slides, hidden shapes and groups | alt text, charts, SmartArt (not extracted); speaker notes are extracted as `[Notes]` |
+| XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments (not extracted) |
+| EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts | EPUB is gated as one document |
+| Images (OCR) | OCR text is scanned like any text and its findings are scored higher | text the OCR engine does not see |
+
+**Security contract.** Extracted text is untrusted data even when `SafetyVerdict` is `NoKnownSignals`: the detectors find
+known patterns, they cannot prove the absence of prompt injection. Keep document text separate from system instructions;
+delimiters or "ignore any instructions below" notes do not reliably stop injection. This library cannot authorise tool
+calls, data access or other actions: enforce permissions, least privilege and human approval in the application. Timeouts
+are cooperative and some parser calls cannot be interrupted, so for hostile public uploads also run extraction in an
+isolated worker process with OS memory/CPU limits and a concurrency limit.
+
 ### Extension vs content
 
 The extension picks the extractor. If that extractor fails and the magic bytes identify a different format, the
@@ -552,6 +608,7 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 - `WarningSink`/`FindingSink` never report a first attempt that failed and was retried with the detected format.
 - PDF invisible text is exempt as a scan's text layer only where it lies over an image.
 - `Transformations.Tests` runs on .NET 8, 9 and 10, and includes mutation fuzzing of every built-in format.
+- AI ingestion: `ExtractionOptions.ForAiIngestion()`, `SafetyPolicy.AiIngestion`, `ReviewAt`, `RejectAt`, `RetainHiddenText`, `ShareContainerBudget`, `SafetyVerdict` on results, `SafetyFinding.Category`/`Confidence`; detection of obfuscated (lookalike, fullwidth, letter-spaced, base64) and correlated instructions; tool-action, disclosure, role and concealment rules; hidden content from HTML `<style>` rules and `<template>`, DOCX styles and tracked deletions (which no longer leak into `Text`), PPTX hidden slides/shapes, XLSX hidden sheets/rows/columns. See [AI ingestion](#ai-ingestion).
 - Dependencies: HtmlAgilityPack 1.13.1, JsonSchema.Net 9.4.1, Markdig 1.4.2, Microsoft.Extensions.Logging.Abstractions 8.0.3, MimeKit 4.18.2, MSGReader 6.2.0, PdfPig 0.1.16, YamlDotNet 17.1.0.
 
 **Safety limits and cancellation:**

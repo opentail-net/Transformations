@@ -259,17 +259,18 @@ public class TextExtractor : IDocumentTextExtractor
             var text = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, callerSinks, ref processor, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
+            withheld ??= RejectIfRequired(fileName, text, options.Safety, safety, effectiveOptions);
             if (withheld != null)
             {
                 _logger.LogWarning("Safety gate withheld {FileName}: {Reason}", fileName, withheld);
                 return ExtractionResult.Failure(WithheldMessage(withheld), ExtractionErrorKind.Quarantined,
-                    processor.GetType().Name, sw.Elapsed) with { Warnings = warnings, Findings = safety.Findings, Quarantine = safety.Quarantine };
+                    processor.GetType().Name, sw.Elapsed) with { Warnings = warnings, Findings = safety.Findings, Quarantine = safety.Quarantine, SafetyVerdict = SafetyVerdict.Quarantined };
             }
             text = Truncate(text, options);
             _logger.LogDebug("Extracted {CharCount} chars from {FileName} in {ElapsedMs}ms",
                 text.Length, fileName, sw.ElapsedMilliseconds);
             return ExtractionResult.Success(text, processor.GetType().Name, sw.Elapsed, warnings)
-                with { Findings = safety.Findings, Quarantine = safety.Quarantine };
+                with { Findings = safety.Findings, Quarantine = safety.Quarantine, SafetyVerdict = safety.Verdict(options.Safety) };
         }
         catch (OperationCanceledException) when (cancellation.CallerCancelled)
         {
@@ -281,7 +282,7 @@ public class TextExtractor : IDocumentTextExtractor
             var (message, kind) = DescribeFailure(ex, cancellation, options, fileName, processor);
             ReportMismatch(fileName, mismatch, effectiveOptions);
             return ExtractionResult.Failure(message, kind, processor.GetType().Name, sw.Elapsed)
-                with { Warnings = warnings, Findings = safety.Findings };
+                with { Warnings = warnings, Findings = safety.Findings, SafetyVerdict = safety.Verdict(options.Safety) };
         }
     }
 
@@ -305,11 +306,12 @@ public class TextExtractor : IDocumentTextExtractor
             var normalizedText = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, callerSinks, ref processor!, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
+            withheld ??= RejectIfRequired(fileName, normalizedText, options.Safety, safety, effectiveOptions);
             if (withheld != null)
             {
                 _logger.LogWarning("Safety gate withheld {FileName}: {Reason}", fileName, withheld);
                 return ExtractionMetadataResult.Failure(WithheldMessage(withheld), ExtractionErrorKind.Quarantined,
-                    processor!.GetType().Name, sw.Elapsed) with { Warnings = warnings, Findings = safety.Findings, Quarantine = safety.Quarantine };
+                    processor!.GetType().Name, sw.Elapsed) with { Warnings = warnings, Findings = safety.Findings, Quarantine = safety.Quarantine, SafetyVerdict = SafetyVerdict.Quarantined };
             }
             normalizedText = Truncate(normalizedText, options);
             var metadata = BuildMetadata(fileName, content, normalizedText, processor);
@@ -330,7 +332,7 @@ public class TextExtractor : IDocumentTextExtractor
             if (safety.Quarantine != null)
                 metadata["safety.withheldParts"] = safety.Quarantine.Parts.Count.ToString();
             return ExtractionMetadataResult.Success(normalizedText, metadata,
-                processor.GetType().Name, sw.Elapsed, warnings) with { Findings = safety.Findings, Quarantine = safety.Quarantine };
+                processor.GetType().Name, sw.Elapsed, warnings) with { Findings = safety.Findings, Quarantine = safety.Quarantine, SafetyVerdict = safety.Verdict(options.Safety) };
         }
         catch (OperationCanceledException) when (cancellation.CallerCancelled)
         {
@@ -342,7 +344,7 @@ public class TextExtractor : IDocumentTextExtractor
             var (message, kind) = DescribeFailure(ex, cancellation, options, fileName, processor!);
             ReportMismatch(fileName, mismatch, effectiveOptions);
             return ExtractionMetadataResult.Failure(message, kind, processor!.GetType().Name, sw.Elapsed)
-                with { Warnings = warnings, Findings = safety.Findings };
+                with { Warnings = warnings, Findings = safety.Findings, SafetyVerdict = safety.Verdict(options.Safety) };
         }
     }
 
@@ -427,6 +429,19 @@ public class TextExtractor : IDocumentTextExtractor
         var text = Extract(processor, content, scope.Options);
         withheld = scope.Complete(text, fileName, scanText: processor is not IPartGatedContainer);
         return text;
+    }
+
+    /// <summary>
+    /// <see cref="SafetyPolicy.RejectAt"/>: when any finding (container parts included) reaches it, the whole document
+    /// is withheld, not just the part. Returns the reason, or <c>null</c>.
+    /// </summary>
+    private static string? RejectIfRequired(string fileName, string text, SafetyPolicy policy, SafetyCollector safety,
+        ExtractionOptions effectiveOptions)
+    {
+        var rejecting = safety.Findings.Where(f => policy.Rejects(f.Severity)).ToList();
+        if (rejecting.Count == 0) return null;
+        effectiveOptions.WithheldSink?.Invoke(new QuarantinedPart(fileName, text, safety.Findings));
+        return "rejected: " + SafetyGate.Describe(rejecting);
     }
 
     private static string Truncate(string text, ExtractionOptions options)
@@ -615,6 +630,7 @@ public class TextExtractor : IDocumentTextExtractor
 
         return options with
         {
+            SharedBudget = options.ShareContainerBudget ? new ContainerBudget() : null,
             WarningSink = Warn,
             FindingSink = finding =>
             {
@@ -627,7 +643,7 @@ public class TextExtractor : IDocumentTextExtractor
             {
                 safety.Add(part);
                 Warn(new ExtractionWarning(ExtractionWarningCodes.ContentWithheld, part.Source,
-                    $"Withheld by the safety gate: {SafetyGate.Describe(part.Findings.Where(f => f.Withheld))}"));
+                    $"Withheld by the safety gate: {SafetyGate.Describe(part.Findings.Any(f => f.Withheld) ? part.Findings.Where(f => f.Withheld) : part.Findings)}"));
             },
         };
     }
@@ -689,6 +705,14 @@ public class TextExtractor : IDocumentTextExtractor
         {
             _findings.Clear();
             _withheld.Clear();
+        }
+
+        /// <summary>The verdict for a result that was not withheld as a whole.</summary>
+        public SafetyVerdict Verdict(SafetyPolicy policy)
+        {
+            if (_withheld.Count > 0) return SafetyVerdict.PartsWithheld;
+            if (_findings.Any(f => policy.RequiresReview(f.Severity))) return SafetyVerdict.ReviewRequired;
+            return _findings.Count > 0 ? SafetyVerdict.Flagged : SafetyVerdict.NoKnownSignals;
         }
     }
 
@@ -1167,6 +1191,36 @@ public sealed record ExtractionOptions
 
     /// <summary>Receives parts the safety gate withheld, with their text. Set by the facade.</summary>
     internal Action<QuarantinedPart>? WithheldSink { get; init; }
+
+    /// <summary>
+    /// When <c>true</c>, ZIP, EML and EPUB content nested inside each other, and Office/OpenDocument packages inside
+    /// them, share one <see cref="MaxDecompressedBytes"/> and <see cref="MaxContainerEntries"/> budget for the whole
+    /// extraction instead of getting a fresh budget per container. Default <c>false</c> (limits apply per document).
+    /// </summary>
+    public bool ShareContainerBudget { get; init; }
+
+    /// <summary>The budget shared by nested containers when <see cref="ShareContainerBudget"/> is on. Set by the facade.</summary>
+    internal ContainerBudget? SharedBudget { get; init; }
+
+    /// <summary>
+    /// Options for untrusted documents whose text goes to an AI model (RAG ingestion, agents):
+    /// <see cref="SafetyPolicy.AiIngestion"/> (quarantine at High, review at Medium), hidden text dropped from
+    /// <c>Text</c> (<see cref="HiddenTextMode.Drop"/>), finite limits (64 MB input, 256 MB decompressed and 1,000 entries
+    /// shared across nested containers, 5,000,000 characters, 2,000 pages, 60 s) and the default image limit.
+    /// Change any of them with <c>with</c>. The text is still untrusted: no finding does not mean safe.
+    /// </summary>
+    public static ExtractionOptions ForAiIngestion() => new()
+    {
+        Safety = SafetyPolicy.AiIngestion,
+        HiddenText = HiddenTextMode.Drop,
+        MaxInputBytes = 64L * 1024 * 1024,
+        MaxDecompressedBytes = 256L * 1024 * 1024,
+        MaxContainerEntries = 1_000,
+        MaxCharacters = 5_000_000,
+        MaxPages = 2_000,
+        Timeout = TimeSpan.FromSeconds(60),
+        ShareContainerBudget = true,
+    };
 }
 
 /// <summary>
@@ -1259,6 +1313,9 @@ public record ExtractionResult(bool IsSuccess, string Text, string? ErrorMessage
     /// </summary>
     public QuarantinedContent? Quarantine { get; init; }
 
+    /// <summary>Summary of the safety outcome. <see cref="SafetyVerdict.NoKnownSignals"/> does not mean the text is safe.</summary>
+    public SafetyVerdict SafetyVerdict { get; init; }
+
     /// <summary>Creates a successful extraction result.</summary>
     public static ExtractionResult Success(string text, string? extractorName = null, TimeSpan duration = default,
         IReadOnlyList<ExtractionWarning>? warnings = null)
@@ -1297,6 +1354,9 @@ public record ExtractionMetadataResult(bool IsSuccess, string Text, Dictionary<s
     /// parts replaced by stub lines. <c>null</c> when nothing was withheld.
     /// </summary>
     public QuarantinedContent? Quarantine { get; init; }
+
+    /// <summary>Summary of the safety outcome. <see cref="SafetyVerdict.NoKnownSignals"/> does not mean the text is safe.</summary>
+    public SafetyVerdict SafetyVerdict { get; init; }
 
     /// <summary>Creates a successful metadata extraction result.</summary>
     public static ExtractionMetadataResult Success(string text, Dictionary<string, string> metadata,

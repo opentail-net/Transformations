@@ -38,9 +38,15 @@ public class EpubExtractor : ITextExtractor
 
     private string ExtractFromStream(Stream stream, ExtractionOptions? options)
     {
-        long totalBytes = 0;
         long maxBytes = options?.MaxDecompressedBytes ?? 512L * 1024 * 1024;
         int maxEntries = options?.MaxContainerEntries ?? 10_000;
+        // With ExtractionOptions.ShareContainerBudget the counters belong to the whole extraction, so a container
+        // nested in another one continues the same budget instead of starting a fresh one.
+        var budget = options?.SharedBudget;
+        long localBytes = 0;
+        int localEntries = 0;
+        ref long totalBytes = ref (budget != null ? ref budget.Used : ref localBytes);
+        ref int processedEntries = ref (budget != null ? ref budget.Entries : ref localEntries);
         int start = options?.StartPage ?? 1;
         int end = options?.EndPage ?? int.MaxValue;
         int max = options?.MaxPages.HasValue == true ? (start - 1) + options.MaxPages.Value : int.MaxValue;
@@ -65,7 +71,6 @@ public class EpubExtractor : ITextExtractor
         // 3. Extract text from each spine item in order
         var sb = new StringBuilder();
         int chapterNum = 0;
-        int processedEntries = 0;
 
         foreach (var (href, mediaType) in spineItems)
         {

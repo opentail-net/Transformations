@@ -101,10 +101,15 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         IReadOnlyList<ITextExtractor> innerExtractors,
         ExtractionOptions? options)
     {
-        long totalDecodedBytes = 0;
         long maxBytes = options?.MaxDecompressedBytes ?? 512L * 1024 * 1024;
         int maxEntries = options?.MaxContainerEntries ?? 10_000;
-        int processedEntries = 0;
+        // With ExtractionOptions.ShareContainerBudget the counters belong to the whole extraction, so a container
+        // nested in another one continues the same budget instead of starting a fresh one.
+        var budget = options?.SharedBudget;
+        long localBytes = 0;
+        int localEntries = 0;
+        ref long totalDecodedBytes = ref (budget != null ? ref budget.Used : ref localBytes);
+        ref int processedEntries = ref (budget != null ? ref budget.Entries : ref localEntries);
 
         foreach (var entity in message.Attachments)
         {

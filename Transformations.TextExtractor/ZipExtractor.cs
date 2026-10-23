@@ -39,10 +39,15 @@ public class ZipExtractor : ITextExtractor, IPartGatedContainer
     public string ExtractText(byte[] fileData, ExtractionOptions? options)
     {
         var sb = new StringBuilder();
-        long totalDecompressed = 0;
         long maxBytes = options?.MaxDecompressedBytes ?? 512L * 1024 * 1024;
         int maxEntries = options?.MaxContainerEntries ?? 10_000;
-        int processedEntries = 0;
+        // With ExtractionOptions.ShareContainerBudget the counters belong to the whole extraction, so a container
+        // nested in another one continues the same budget instead of starting a fresh one.
+        var budget = options?.SharedBudget;
+        long localBytes = 0;
+        int localEntries = 0;
+        ref long totalDecompressed = ref (budget != null ? ref budget.Used : ref localBytes);
+        ref int processedEntries = ref (budget != null ? ref budget.Entries : ref localEntries);
 
         using var ms = new MemoryStream(fileData);
         using var zip = new ZipArchive(ms, ZipArchiveMode.Read);

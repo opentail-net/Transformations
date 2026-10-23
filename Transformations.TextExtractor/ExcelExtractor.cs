@@ -5,6 +5,8 @@ namespace Transformations.Text;
 
 /// <summary>
 /// Extracts text from Excel spreadsheets (.xlsx, .xls, .xlsm) using ExcelDataReader.
+/// Hidden and very hidden sheets, hidden (zero-height) rows and hidden (zero-width) columns are reported as hidden
+/// text and follow <see cref="ExtractionOptions.HiddenText"/>. Cell comments are not extracted.
 /// </summary>
 public class ExcelExtractor : ITextExtractor
 {
@@ -31,10 +33,15 @@ public class ExcelExtractor : ITextExtractor
 
         var sb = new StringBuilder();
         var mode = options?.TableMode ?? TableMode.KeyValue;
+        var hiddenMode = options?.HiddenText ?? HiddenTextMode.Mark;
+        var hidden = new List<(string Text, string How)>();
 
         do
         {
             string sheetName = reader.Name;
+            bool sheetHidden = !string.Equals(reader.VisibleState, "visible", StringComparison.OrdinalIgnoreCase)
+                               && !string.IsNullOrEmpty(reader.VisibleState);
+            HashSet<int>? hiddenColumns = null;
 
             // Buffer all rows for the sheet
             bool isHeaderRead = false;
@@ -44,18 +51,34 @@ public class ExcelExtractor : ITextExtractor
             while (reader.Read())
             {
                 ExtractionGuard.ThrowIfCancellationRequested(options);
+                hiddenColumns ??= HiddenColumns(reader);
+                bool rowHidden = sheetHidden || reader.RowHeight == 0;
+
+                var values = new string[reader.FieldCount];
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    var value = reader.GetValue(i)?.ToString() ?? string.Empty;
+                    if ((rowHidden || hiddenColumns.Contains(i)) && value.Length > 0)
+                    {
+                        hidden.Add((value, sheetHidden ? $"{reader.VisibleState} sheet" : rowHidden ? "hidden row" : "hidden column"));
+                        value = hiddenMode switch
+                        {
+                            HiddenTextMode.Drop => string.Empty,
+                            HiddenTextMode.Mark => "[hidden] " + value,
+                            _ => value,
+                        };
+                    }
+                    values[i] = value;
+                }
+
                 if (!isHeaderRead)
                 {
-                    for (int i = 0; i < reader.FieldCount; i++)
-                        headers.Add(reader.GetValue(i)?.ToString() ?? $"Column{i}");
+                    for (int i = 0; i < values.Length; i++)
+                        headers.Add(values[i].Length > 0 || reader.GetValue(i) != null ? values[i] : $"Column{i}");
                     isHeaderRead = true;
                     continue;
                 }
-
-                var row = new string[reader.FieldCount];
-                for (int i = 0; i < reader.FieldCount; i++)
-                    row[i] = reader.GetValue(i)?.ToString() ?? string.Empty;
-                dataRows.Add(row);
+                dataRows.Add(values);
             }
 
             if (!isHeaderRead || (headers.Count == 0 && dataRows.Count == 0)) continue;
@@ -106,6 +129,25 @@ public class ExcelExtractor : ITextExtractor
         }
         while (reader.NextResult());
 
+        if (hidden.Count > 0)
+            SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenXlsx, "xlsx",
+                string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
+                string.Join(", ", hidden.Select(h => h.How).Distinct()));
         return sb.ToString().Trim();
+    }
+
+    /// <summary>Columns with zero width (hidden). Formats that do not report widths have none.</summary>
+    private static HashSet<int> HiddenColumns(IExcelDataReader reader)
+    {
+        var result = new HashSet<int>();
+        for (int i = 0; i < reader.FieldCount; i++)
+        {
+            try
+            {
+                if (reader.GetColumnWidth(i) == 0) result.Add(i);
+            }
+            catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or ArgumentOutOfRangeException) { }
+        }
+        return result;
     }
 }

@@ -45,6 +45,9 @@ internal static class ExtractionGuard
 
         long maxBytes = options?.MaxDecompressedBytes ?? DefaultMaxDecompressedBytes;
         int maxEntries = options?.MaxContainerEntries ?? DefaultMaxContainerEntries;
+        // A package inside a container spends the extraction's shared budget when there is one.
+        var budget = options?.SharedBudget;
+        long alreadyUsed = budget?.Used ?? 0;
 
         using var ms = new MemoryStream(data, writable: false);
         using var zip = new ZipArchive(ms, ZipArchiveMode.Read);
@@ -53,7 +56,7 @@ internal static class ExtractionGuard
             throw new ExtractionLimitExceededException(
                 $"{format} package has {zip.Entries.Count} parts; the limit is {maxEntries}.");
 
-        long declared = 0;
+        long declared = alreadyUsed;
         foreach (var entry in zip.Entries)
         {
             declared += entry.Length;
@@ -62,7 +65,7 @@ internal static class ExtractionGuard
                     $"{format} package declares more than {maxBytes} uncompressed bytes.");
         }
 
-        long total = 0;
+        long total = alreadyUsed;
         var buffer = ArrayPool<byte>.Shared.Rent(81920);
         try
         {
@@ -84,6 +87,7 @@ internal static class ExtractionGuard
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
+            if (budget != null) budget.Used = total;
         }
     }
 
@@ -287,4 +291,17 @@ internal static class PartStub
 
     private static void Warn(ExtractionOptions? options, string code, string source, string message)
         => options?.WarningSink?.Invoke(new ExtractionWarning(code, source, message));
+}
+
+/// <summary>
+/// Decompression and entry budget shared by every container in one extraction when
+/// <see cref="ExtractionOptions.ShareContainerBudget"/> is on, so nesting cannot reset the limits.
+/// </summary>
+internal sealed class ContainerBudget
+{
+    /// <summary>Bytes decompressed or decoded so far, failed entries included.</summary>
+    public long Used;
+
+    /// <summary>Container entries (ZIP entries, EML attachments, EPUB spine items) processed so far.</summary>
+    public int Entries;
 }
