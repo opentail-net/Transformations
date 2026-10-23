@@ -175,6 +175,24 @@ and re-check documents when the library's rules improve (re-extract stored origi
 - [ ] Hostile uploads are parsed in an isolated, resource-limited worker.
 - [ ] Logs and review queues are access-controlled as document content.
 
+### How the safety behaviour is validated
+
+On every test run (and in CI on Linux and Windows, .NET 8, 9 and 10):
+
+- **Labelled corpus** (`TextExtractorSafetyCorpusTests`): adversarial, known-gap and benign documents across formats;
+  recall and false-positive rate are printed and enforced.
+- **Invariants on random documents** (`TextExtractorSafetyInvariantTests`): hidden or withheld text never appears in
+  `Text` or in a model-input segment; findings point inside the text and excerpts stay bounded; verdicts agree with
+  error kinds; results are identical under concurrent use.
+- **Mutation fuzzing** of every built-in format (`MutatedInput_NeverThrows`) and limit/cancellation tests.
+- **Mutation check of the tests themselves**: disabling HTML hidden-text detection or per-part withholding makes the
+  corpus and invariant tests fail.
+
+Not covered by these tests, and worth doing before relying on the library for high-risk ingestion: measuring on your
+own real documents and on public prompt-injection datasets, an end-to-end test with your actual model (plant canary
+instructions in documents and check whether they reach or influence the model), coverage-guided fuzzing of the
+parsers, and comparing extracted text with what a browser or Office actually renders.
+
 Reference details: [Safety gates and quarantine](#safety-gates-and-quarantine), [AI ingestion](#ai-ingestion)
 (settings, escalation rules, per-format coverage, measured detection) and [Partial success contract](#partial-success-contract).
 
