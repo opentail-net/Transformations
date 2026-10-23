@@ -99,7 +99,7 @@ ModelInput input = extractor.GetModelInput(fileName, bytes);          // uses Ex
 
 `ForAiIngestion()` turns on quarantine at High, review at Medium, drops hidden text from the output, and sets finite
 limits that nested archives and emails share. To read text in images and scanned PDFs, add an OCR engine
-(`with { OcrEngine = new TesseractOcrEngine(tessdata) }`, package `Transformations.Text.Ocr`, Windows only). Without
+(`with { OcrEngine = new TesseractOcrEngine(tessdata) }`, namespace `Transformations.Text.Ocr`, Windows only; see [OCR](#ocr)). Without
 OCR, image content is not read at all, so it is neither indexed nor checked: an image file fails with
 `ErrorKind.NeedsOcr`, and images inside documents or archives set `IsPartial`.
 
@@ -517,6 +517,29 @@ calls, data access or other actions: enforce permissions, least privilege and hu
 are cooperative and some parser calls cannot be interrupted, so for hostile public uploads also run extraction in an
 isolated worker process with OS memory/CPU limits and a concurrency limit.
 
+### OCR
+
+Tesseract OCR is built in: text from images (attachments, ZIP entries, standalone files) and scanned PDF pages.
+
+```csharp
+using Transformations.Text.Ocr;
+
+using var ocr = new TesseractOcrEngine(@"C:\tessdata", "eng");     // one per process; dispose at shutdown
+var result = new TextExtractor().GetText("scan.pdf", bytes, new ExtractionOptions { OcrEngine = ocr });
+```
+
+- **Windows x64/x86.** The native Tesseract 5.5 / Leptonica 1.85 binaries come with the TesseractOCR package and need
+  the Microsoft Visual C++ 2022 runtime. Elsewhere `IsAvailable` is `false`, no native code is loaded, and images are
+  reported as needing OCR (`content.needsOcr` / `ExtractionErrorKind.NeedsOcr`).
+- **Language data is not bundled.** Download `eng.traineddata` (and others) from
+  https://github.com/tesseract-ocr/tessdata_fast. A missing file makes `IsAvailable` false; `UnavailableReason` says why.
+- **OCR text is untrusted.** Every OCR result adds a `content.ocr` warning and goes through the safety gate with
+  stricter scoring.
+- **Limits.** Image size is read from the header (or, in PDFs, from the image dictionary) before decoding and checked
+  against `ExtractionOptions.MaxImagePixels` (default 64 MP). Tesseract's recognition call cannot be interrupted;
+  cancellation and timeouts are checked before each image.
+- Engines are pooled: one `TesseractOcrEngine` can be shared across threads.
+
 ### Extension vs content
 
 The extension picks the extractor. If that extractor fails and the magic bytes identify a different format, the
@@ -727,6 +750,10 @@ RTF and EPUB parsing use BCL only — no additional dependencies.
 ## Changelog
 
 ### 2.0.5 (current)
+
+**Packaging:** `Transformations.Text.Ocr` is merged into this package (same `Transformations.Text.Ocr` namespace, so code
+using `TesseractOcrEngine` compiles unchanged). Reference `Transformations.Text` only; drop any `Transformations.Text.Ocr`
+package reference.
 
 **Safety gates and quarantine (2.0.5.1):**
 - New safety gate: `ExtractionOptions.Safety` (`SafetyPolicy`), `HiddenText` (`HiddenTextMode`), `FindingSink`; `Findings` and `Quarantine` on both result types; `ExtractionErrorKind.Quarantined`; warning codes `safety.finding` and `safety.withheld`. See [Safety gates and quarantine](#safety-gates-and-quarantine).

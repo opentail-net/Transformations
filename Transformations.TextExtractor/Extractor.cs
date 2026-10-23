@@ -1165,7 +1165,7 @@ public sealed record ExtractionOptions
 
     /// <summary>
     /// OCR backend for images and scanned PDF pages (for example <c>TesseractOcrEngine</c> from
-    /// <c>Transformations.Text.Ocr</c>). <c>null</c> = no OCR: images get stub records / <see cref="ExtractionErrorKind.NeedsOcr"/>.
+    /// <c>Transformations.Text.Ocr</c>, part of this package). <c>null</c> = no OCR: images get stub records / <see cref="ExtractionErrorKind.NeedsOcr"/>.
     /// </summary>
     public IOcrEngine? OcrEngine { get; init; }
 

@@ -54,10 +54,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Audio.Fidel
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Audio", "Transformations.Audio\Transformations.Audio.csproj", "{125919FC-A664-48C5-87E7-CDC8AFC0A921}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Text.Ocr", "Transformations.Text.Ocr\Transformations.Text.Ocr.csproj", "{10937F87-11C2-4008-A5FE-E529A1E3911F}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Transformations.TextExtractor", "Transformations.TextExtractor", "{27A2EBE0-BC9C-E3B3-920D-8847CEA037D8}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -308,18 +304,6 @@ Global
 		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x64.Build.0 = Release|Any CPU
 		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x86.ActiveCfg = Release|Any CPU
 		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x86.Build.0 = Release|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Debug|x64.Build.0 = Debug|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Debug|x86.Build.0 = Debug|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Release|x64.ActiveCfg = Release|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Release|x64.Build.0 = Release|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Release|x86.ActiveCfg = Release|Any CPU
-		{10937F87-11C2-4008-A5FE-E529A1E3911F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

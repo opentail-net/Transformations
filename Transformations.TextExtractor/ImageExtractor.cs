@@ -4,7 +4,7 @@ namespace Transformations.Text;
 
 /// <summary>
 /// Optical character recognition backend, set through <see cref="ExtractionOptions.OcrEngine"/>.
-/// The core package ships no engine; <c>Transformations.Text.Ocr</c> provides a Tesseract one.
+/// This package's <c>Transformations.Text.Ocr.TesseractOcrEngine</c> is the built-in implementation.
 /// </summary>
 public interface IOcrEngine
 {
