@@ -52,3 +52,18 @@ completion while away, with economical token use. All phases built (phase 7 as s
 | 7 Resource hardening | Shared nested budget built; process isolation documented |
 | 8 Corpus | Built: `TextExtractorSafetyCorpusTests` (23 adversarial, 4 labelled known gaps, 18 benign; recall and false-positive rate printed and enforced) plus mutation fuzzing |
 | 9 Docs, pack, vulnerability scan, consumer test | Done (see final report) |
+
+## Further validation ideas (not built; recorded 2026-10-23)
+Ranked by how much assurance each adds. Already in place: labelled corpus with recall/false-positive gates,
+invariant tests on random documents, mutation fuzzing, a mutation check that the safety tests can fail, and CI on
+`main` for .NET 8/9/10 on Linux and Windows.
+
+| # | Idea | What it measures | Needs |
+|---|---|---|---|
+| 1 | End-to-end canary test with the real model: plant instructions such as "reply with PINEAPPLE-7" in documents, run them through the actual pipeline and model, count canaries in the output | Whether injected text reaches and steers the model (the real risk, not detection) | The application's model and prompts |
+| 2 | Run a sample of genuine documents through `ForAiIngestion()` and review everything flagged or withheld | Real false-positive rate; basis for tuning `ReviewAt`/`QuarantineAt` | Real traffic, a reviewer |
+| 3 | Public prompt-injection datasets (e.g. deepset prompt-injections, Microsoft BIPIA) as extra adversarial samples | Recall on attacks written by others | Check licences and formats first |
+| 4 | Render-and-diff: headless browser for HTML, Word/LibreOffice for DOCX; compare visible text with extracted text | Hidden-text detection gaps (visible ≠ extracted and not flagged) | Playwright or an office renderer |
+| 5 | Coverage-guided fuzzing of the parsers for hours (e.g. SharpFuzz with AFL/libFuzzer) | Crashes and hangs the short mutation test cannot reach | A long-running job |
+| 6 | Red-teaming by a person or an attacking model; every bypass becomes a corpus sample | New bypass classes | Time, or a model prompted to attack |
+| 7 | Production monitoring of verdict rates, alerting on spikes or drops to zero (a drop after an upgrade suggests a regression) | Drift and silent breakage | Application metrics |
