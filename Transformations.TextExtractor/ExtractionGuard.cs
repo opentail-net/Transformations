@@ -29,6 +29,21 @@ internal static class ExtractionGuard
     internal static void ThrowIfCancellationRequested(ExtractionOptions? options)
         => options?.CancellationToken.ThrowIfCancellationRequested();
 
+    /// <summary>
+    /// Reports the <paramref name="unit"/>s (pages, slides, chapters) of <paramref name="total"/> that fall outside
+    /// <paramref name="start"/>..<paramref name="end"/>, so a selected subset is not taken for the whole document.
+    /// </summary>
+    internal static void ReportOmitted(ExtractionOptions? options, string source, string unit, int total, int start, int end)
+    {
+        if (options?.WarningSink is not { } sink || total <= 0) return;
+        int first = Math.Max(1, start), last = Math.Min(total, end);
+        int omitted = first > last ? total : (first - 1) + (total - last);
+        if (omitted == 0) return;
+        var kept = first > last ? "none" : first == last ? $"{unit} {first}" : $"{unit}s {first}-{last}";
+        sink(new ExtractionWarning(ExtractionWarningCodes.PagesOmitted, source,
+            $"{omitted} of {total} {unit}s not extracted; kept {kept} (StartPage/EndPage/MaxPages)."));
+    }
+
     internal static bool IsZip(byte[] data)
         => data.Length >= 4 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04;
 

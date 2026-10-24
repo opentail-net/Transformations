@@ -13,7 +13,8 @@ namespace Transformations.Text;
 /// <c>[Image N] (OCR)</c> block reported with <see cref="ExtractionWarningCodes.OcrText"/>.</item>
 /// <item>A hidden image (hidden element, hidden run, shape or sheet, off the page) is still read, and its text is hidden
 /// content: reported as a hidden-content finding and rendered by <see cref="ExtractionOptions.HiddenText"/>.</item>
-/// <item>Images left unread (no engine, OCR turned off, over the limit) are reported with
+/// <item>Images left unread (no engine, OCR turned off, over the limit, a format OCR cannot read, an HTML image
+/// referenced by URL) are reported with
 /// <see cref="ExtractionWarningCodes.NeedsOcr"/>, so the result is marked partial rather than looking fully inspected.</item>
 /// </list>
 /// </summary>
@@ -32,6 +33,10 @@ internal static class EmbeddedImageOcr
         public int OverLimit;
         public int Unread;
         public int UnverifiedPages;
+        /// <summary>Images OCR cannot read: vector or unknown formats (SVG, EMF, WMF), unreadable headers, decode failures.</summary>
+        public int Unsupported;
+        /// <summary>Images referenced by URL, which are never fetched.</summary>
+        public int NotFetched;
     }
 
     /// <summary>
@@ -64,8 +69,13 @@ internal static class EmbeddedImageOcr
     {
         ExtractionGuard.ThrowIfCancellationRequested(options);
         var format = ContentTypeDetector.SniffExtension(image);
-        if (!ContentTypeDetector.IsImageExtension(format)) return; // EMF/WMF/SVG and other non-raster parts
-        if (ImageHeader.ReadSize(image) is not var (width, height) || !ShouldRead(width, height, options, counter)) return;
+        // EMF/WMF/SVG and other non-raster parts, or a header that cannot be read: not inspected, and said so.
+        if (!ContentTypeDetector.IsImageExtension(format) || ImageHeader.ReadSize(image) is not var (width, height))
+        {
+            counter.Unsupported++;
+            return;
+        }
+        if (!ShouldRead(width, height, options, counter)) return;
 
         counter.Read++;
         try
@@ -86,6 +96,10 @@ internal static class EmbeddedImageOcr
         {
             options!.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, where, $"Embedded image not read: {ex.Message}"));
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            options!.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, where, $"Embedded image could not be read: {ex.Message}"));
+        }
     }
 
     /// <summary>Reports images left unread, and invisible text layers that could not be compared with their image.</summary>
@@ -99,6 +113,12 @@ internal static class EmbeddedImageOcr
         if (counter.OverLimit > 0)
             warn(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, source,
                 $"{counter.OverLimit} embedded images were not OCR'd: the limit is {options.MaxOcrImages} per document (ExtractionOptions.MaxOcrImages)."));
+        if (counter.Unsupported > 0)
+            warn(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, source,
+                $"{counter.Unsupported} embedded images were not inspected: a vector or unknown format (SVG, EMF, WMF) or an unreadable image."));
+        if (counter.NotFetched > 0)
+            warn(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, source,
+                $"{counter.NotFetched} images referenced by URL were not fetched, so they were not inspected."));
         if (counter.UnverifiedPages > 0)
             warn(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, source,
                 $"Invisible text over images on {counter.UnverifiedPages} pages was not compared with the images (needs OCR); it is treated as a searchable-scan text layer."));

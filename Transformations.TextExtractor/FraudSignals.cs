@@ -51,10 +51,11 @@ internal static class FraudSignals
     private static readonly Regex[] Boosters = [Urgency, Secrecy, Authority];
 
     /// <summary>Scans the folded text; offsets in findings point into the original text through <paramref name="map"/>.</summary>
-    internal static void Scan(string original, string folded, int[] map, string source, List<SafetyFinding> findings,
+    /// <returns><c>false</c> when a pattern timed out, so the check is incomplete.</returns>
+    internal static bool Scan(string original, string folded, int[] map, string source, List<SafetyFinding> findings,
         Func<string, int, int, string> excerpt)
     {
-        if (folded.Length == 0) return;
+        if (folded.Length == 0) return true;
         try
         {
             var cache = new Dictionary<Regex, List<Match>>();
@@ -96,8 +97,10 @@ internal static class FraudSignals
         }
         catch (RegexMatchTimeoutException)
         {
-            // Pathological input: keep what was found.
+            // Pathological input: keep what was found; the caller reports the scan as incomplete.
+            return false;
         }
+        return true;
     }
 
     /// <summary>

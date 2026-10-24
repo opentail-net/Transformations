@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using DocumentFormat.OpenXml;
@@ -143,6 +144,56 @@ internal static class SafetyTestDocs
             }
         }
         return ms.ToArray();
+    }
+
+    /// <summary>A valid grey PNG of the given size (8-bit greyscale, zlib-compressed rows).</summary>
+    public static byte[] Png(int width, int height)
+    {
+        var raw = new byte[height * (width + 1)];
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                raw[y * (width + 1) + 1 + x] = (byte)((x + y) % 256);
+        using var compressed = new MemoryStream();
+        using (var z = new ZLibStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
+            z.Write(raw);
+
+        var ihdr = new byte[13];
+        BinaryPrimitives.WriteInt32BigEndian(ihdr, width);
+        BinaryPrimitives.WriteInt32BigEndian(ihdr.AsSpan(4), height);
+        ihdr[8] = 8; // bit depth; colour type 0 (greyscale), defaults for the rest
+
+        using var png = new MemoryStream();
+        png.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        WriteChunk(png, "IHDR", ihdr);
+        WriteChunk(png, "IDAT", compressed.ToArray());
+        WriteChunk(png, "IEND", []);
+        return png.ToArray();
+    }
+
+    private static void WriteChunk(Stream s, string type, byte[] data)
+    {
+        Span<byte> len = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(len, data.Length);
+        s.Write(len);
+        var typeBytes = Encoding.ASCII.GetBytes(type);
+        s.Write(typeBytes);
+        s.Write(data);
+        uint crc = Crc32([.. typeBytes, .. data]);
+        Span<byte> c = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(c, crc);
+        s.Write(c);
+    }
+
+    private static uint Crc32(byte[] bytes)
+    {
+        uint crc = 0xFFFFFFFF;
+        foreach (var b in bytes)
+        {
+            crc ^= b;
+            for (int k = 0; k < 8; k++)
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+        }
+        return ~crc;
     }
 
     public sealed class FakeOcr(string text) : IOcrEngine

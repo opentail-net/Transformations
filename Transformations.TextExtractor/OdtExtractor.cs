@@ -54,12 +54,13 @@ public class OdtExtractor : ITextExtractor
         if (body == null) return string.Empty;
 
         var sb = new StringBuilder();
-        AppendBody(body, sb, tableMode, slideMarkers, options);
+        var extracted = AppendBody(body, sb, tableMode, slideMarkers, options);
 
-        // Pictures the content references (draw:image), each once; unused media in Pictures/ is not shown.
+        // Pictures the extracted content references (draw:image), each once: only the selected slides of a presentation,
+        // and no unused media from Pictures/.
         var counter = new EmbeddedImageOcr.Counter();
         XNamespace xlink = "http://www.w3.org/1999/xlink";
-        foreach (var href in body.Descendants(DrawNs + "image").Select(i => i.Attribute(xlink + "href")?.Value).Distinct())
+        foreach (var href in extracted.SelectMany(e => e.Descendants(DrawNs + "image")).Select(i => i.Attribute(xlink + "href")?.Value).Distinct())
         {
             if (href == null || zip.GetEntry(href) is not { Length: > 0 } entry) continue;
             using var s = entry.Open();
@@ -70,9 +71,11 @@ public class OdtExtractor : ITextExtractor
         return sb.ToString().Trim();
     }
 
-    private static void AppendBody(XElement body, StringBuilder sb, TableMode tableMode, bool slideMarkers, ExtractionOptions? options)
+    /// <summary>Appends the body's text and returns the elements extracted: the selected slides, or the whole body.</summary>
+    private static List<XElement> AppendBody(XElement body, StringBuilder sb, TableMode tableMode, bool slideMarkers, ExtractionOptions? options)
     {
         var pages = body.Elements(DrawNs + "page").ToList();
+        var extracted = new List<XElement>();
         if (pages.Count > 0)
         {
             // StartPage, EndPage and MaxPages select slides, as they do for PPTX.
@@ -99,14 +102,18 @@ public class OdtExtractor : ITextExtractor
                 else if (slideMarkers)
                     sb.AppendLine($"[{pageName}]");
                 ExtractContent(page, sb, tableMode, options);
+                extracted.Add(page);
                 sb.AppendLine();
                 slideNum++;
             }
+            ExtractionGuard.ReportOmitted(options, "odp", "slide", pages.Count, start, end);
         }
         else
         {
             ExtractContent(body, sb, tableMode, options);
+            extracted.Add(body);
         }
+        return extracted;
     }
 
     private static void ExtractContent(XElement element, StringBuilder sb, TableMode tableMode, ExtractionOptions? options)

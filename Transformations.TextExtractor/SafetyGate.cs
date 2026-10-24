@@ -53,7 +53,9 @@ public enum SafetyCategory
     /// Social engineering aimed at the human reader (payment redirection, phishing, code requests, gift-card and
     /// extortion scams), detected from combinations of cues, never from one word.
     /// </summary>
-    Fraud
+    Fraud,
+    /// <summary>A detector stopped early (time or work limit), so part of the text was not fully checked.</summary>
+    ScanLimit
 }
 
 /// <summary>
@@ -80,9 +82,14 @@ public enum SafetyVerdict
     NoKnownSignals,
     /// <summary>Findings below <see cref="SafetyPolicy.ReviewAt"/>; nothing withheld.</summary>
     Flagged,
-    /// <summary>A finding reached <see cref="SafetyPolicy.ReviewAt"/>: route to review before automatic indexing.</summary>
+    /// <summary>
+    /// A finding in content that is still in the result reached <see cref="SafetyPolicy.ReviewAt"/>: route to review
+    /// before automatic indexing. Parts may also have been withheld (see <c>Quarantine</c>); this verdict takes precedence.
+    /// </summary>
     ReviewRequired,
-    /// <summary>Some parts (entries, attachments, hidden text) were withheld; the rest is in <c>Text</c>.</summary>
+    /// <summary>
+    /// Some parts (entries, attachments, hidden text) were withheld and nothing left in <c>Text</c> needs review.
+    /// </summary>
     PartsWithheld,
     /// <summary>The whole document was withheld (<see cref="ExtractionErrorKind.Quarantined"/>).</summary>
     Quarantined
@@ -139,6 +146,12 @@ public static class SafetyFindingCodes
     public const string EncodedInstruction = "safety.encodedInstruction";
     /// <summary>Concealment wording close to an override, disclosure or tool-action instruction.</summary>
     public const string CorrelatedInstructions = "safety.correlatedInstructions";
+    /// <summary>
+    /// The scan of this part stopped early: a detector timed out, or more base64 runs (or longer ones) were present than
+    /// are decoded. The reason says what was skipped. Medium, so the AI-ingestion profile routes the result to review:
+    /// text that was not fully checked must not look clean.
+    /// </summary>
+    public const string ScanIncomplete = "safety.scanIncomplete";
     /// <summary>Payment wording next to new or changed bank details (business email compromise).</summary>
     public const string FraudPaymentRedirection = "safety.fraud.paymentRedirection";
     /// <summary>A request to confirm or enter a password or login details.</summary>
@@ -271,7 +284,8 @@ internal static class SafetyGate
     private const int MaxExcerpt = 200;
     private const int MaxInstructionFindings = 20;
 
-    private const int MaxEncodedRuns = 16;
+    private const int MaxEncodedRuns = 256;
+    private const int MaxEncodedTotal = 1024 * 1024;
     private const int MaxEncodedRunLength = 64 * 1024;
     private const int CorrelationWindow = 300;
 
@@ -369,8 +383,10 @@ internal static class SafetyGate
         var findings = new List<SafetyFinding>();
         if (!policy.Enabled || string.IsNullOrEmpty(text)) return findings;
 
+        var skipped = new List<string>();
         var folded = Fold(text);
-        var hits = FindInstructions(folded, policy);
+        if (folded.SpacingTimedOut) skipped.Add("the letter-spacing check timed out");
+        var hits = FindInstructions(folded, policy, skipped);
         var instructions = hits.Select(h => h.Match).ToList();
 
         ScanTagCharacters(text, source, policy, findings);
@@ -385,33 +401,45 @@ internal static class SafetyGate
             };
 
         bool concealment = hits.Any(h => h.Category == SafetyCategory.Concealment);
-        foreach (var h in hits.Take(MaxInstructionFindings))
+        var instructionFindings = new List<SafetyFinding>();
+        foreach (var h in hits)
         {
             var excerpt = Excerpt(text, h.Start, h.End - h.Start);
             if (h.Obfuscated)
-                findings.Add(new SafetyFinding(SafetyFindingCodes.ObfuscatedInstruction,
+                instructionFindings.Add(new SafetyFinding(SafetyFindingCodes.ObfuscatedInstruction,
                     concealment ? SafetySeverity.High : SafetySeverity.Medium, source,
                     concealment
                         ? "Instruction wording disguised with lookalike characters or letter spacing, together with concealment wording."
                         : "Instruction wording disguised with lookalike characters, compatibility forms or letter spacing.",
                     excerpt) { Offset = h.Start, Category = SafetyCategory.Obfuscation, Confidence = concealment ? SafetyConfidence.High : SafetyConfidence.Medium });
             else if (fromOcr)
-                findings.Add(new SafetyFinding(SafetyFindingCodes.OcrInstruction, SafetySeverity.Medium, source,
+                instructionFindings.Add(new SafetyFinding(SafetyFindingCodes.OcrInstruction, SafetySeverity.Medium, source,
                     "Instruction wording aimed at an AI model, in OCR text.",
                     excerpt) { Offset = h.Start, Category = h.Category, Confidence = SafetyConfidence.Low });
             else if (IsAddressed(text, h))
-                findings.Add(new SafetyFinding(SafetyFindingCodes.Instruction, SafetySeverity.Medium, source,
+                instructionFindings.Add(new SafetyFinding(SafetyFindingCodes.Instruction, SafetySeverity.Medium, source,
                     "Instruction wording aimed at an AI model, written as a direct instruction rather than quoted or discussed.",
                     excerpt) { Offset = h.Start, Category = h.Category, Confidence = SafetyConfidence.Medium });
             else
-                findings.Add(new SafetyFinding(SafetyFindingCodes.Instruction, SafetySeverity.Low, source,
+                instructionFindings.Add(new SafetyFinding(SafetyFindingCodes.Instruction, SafetySeverity.Low, source,
                     "Instruction wording aimed at an AI model.",
                     excerpt) { Offset = h.Start, Category = h.Category, Confidence = SafetyConfidence.Low });
         }
 
+        // Every hit is scored; the most severe are kept, so many harmless mentions cannot push a serious one out.
+        findings.AddRange(instructionFindings
+            .OrderByDescending(f => f.Severity).ThenBy(f => f.Offset)
+            .Take(MaxInstructionFindings)
+            .OrderBy(f => f.Offset));
+
         ScanCorrelated(text, source, hits, findings);
-        FraudSignals.Scan(text, folded.Text, folded.Map, source, findings, Excerpt);
-        ScanEncoded(text, source, policy, findings);
+        if (!FraudSignals.Scan(text, folded.Text, folded.Map, source, findings, Excerpt))
+            skipped.Add("the fraud-signal check timed out");
+        ScanEncoded(text, source, policy, findings, skipped);
+        if (skipped.Count > 0)
+            findings.Add(new SafetyFinding(SafetyFindingCodes.ScanIncomplete, SafetySeverity.Medium, source,
+                $"Safety scan incomplete: {string.Join("; ", skipped)}. Content there was not fully checked.", "")
+                { Category = SafetyCategory.ScanLimit, Confidence = SafetyConfidence.Low });
         return findings;
     }
 
@@ -461,7 +489,7 @@ internal static class SafetyGate
 
     // ── D7: instruction wording ──────────────────────────────────────────────
 
-    private static List<Hit> FindInstructions(Folded folded, SafetyPolicy policy)
+    private static List<Hit> FindInstructions(Folded folded, SafetyPolicy policy, List<string>? skipped = null)
     {
         var hits = new List<Hit>();
         void Add(Match m, SafetyCategory category)
@@ -503,7 +531,8 @@ internal static class SafetyGate
         }
         catch (RegexMatchTimeoutException)
         {
-            // Pathological input: report what was found so far rather than fail the extraction.
+            // Pathological input: keep what was found so far rather than fail the extraction, and say the scan is incomplete.
+            skipped?.Add("the instruction patterns timed out");
         }
         return hits.OrderBy(h => h.Start).ToList();
     }
@@ -529,18 +558,30 @@ internal static class SafetyGate
 
     /// <summary>
     /// Decodes long base64 runs (bounded: <see cref="MaxEncodedRuns"/> runs of at most <see cref="MaxEncodedRunLength"/>
-    /// characters) and reports instruction wording in the ones that decode to readable text.
+    /// characters, <see cref="MaxEncodedTotal"/> characters in all) and reports instruction wording in the ones that decode
+    /// to readable text. Runs left undecoded by these bounds are added to <paramref name="skipped"/>.
     /// </summary>
-    private static void ScanEncoded(string text, string source, SafetyPolicy policy, List<SafetyFinding> findings)
+    private static void ScanEncoded(string text, string source, SafetyPolicy policy, List<SafetyFinding> findings,
+        List<string> skipped)
     {
         if (text.Length < 40) return;
         try
         {
-            int runs = 0;
+            int runs = 0, tooLong = 0;
+            long total = 0;
             foreach (Match m in Base64Run.Matches(text))
             {
-                if (++runs > MaxEncodedRuns) break;
-                if (m.Length > MaxEncodedRunLength) continue;
+                if (++runs > MaxEncodedRuns || (total += Math.Min(m.Length, MaxEncodedRunLength)) > MaxEncodedTotal)
+                {
+                    skipped.Add($"base64 runs after the first {runs - 1} were not decoded (limit {MaxEncodedRuns} runs, {MaxEncodedTotal} characters)");
+                    break;
+                }
+                if (m.Length > MaxEncodedRunLength)
+                {
+                    if (tooLong++ == 0)
+                        skipped.Add($"a base64 run longer than {MaxEncodedRunLength} characters was not decoded");
+                    continue;
+                }
                 var buffer = new byte[m.Length * 3 / 4 + 3];
                 if (!Convert.TryFromBase64String(m.Value.PadRight(m.Length + (4 - m.Length % 4) % 4, '='), buffer, out int written))
                     continue;
@@ -554,7 +595,7 @@ internal static class SafetyGate
                 return;
             }
         }
-        catch (RegexMatchTimeoutException) { }
+        catch (RegexMatchTimeoutException) { skipped.Add("the base64 check timed out"); }
     }
 
     // ── D1: tag characters ───────────────────────────────────────────────────
@@ -824,7 +865,8 @@ internal static class SafetyGate
     // single letters with one separator ("i g n o r e") are joined. Folded characters are marked Changed, so a match
     // that needed them is reported as obfuscated. The original text is never modified.
 
-    private readonly record struct Folded(string Text, int[] Map, bool[] Changed, IReadOnlyList<(int Start, int Length)> JoinedRuns);
+    private readonly record struct Folded(string Text, int[] Map, bool[] Changed, IReadOnlyList<(int Start, int Length)> JoinedRuns,
+        bool SpacingTimedOut = false);
 
     private static readonly Dictionary<char, char> Lookalikes = new()
     {
@@ -893,7 +935,7 @@ internal static class SafetyGate
             runs = SpacedLetters.Matches(folded.Text);
             if (runs.Count == 0) return folded;
         }
-        catch (RegexMatchTimeoutException) { return folded; }
+        catch (RegexMatchTimeoutException) { return folded with { SpacingTimedOut = true }; }
 
         var drop = new bool[folded.Text.Length];
         var changed = (bool[])folded.Changed.Clone();

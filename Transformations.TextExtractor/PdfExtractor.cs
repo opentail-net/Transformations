@@ -39,10 +39,12 @@ public class PdfExtractor : ITextExtractor
         bool pageMarkers = options?.IncludePageMarkers == true;
         var hidden = new List<(string Source, string Text, string How)>();
         var ocrCounter = new EmbeddedImageOcr.Counter();
+        int pageCount = 0;
 
         try
         {
             using var document = PdfDocument.Open(stream);
+            pageCount = document.NumberOfPages;
 
             foreach (var page in document.GetPages())
             {
@@ -84,6 +86,8 @@ public class PdfExtractor : ITextExtractor
         }
 
         EmbeddedImageOcr.ReportSkipped(options, ocrCounter, "pdf");
+        if (pageCount > 0)
+            ExtractionGuard.ReportOmitted(options, "pdf", "page", pageCount, start, end);
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenPdf,
                 string.Join(", ", hidden.Select(h => h.Source).Distinct()),

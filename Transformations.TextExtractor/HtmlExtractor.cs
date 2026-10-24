@@ -343,7 +343,12 @@ public class HtmlExtractor : ITextExtractor
         return sb.ToString();
     }
 
-    /// <summary>OCRs <c>&lt;img src="data:image/...;base64,..."&gt;</c> images (at most 16 MB each).</summary>
+    /// <summary>
+    /// OCRs <c>&lt;img src="data:image/...;base64,..."&gt;</c> images (at most 16 MB each). Images referenced by URL are
+    /// never fetched, and other data URIs cannot be read; both are reported as not inspected, except <c>cid:</c> references
+    /// (the email container reads those parts) and images whose width and height attributes mark them as icons or
+    /// tracking pixels.
+    /// </summary>
     private static void AppendDataImages(HtmlDocument doc, StringBuilder sb, ExtractionOptions? options, HiddenText hidden)
     {
         var images = doc.DocumentNode.SelectNodes("//img[@src]");
@@ -351,14 +356,27 @@ public class HtmlExtractor : ITextExtractor
         var counter = new EmbeddedImageOcr.Counter();
         foreach (var img in images)
         {
-            var src = img.GetAttributeValue("src", "");
+            var src = img.GetAttributeValue("src", "").Trim();
+            if (src.Length == 0 || src.StartsWith("cid:", StringComparison.OrdinalIgnoreCase) || IsIconSized(img)) continue;
             int comma = src.IndexOf(',');
+            if (!src.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                counter.NotFetched++;
+                continue;
+            }
             if (!src.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase) || comma < 0
                 || !src.AsSpan(0, comma).EndsWith(";base64", StringComparison.OrdinalIgnoreCase)
                 || src.Length - comma > 16 * 1024 * 1024 * 4 / 3)
+            {
+                counter.Unsupported++; // e.g. data:image/svg+xml,%3Csvg... or an oversized image
                 continue;
+            }
             var bytes = new byte[(src.Length - comma) * 3 / 4 + 3];
-            if (!Convert.TryFromBase64String(src[(comma + 1)..].Trim(), bytes, out int written)) continue;
+            if (!Convert.TryFromBase64String(src[(comma + 1)..].Trim(), bytes, out int written))
+            {
+                counter.Unsupported++;
+                continue;
+            }
             // An image inside a hidden element (or a <template>) is not shown: its text is hidden content.
             string? how = null;
             for (var node = img; node != null && how == null; node = node.ParentNode)
@@ -368,6 +386,12 @@ public class HtmlExtractor : ITextExtractor
         }
         EmbeddedImageOcr.ReportSkipped(options, counter, "html");
     }
+
+    /// <summary>Width and height attributes below the OCR minimum: an icon, spacer or tracking pixel.</summary>
+    private static bool IsIconSized(HtmlNode img)
+        => int.TryParse(img.GetAttributeValue("width", "").TrimEnd('p', 'x'), out int w)
+           && int.TryParse(img.GetAttributeValue("height", "").TrimEnd('p', 'x'), out int h)
+           && (w < EmbeddedImageOcr.MinWidth || h < EmbeddedImageOcr.MinHeight);
 
     private static bool IsBlockElement(string name) =>
         name is "p" or "div" or "br" or "li" or "h1" or "h2" or "h3" or "h4" or "h5" or "h6" or "tr";

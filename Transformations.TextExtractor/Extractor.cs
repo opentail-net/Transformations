@@ -358,6 +358,7 @@ public class TextExtractor : IDocumentTextExtractor
             normalizedText = Truncate(normalizedText, options);
             // Metadata parses some formats again; the extraction's timeout and cancellation still apply.
             var metadata = BuildMetadata(fileName, content, normalizedText, processor, cancellation.Token);
+            ScanMetadata(metadata, normalizedText, options.Safety, effectiveOptions);
             if (mismatch != null)
                 metadata["file.detectedFormat"] = mismatch;
             metadata["extraction.extractor"] = processor!.GetType().Name;
@@ -751,11 +752,17 @@ public class TextExtractor : IDocumentTextExtractor
             _withheld.Clear();
         }
 
-        /// <summary>The verdict for a result that was not withheld as a whole.</summary>
+        /// <summary>
+        /// The verdict for a result that was not withheld as a whole. A finding that needs review in content that is
+        /// still in the result wins over <see cref="SafetyVerdict.PartsWithheld"/>: withholding one part must not let
+        /// another part that needs review be indexed automatically. Findings of withheld parts no longer apply.
+        /// </summary>
         public SafetyVerdict Verdict(SafetyPolicy policy)
         {
+            var inWithheld = new HashSet<SafetyFinding>(_withheld.SelectMany(p => p.Findings), ReferenceEqualityComparer.Instance);
+            if (_findings.Any(f => !f.Withheld && !inWithheld.Contains(f) && policy.RequiresReview(f.Severity)))
+                return SafetyVerdict.ReviewRequired;
             if (_withheld.Count > 0) return SafetyVerdict.PartsWithheld;
-            if (_findings.Any(f => policy.RequiresReview(f.Severity))) return SafetyVerdict.ReviewRequired;
             return _findings.Count > 0 ? SafetyVerdict.Flagged : SafetyVerdict.NoKnownSignals;
         }
     }
@@ -874,6 +881,44 @@ public class TextExtractor : IDocumentTextExtractor
 
         cancellationToken.ThrowIfCancellationRequested();
         return metadata;
+    }
+
+    /// <summary>Metadata keys whose values come from the library itself (sizes, counts, timings), not from the document.</summary>
+    private static readonly string[] _derivedMetadataPrefixes = ["text.", "extraction.", "safety."];
+    private static readonly HashSet<string> _derivedMetadataKeys = new(StringComparer.OrdinalIgnoreCase)
+        { "file.extension", "file.bytes", "file.detectedFormat" };
+
+    /// <summary>
+    /// Runs the safety gate over metadata values taken from the document (titles, authors, subjects, attachment names,
+    /// headings) and the file name, since callers often put them in prompts or indexes. Findings name the field
+    /// (<c>metadata pdf.title</c>). A value with a finding that reaches <see cref="SafetyPolicy.QuarantineAt"/> is replaced
+    /// and kept as a withheld part. Values that also appear in the extracted text were scanned there.
+    /// </summary>
+    private static void ScanMetadata(Dictionary<string, string> metadata, string text, SafetyPolicy? policy, ExtractionOptions options)
+    {
+        policy ??= SafetyPolicy.Default;
+        if (!policy.Enabled) return;
+        foreach (var key in metadata.Keys.ToList())
+        {
+            var value = metadata[key];
+            if (string.IsNullOrWhiteSpace(value) || _derivedMetadataKeys.Contains(key)
+                || _derivedMetadataPrefixes.Any(p => key.StartsWith(p, StringComparison.OrdinalIgnoreCase))
+                || text.Contains(value, StringComparison.Ordinal))
+                continue;
+            options.CancellationToken.ThrowIfCancellationRequested();
+
+            var source = $"metadata {key}";
+            var findings = SafetyGate.Scan(value, source, fromOcr: false, policy);
+            if (findings.Count == 0) continue;
+            if (findings.Any(f => policy.Withholds(f.Severity)))
+            {
+                findings = findings.Select(f => policy.Withholds(f.Severity) ? f with { Withheld = true } : f).ToList();
+                metadata[key] = "[withheld by the safety gate]";
+                options.WithheldSink?.Invoke(new QuarantinedPart(source, value, findings));
+            }
+            foreach (var finding in findings)
+                options.FindingSink?.Invoke(finding);
+        }
     }
 
     private static string GetSourceText(byte[] content)
@@ -1347,6 +1392,13 @@ public static class ExtractionWarningCodes
     /// is set. <c>Source</c> names the slide or sheet.
     /// </summary>
     public const string NotExtracted = "content.notExtracted";
+
+    /// <summary>
+    /// Pages, slides or chapters outside <see cref="ExtractionOptions.StartPage"/>, <see cref="ExtractionOptions.EndPage"/>
+    /// and <see cref="ExtractionOptions.MaxPages"/> were not extracted, so the result is a selected subset of the document
+    /// (<see cref="ModelInput.IsPartial"/> is set). <c>Message</c> says how many of how many, and which were kept.
+    /// </summary>
+    public const string PagesOmitted = "content.pagesOmitted";
 
     /// <summary>
     /// Text came from OCR. It is untrusted: an image can carry instructions aimed at an AI reader that no

@@ -71,6 +71,7 @@ public class EpubExtractor : ITextExtractor
         // 3. Extract text from each spine item in order
         var sb = new StringBuilder();
         int chapterNum = 0;
+        int chapterCount = spineItems.Count(s => IsHtmlMediaType(s.Item2));
 
         foreach (var (href, mediaType) in spineItems)
         {
@@ -132,6 +133,7 @@ public class EpubExtractor : ITextExtractor
             }
         }
 
+        ExtractionGuard.ReportOmitted(options, "epub", "chapter", chapterCount, start, end);
         return sb.ToString().Trim();
     }
 

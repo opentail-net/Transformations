@@ -110,8 +110,8 @@ OCR, image content is not read at all, so it is neither indexed nor checked: an 
 | `ErrorKind == Quarantined` | Do not index. Send to a review queue (`Findings`; withheld text only via `ExtractionResult.Quarantine.GetWithheldText()`) |
 | `ErrorKind` is another failure | Do not index; log `ErrorKind` and `ErrorMessage` |
 | `CanIndexWithoutReview == false` (`ReviewRequired`) | Hold for human review, or index with a flag that keeps it out of agent/tool workflows |
-| `Verdict == PartsWithheld` | Index `Segments` (the withheld parts are not in them); review `WithheldSources` |
-| `IsPartial` | Record that the document is incomplete (skipped entries, unread images, content not extracted, truncation) |
+| `Verdict == PartsWithheld` | Index `Segments` (the withheld parts are not in them); review `WithheldSources`. A finding that needs review in the remaining content makes the verdict `ReviewRequired` instead, even when parts were withheld |
+| `IsPartial` | Record that the document is incomplete (skipped entries, unread images, content not extracted, pages outside the selected range, truncation) |
 | Otherwise | Index the segments, as **untrusted** content |
 
 Never index or prompt with `Quarantine.GetWithheldText()`: it exists for human reviewers.
@@ -261,6 +261,8 @@ public class DocumentProcessor(IDocumentTextExtractor extractor)
 
 Common metadata keys: `file.name`, `file.extension`, `file.bytes`, `text.length`, `text.lineCount`, `text.wordCount`, `extraction.extractor`, `extraction.durationMs`. If non-fatal container issues occur, metadata also includes `extraction.warningCount` and `extraction.warnings`.
 
+Metadata values taken from the document (titles, authors, subjects, attachment names, headings) and `file.name` go through the same safety gate as the text: findings name the field (`Source` = `metadata pdf.title`) and count towards `SafetyVerdict`, and a value whose finding reaches `QuarantineAt` is replaced by `[withheld by the safety gate]` and kept in `Quarantine`. Values that also appear in the text are scanned there. Treat metadata as untrusted, like the text.
+
 Format-specific metadata:
 - **Markdown** — `markdown.headingCount`, `markdown.sectionCount`, `markdown.headings`
 - **JSON** — `json.rootKind`, `json.topLevelPropertyCount`, `json.topLevelProperties`, `json.topLevelArrayLength`
@@ -366,6 +368,7 @@ Stable warning codes are exposed as `ExtractionWarningCodes` constants:
 | `container.entryFailed` | `ContainerEntryFailed` | An individual entry was selected for extraction but failed independently of the top-level document. |
 | `content.typeMismatch` | `ContentTypeMismatch` | The extension contradicts the content's binary signature (a DOCX named `invoice.pdf`, a PDF named `notes.txt`). Raised for the document itself, ZIP entries and EML attachments, on success and on failure. Disguised files are a common malware-delivery trick: quarantine or scan rather than index. |
 | `content.needsOcr` | `NeedsOcr` | An image part or scanned PDF page has no text layer and no OCR engine ran. |
+| `content.pagesOmitted` | `PagesOmitted` | Pages, slides or chapters outside `StartPage`/`EndPage`/`MaxPages` were not extracted (PDF, PPTX, ODP, EPUB); the message gives how many of how many. Sets `IsPartial`. |
 | `content.notExtracted` | `NotExtracted` | The document holds content the extractor does not read (PPTX charts, SmartArt, embedded objects; XLSX cell comments, charts). Sets `IsPartial`. |
 | `content.ocr` | `OcrText` | Text came from OCR. Treat it as untrusted. |
 | `safety.finding` | `SafetyFinding` | The safety gate found something; the full record is in `Findings`. |
@@ -388,6 +391,7 @@ and as a `safety.finding` warning.
 | `safety.hiddenPdf` | Letters in render mode 3 on a page with no image, below 1 pt, or outside the crop box | Low | as above |
 | `safety.instruction` | Instruction wording aimed at a model: "ignore previous instructions", "do not tell the user", "if you are an AI", chat role tags (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), plus `SafetyPolicy.AdditionalInstructionPhrases` | Low; Medium when written as a direct instruction (opens a sentence or line, or follows `system:` / `Note to the AI:`, and is not quoted or discussed); chat role tags stay Low | — |
 | `safety.ocrInstruction` | Instruction wording in a part that produced OCR text | Medium | — |
+| `safety.scanIncomplete` | A detector stopped early in this part: a pattern timed out, or base64 runs beyond the decode limits (256 runs, 1,048,576 characters, 65,536 per run) were left undecoded. The reason says what was skipped | Medium | — |
 
 Invisible characters are removed before instruction wording is matched, so they cannot be used to split a phrase.
 
@@ -450,7 +454,7 @@ var result = extractor.GetText(name, bytes, options);
 switch (result.SafetyVerdict)
 {
     case SafetyVerdict.Quarantined:    reviewQueue.Add(name, result); break;              // nothing to index
-    case SafetyVerdict.PartsWithheld:  reviewQueue.Add(name, result); Index(result.Text); break;
+    case SafetyVerdict.PartsWithheld:  reviewQueue.Add(name, result); Index(result.Text); break; // nothing left needs review
     case SafetyVerdict.ReviewRequired: reviewQueue.Add(name, result); break;              // index after review
     default:                           Index(result.Text); break;                         // still untrusted text
 }
@@ -467,9 +471,10 @@ across nested containers** (`ShareContainerBudget`), 5,000,000 characters, 2,000
 | `SafetyPolicy.ReviewAt` | `SafetyVerdict.ReviewRequired` when a finding reaches it; withholds nothing (also for `TrustedSource`) |
 | `SafetyPolicy.RetainHiddenText` | With `HiddenText = Drop`, keep dropped hidden text in `Quarantine` for review. Off by default: findings then hold only a ≤200-character excerpt |
 
-`SafetyVerdict`: `NoKnownSignals` → `Flagged` (findings below `ReviewAt`) → `ReviewRequired` → `PartsWithheld` →
-`Quarantined`. Each finding also has a `Category` (Override, Role, Disclosure, ToolAction, Concealment, RoleMarker,
-Obfuscation, HiddenContent, InvisibleCharacters) and a rule-assigned `Confidence` (not a calibrated probability).
+`SafetyVerdict`: `NoKnownSignals` → `Flagged` (findings below `ReviewAt`) → `PartsWithheld` → `ReviewRequired` →
+`Quarantined`: a finding that needs review in content still in the result outranks withheld parts, and findings of a
+withheld part no longer count. Each finding also has a `Category` (Override, Role, Disclosure, ToolAction, Concealment,
+RoleMarker, Obfuscation, HiddenContent, InvisibleCharacters, Fraud, ScanLimit) and a rule-assigned `Confidence` (not a calibrated probability).
 
 Escalation is deterministic: a visible instruction alone is Low; in OCR text Medium; obfuscated (lookalike letters,
 fullwidth/compatibility forms, letter spacing like `i g n o r e`, base64) Medium; concealment within 300 characters of an
@@ -501,10 +506,10 @@ What each format is checked for (anything not listed is not inspected, which is 
 
 | Format | Hidden content detected | Not inspected |
 |---|---|---|
-| HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout |
+| HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout, CSS background images; `<img>` by URL is never fetched and SVG/other non-raster data URIs cannot be OCRd: both are reported (`content.needsOcr`, result partial), except `cid:` parts (read by the email container) and icon-sized images |
 | DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions; the same checks in headers, footers, footnotes, endnotes and comments, which are extracted as `[Header]`, `[Footer]`, `[Footnote]`, `[Endnote]` and `[Comment]` lines after the body | text boxes in shapes not tied to a run, embedded objects |
 | PDF | invisible text not over an image, invisible text over an image that OCR shows does not match it (or that adds instruction wording or a long passage the image does not show), text under 1 pt, text outside the crop box, images placed off the page; page-sized pictures without a text layer are OCRd or reported as not inspected | text colour, overlapping text; invisible text over an image when no OCR engine is set (reported as unverified) |
-| PPTX | hidden slides, hidden shapes and groups | alt text; charts, SmartArt and embedded objects are not extracted and are reported (`content.notExtracted`, result partial); speaker notes are extracted as `[Notes]` |
+| PPTX | hidden slides, hidden shapes and groups, tables in hidden graphic frames | alt text; charts, SmartArt and embedded objects are not extracted and are reported (`content.notExtracted`, result partial); speaker notes are extracted as `[Notes]` |
 | XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments and charts are not extracted and are reported (`content.notExtracted`, result partial) |
 | EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts | EPUB is gated as one document |
 | Images (OCR) | OCR text is scanned like any text and its findings are scored higher | text the OCR engine does not see |
@@ -560,7 +565,8 @@ Only pictures the document shows are read: DOCX drawings in the body, PPTX and X
 `draw:image` references, HTML `<img>`; unused media parts are ignored. A picture that is hidden (in a hidden run,
 element or `<template>`, a hidden shape or sheet, or placed off a PDF page) is still read, and its text is hidden
 content: reported as such (an instruction in it is High) and rendered by `HiddenText` (dropped under the AI profile).
-Every picture that is not read, because there is no OCR engine, `OcrEmbeddedImages` is off, or the limit is reached,
+Every picture that is not read, because there is no OCR engine, `OcrEmbeddedImages` is off, the limit is reached, or
+its format cannot be OCRd (SVG, EMF, WMF, an unreadable image; in Office documents too),
 is reported as `content.needsOcr`, so `ModelInput.IsPartial` tells you the document was not fully inspected.
 
 Embedded pictures (the last row) are limited so a picture-heavy document stays fast (OCR takes around a second per

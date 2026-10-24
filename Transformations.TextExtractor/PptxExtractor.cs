@@ -97,6 +97,7 @@ public class PptxExtractor : ITextExtractor
         }
 
         EmbeddedImageOcr.ReportSkipped(options, ocrCounter, "pptx");
+        ExtractionGuard.ReportOmitted(options, "pptx", "slide", presPart.Presentation.SlideIdList.Elements<SlideId>().Count(), start, end);
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenPptx, "pptx",
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
@@ -160,18 +161,42 @@ public class PptxExtractor : ITextExtractor
                     sb.AppendLine(t);
         }
 
-        // Tables live in graphic frames, not shapes: one line per row, cells separated by " | ".
+        // Tables live in graphic frames, not shapes: one line per row, cells separated by " | ". A table in a hidden frame
+        // (or a hidden group) is hidden content, like a hidden shape.
         foreach (var table in shapeTree.Descendants<A.Table>())
         {
+            var rows = new List<string>();
             foreach (var row in table.Elements<A.TableRow>())
             {
                 var cells = row.Elements<A.TableCell>()
                     .Select(c => string.Join(" ", c.Descendants<A.Text>().Select(t => t.Text)).Trim())
                     .ToList();
                 if (cells.Any(c => c.Length > 0))
-                    sb.AppendLine(string.Join(" | ", cells));
+                    rows.Add(string.Join(" | ", cells));
             }
+            if (rows.Count == 0) continue;
+
+            if (IsHiddenTable(table))
+            {
+                var hiddenText = string.Join(Environment.NewLine, rows);
+                hidden.Add((hiddenText, "hidden table"));
+                if (SafetyGate.RenderHidden(options, hiddenText) is { } rendered)
+                    sb.AppendLine(rendered);
+                continue;
+            }
+            foreach (var line in rows)
+                sb.AppendLine(line);
         }
+    }
+
+    /// <summary>A table whose graphic frame is hidden, or that sits inside a hidden group.</summary>
+    private static bool IsHiddenTable(A.Table table)
+    {
+        if (table.Ancestors<GraphicFrame>().Any(f =>
+                f.NonVisualGraphicFrameProperties?.NonVisualDrawingProperties?.Hidden?.Value == true))
+            return true;
+        return table.Ancestors<GroupShape>().Any(g =>
+            g.NonVisualGroupShapeProperties?.NonVisualDrawingProperties?.Hidden?.Value == true);
     }
 
     /// <summary>A shape hidden itself (selection pane) or inside a hidden group.</summary>
