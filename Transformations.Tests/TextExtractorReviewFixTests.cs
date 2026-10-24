@@ -449,8 +449,10 @@ public class TextExtractorReviewFixTests
 
     // ── Batch ────────────────────────────────────────────────────────────────
 
-    [Test]
-    public void Batch_YieldsFirstResultWhileLaterDocumentsAreStillRunning_AndStopsThemOnBreak()
+    // With one slot, a later document taking it first would block the first result until the stub gives up (30 s).
+    [TestCase(1)]
+    [TestCase(2)]
+    public void Batch_YieldsFirstResultWhileLaterDocumentsAreStillRunning_AndStopsThemOnBreak(int parallelism)
     {
         var slow = new SpinUntilCancelledExtractor();
         var extractor = new TextExtractor([slow, new TxtExtractor()]);
@@ -459,14 +461,18 @@ public class TextExtractorReviewFixTests
 
         var first = Task.Run(async () =>
         {
-            await foreach (var r in extractor.GetTextBatchAsync(docs, maxDegreeOfParallelism: 2))
-                return r; // stop enumerating after the first result
+            await foreach (var r in extractor.GetTextBatchAsync(docs, maxDegreeOfParallelism: parallelism))
+            {
+                // Break only once a slow document is inside its parser, so the token is what has to stop it.
+                slow.Started.Wait(TimeSpan.FromSeconds(20));
+                return r;
+            }
             return null;
         });
 
-        // The slow documents never finish on their own, so any bound proves the point; 30 s leaves room for loaded CI runners.
-        Assert.That(first.Wait(TimeSpan.FromSeconds(30)), Is.True, "first result should not wait for the slow documents");
+        Assert.That(first.Wait(TimeSpan.FromSeconds(25)), Is.True, "first result should not wait for the slow documents");
         Assert.That(first.Result!.Text, Is.EqualTo("fast"));
+        Assert.That(slow.Started.IsSet, Is.True, "a slow document should have started while the first result was held");
         Assert.That(slow.StoppedByToken, Is.True, "outstanding work should be cancelled when enumeration stops");
     }
 
@@ -672,6 +678,7 @@ public class TextExtractorReviewFixTests
     private sealed class SpinUntilCancelledExtractor : ITextExtractor
     {
         public volatile bool StoppedByToken;
+        public readonly ManualResetEventSlim Started = new();
 
         public bool CanHandle(string extension) => extension == ".slow";
 
@@ -679,6 +686,7 @@ public class TextExtractorReviewFixTests
 
         public string ExtractText(byte[] data, ExtractionOptions? options)
         {
+            Started.Set();
             var deadline = DateTime.UtcNow.AddSeconds(30);
             while (DateTime.UtcNow < deadline)
             {

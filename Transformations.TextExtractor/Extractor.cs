@@ -154,19 +154,37 @@ public class TextExtractor : IDocumentTextExtractor
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var pending = new Queue<Task<ExtractionResult>>();
 
+        // Documents take a slot strictly in input order: each one queues for the semaphore only after the document before
+        // it has a slot. If later documents could race ahead, they could hold every slot while the caller waits for the
+        // first result, which then waits for documents nobody is consuming yet.
+        Task slotQueue = Task.CompletedTask;
+        Task<ExtractionResult> Start(string fileName, byte[] content)
+        {
+            var slot = TakeSlotAfter(slotQueue);
+            slotQueue = slot;
+            return Run(slot, fileName, content);
+        }
+
+        async Task TakeSlotAfter(Task previous)
+        {
+            try { await previous.ConfigureAwait(false); }
+            catch (OperationCanceledException) { } // the wait below then throws for this document too
+            await semaphore.WaitAsync(stop.Token).ConfigureAwait(false);
+        }
+
         // Parsers are synchronous and can run for seconds, so each extraction gets its own thread (LongRunning) instead
         // of a thread-pool thread: on a small machine, blocking pool threads would starve the continuations that hand
         // results back, and a fast document could wait behind slow ones.
-        Task<ExtractionResult> Start(string fileName, byte[] content) => Task.Run(async () =>
+        async Task<ExtractionResult> Run(Task slot, string fileName, byte[] content)
         {
-            await semaphore.WaitAsync(stop.Token).ConfigureAwait(false);
+            await slot.ConfigureAwait(false);
             try
             {
                 return await Task.Factory.StartNew(() => GetTextCore(fileName, content, options, stop.Token), stop.Token,
                     TaskCreationOptions.LongRunning, TaskScheduler.Default).ConfigureAwait(false);
             }
             finally { semaphore.Release(); }
-        });
+        }
 
         using var source = documents.GetEnumerator();
         try
