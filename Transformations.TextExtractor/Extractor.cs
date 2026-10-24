@@ -154,10 +154,17 @@ public class TextExtractor : IDocumentTextExtractor
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var pending = new Queue<Task<ExtractionResult>>();
 
+        // Parsers are synchronous and can run for seconds, so each extraction gets its own thread (LongRunning) instead
+        // of a thread-pool thread: on a small machine, blocking pool threads would starve the continuations that hand
+        // results back, and a fast document could wait behind slow ones.
         Task<ExtractionResult> Start(string fileName, byte[] content) => Task.Run(async () =>
         {
             await semaphore.WaitAsync(stop.Token).ConfigureAwait(false);
-            try { return GetTextCore(fileName, content, options, stop.Token); }
+            try
+            {
+                return await Task.Factory.StartNew(() => GetTextCore(fileName, content, options, stop.Token), stop.Token,
+                    TaskCreationOptions.LongRunning, TaskScheduler.Default).ConfigureAwait(false);
+            }
             finally { semaphore.Release(); }
         });
 

@@ -464,7 +464,8 @@ public class TextExtractorReviewFixTests
             return null;
         });
 
-        Assert.That(first.Wait(TimeSpan.FromSeconds(10)), Is.True, "first result should not wait for the slow documents");
+        // The slow documents never finish on their own, so any bound proves the point; 30 s leaves room for loaded CI runners.
+        Assert.That(first.Wait(TimeSpan.FromSeconds(30)), Is.True, "first result should not wait for the slow documents");
         Assert.That(first.Result!.Text, Is.EqualTo("fast"));
         Assert.That(slow.StoppedByToken, Is.True, "outstanding work should be cancelled when enumeration stops");
     }
