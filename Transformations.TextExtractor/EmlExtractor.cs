@@ -52,6 +52,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         sb.Append(bodyScope.Complete(messageText, "message body", scanText: true) is { } withheld
             ? $"[Message body] withheld: {withheld}"
             : messageText);
+        AppendHtmlAlternative(message, messageText, sb, options);
 
         if (_innerExtractors != null)
             AppendAttachments(message, sb, _innerExtractors, options);
@@ -95,6 +96,43 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         return sb.ToString();
     }
 
+    /// <summary>
+    /// A multipart/alternative message whose plain-text body was used also has an HTML body, which a mail client may
+    /// show instead, and the two can differ. The HTML body is extracted (with the HTML hidden-content checks) and gated
+    /// as its own part, <c>message body (HTML)</c>, whether or not it differs. It is added to the text as an
+    /// <c>[HTML alternative]</c> block only when it has wording the plain-text body lacks, so ordinary mail is not doubled.
+    /// </summary>
+    private static void AppendHtmlAlternative(MimeMessage message, string plainText, StringBuilder sb, ExtractionOptions? options)
+    {
+        if (string.IsNullOrWhiteSpace(message.TextBody) || string.IsNullOrWhiteSpace(message.HtmlBody)) return;
+
+        using var scope = new SafetyScope(options, "message body (HTML)");
+        var htmlText = TextNormalizer.Normalize(new HtmlExtractor().ExtractFromHtml(message.HtmlBody, scope.Options));
+        var withheld = scope.Complete(htmlText, "message body (HTML)", scanText: true);
+        if (withheld != null)
+        {
+            sb.AppendLine().AppendLine().Append($"[HTML alternative] withheld: {withheld}");
+            return;
+        }
+        if (!AddsWording(htmlText, plainText)) return;
+        Warn(options, ExtractionWarningCodes.AlternativesDiffer, "message body (HTML)",
+            "The HTML and plain-text bodies of this message differ; both are in the text.");
+        sb.AppendLine().AppendLine().AppendLine("[HTML alternative]").Append(htmlText);
+    }
+
+    /// <summary>True when <paramref name="candidate"/> has words (3+ letters) that <paramref name="reference"/> does not.</summary>
+    private static bool AddsWording(string candidate, string reference)
+    {
+        static HashSet<string> Words(string text) => System.Text.RegularExpressions.Regex
+            .Matches(text.ToLowerInvariant(), @"[\p{L}\p{N}]{3,}").Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+        var known = Words(reference);
+        return Words(candidate).Any(w => !known.Contains(w));
+    }
+
+    /// <summary>The usual extension for a media type (text/plain → .txt), so an unnamed part reaches the right extractor.</summary>
+    private static string ExtensionFor(ContentType type)
+        => MimeTypes.TryGetExtension(type.MimeType, out var ext) ? ext : $".{type.MediaSubtype.ToLowerInvariant()}";
+
     private static void AppendAttachments(
         MimeMessage message,
         StringBuilder sb,
@@ -115,16 +153,21 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         // but which can carry text a reader sees, such as an image-only phishing mail.
         var inlineImages = message.BodyParts.OfType<MimePart>()
             .Where(p => !p.IsAttachment && p.ContentType.MediaType.Equals("image", StringComparison.OrdinalIgnoreCase));
-        int inlineIndex = 0;
+        int inlineIndex = 0, unnamedIndex = 0;
         foreach (var entity in message.Attachments.Concat(inlineImages))
         {
             ExtractionGuard.ThrowIfCancellationRequested(options);
             if (entity is not MimePart part || part.Content == null) continue;
 
+            // A part without a file name is still content: it gets a generated name (its type as the extension) and is
+            // extracted or stubbed like any other. Names from the message are gated and cleaned before use.
             var fileName = part.FileName ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(fileName) && !part.IsAttachment)
-                fileName = $"inline image {++inlineIndex}.{part.ContentType.MediaSubtype.ToLowerInvariant()}";
-            if (string.IsNullOrWhiteSpace(fileName)) continue;
+            if (string.IsNullOrWhiteSpace(fileName))
+                fileName = part.IsAttachment
+                    ? $"unnamed attachment {++unnamedIndex}{ExtensionFor(part.ContentType)}"
+                    : $"inline image {++inlineIndex}.{part.ContentType.MediaSubtype.ToLowerInvariant()}";
+            else
+                fileName = UntrustedPart.Name(fileName, keepPathSeparators: false, options, "attachment");
 
             if (processedEntries >= maxEntries)
             {
@@ -156,7 +199,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
             try
             {
                 byte[] attachmentBytes = DecodeContentWithLimit(part, maxBytes, ref totalDecodedBytes);
-                ExtractPart(sb, fileName, ext, attachmentBytes, extractor, options);
+                ExtractPart(sb, fileName, ext, attachmentBytes, extractor, innerExtractors, options);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -188,6 +231,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
     internal static void AppendPart(StringBuilder sb, string fileName, byte[] bytes, IReadOnlyList<ITextExtractor> innerExtractors,
         ExtractionOptions? options, string containerKind)
     {
+        fileName = UntrustedPart.Name(fileName, keepPathSeparators: false, options, "attachment");
         var ext = Path.GetExtension(fileName);
         var extractor = ResolveProcessor(innerExtractors, ext);
         if (extractor is ImageExtractor && !ImageExtractor.OcrAvailable(options))
@@ -201,7 +245,7 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
 
         try
         {
-            ExtractPart(sb, fileName, ext, bytes, extractor, options);
+            ExtractPart(sb, fileName, ext, bytes, extractor, innerExtractors, options);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -210,16 +254,21 @@ public class EmlExtractor : ITextExtractor, IPartGatedContainer
         }
     }
 
-    private static void ExtractPart(StringBuilder sb, string fileName, string ext, byte[] bytes, ITextExtractor extractor, ExtractionOptions? options)
+    private static void ExtractPart(StringBuilder sb, string fileName, string ext, byte[] bytes, ITextExtractor extractor,
+        IReadOnlyList<ITextExtractor> innerExtractors, ExtractionOptions? options)
     {
-        // A disguised attachment (invoice.pdf that is really an Office file) is a classic
-        // malware carrier. Report it; it is still parsed only as the format its name claims.
-        if (ContentTypeDetector.DetectMismatch(ext, bytes) is { } detected)
+        // A disguised attachment (invoice.pdf that is really an Office file) is a classic malware carrier. Report it,
+        // and parse it as what it is (never as a container it did not announce); if that is not possible, its content
+        // was not inspected and the part says so.
+        var detected = ContentTypeDetector.DetectMismatch(ext, bytes);
+        if (detected != null)
             Warn(options, ExtractionWarningCodes.ContentTypeMismatch, fileName,
                 $"Attachment extension '{ext}' does not match its content, which is '{detected}'.");
+        extractor = UntrustedPart.PreferDetected(extractor, detected, innerExtractors, options)!;
 
         using var scope = new SafetyScope(options, fileName);
         var text = TextNormalizer.Normalize(extractor.ExtractText(bytes, scope.Options), preserveSpacing: extractor is CodeExtractor);
+        UntrustedPart.ReportUnresolvedMismatch(scope.Options, fileName, detected, extractor);
         if (scope.Complete(text, fileName, scanText: extractor is not IPartGatedContainer) is { } withheld)
         {
             sb.AppendLine();

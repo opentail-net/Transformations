@@ -292,7 +292,7 @@ var options = new ExtractionOptions
     MaxInputBytes       = 50 * 1024 * 1024, // reject larger inputs before parsing (default 256 MB; null = no limit)
     Timeout             = TimeSpan.FromSeconds(30), // stop a slow parse; result is ErrorKind.TimedOut
     CancellationToken   = requestAborted,  // stop the parse itself; throws OperationCanceledException
-    RetryWithDetectedFormat = true,        // retry once with the sniffed format if the extension's parser fails
+    RetryWithDetectedFormat = true,        // parse by the sniffed format when it contradicts the extension, or retry with it on failure
     WarningSink         = warning => logger.LogWarning(
         "{Code} while extracting {Source}: {Message}",
         warning.Code,
@@ -368,6 +368,7 @@ Stable warning codes are exposed as `ExtractionWarningCodes` constants:
 | `container.entryFailed` | `ContainerEntryFailed` | An individual entry was selected for extraction but failed independently of the top-level document. |
 | `content.typeMismatch` | `ContentTypeMismatch` | The extension contradicts the content's binary signature (a DOCX named `invoice.pdf`, a PDF named `notes.txt`). Raised for the document itself, ZIP entries and EML attachments, on success and on failure. Disguised files are a common malware-delivery trick: quarantine or scan rather than index. |
 | `content.needsOcr` | `NeedsOcr` | An image part or scanned PDF page has no text layer and no OCR engine ran. |
+| `content.alternativesDiffer` | `AlternativesDiffer` | An email's HTML and plain-text bodies differ; both are in the text, the HTML one as an `[HTML alternative]` block. |
 | `content.pagesOmitted` | `PagesOmitted` | Pages, slides or chapters outside `StartPage`/`EndPage`/`MaxPages` were not extracted (PDF, PPTX, ODP, EPUB); the message gives how many of how many. Sets `IsPartial`. |
 | `content.notExtracted` | `NotExtracted` | The document holds content the extractor does not read (PPTX charts, SmartArt, embedded objects; XLSX cell comments, charts). Sets `IsPartial`. |
 | `content.ocr` | `OcrText` | Text came from OCR. Treat it as untrusted. |
@@ -389,9 +390,10 @@ and as a `safety.finding` warning.
 | `safety.hiddenHtml` | Inline `display:none`, `visibility:hidden`, `font-size:0`, `opacity:0`, zero size with `overflow:hidden`, off-screen position, text colour equal to background, `hidden` attribute | Low | the hidden text contains instruction wording |
 | `safety.hiddenDocx` | Runs with `w:vanish`, white text without shading or highlight, font size of 2 pt or less | Low | as above |
 | `safety.hiddenPdf` | Letters in render mode 3 on a page with no image, below 1 pt, or outside the crop box | Low | as above |
+| `safety.hiddenOdf` | ODT/ODP hidden text styles, hidden-text and hidden-paragraph fields, hidden sections and shapes, hidden slides | Low | as above |
 | `safety.instruction` | Instruction wording aimed at a model: "ignore previous instructions", "do not tell the user", "if you are an AI", chat role tags (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), plus `SafetyPolicy.AdditionalInstructionPhrases` | Low; Medium when written as a direct instruction (opens a sentence or line, or follows `system:` / `Note to the AI:`, and is not quoted or discussed); chat role tags stay Low | — |
 | `safety.ocrInstruction` | Instruction wording in a part that produced OCR text | Medium | — |
-| `safety.scanIncomplete` | A detector stopped early in this part: a pattern timed out, or base64 runs beyond the decode limits (256 runs, 1,048,576 characters, 65,536 per run) were left undecoded. The reason says what was skipped | Medium | — |
+| `safety.scanIncomplete` | A detector stopped early in this part: a pattern timed out, or base64 runs beyond the decode limits (256 runs, 1,048,576 characters, 65,536 per run) were left undecoded; or the content was read by an extractor for another format than it is. The reason says what was skipped. Sets `ModelInput.IsPartial` | Medium | — |
 
 Invisible characters are removed before instruction wording is matched, so they cannot be used to split a phrase.
 
@@ -511,7 +513,8 @@ What each format is checked for (anything not listed is not inspected, which is 
 | PDF | invisible text not over an image, invisible text over an image that OCR shows does not match it (or that adds instruction wording or a long passage the image does not show), text under 1 pt, text outside the crop box, images placed off the page; page-sized pictures without a text layer are OCRd or reported as not inspected | text colour, overlapping text; invisible text over an image when no OCR engine is set (reported as unverified) |
 | PPTX | hidden slides, hidden shapes and groups, tables in hidden graphic frames | alt text; charts, SmartArt and embedded objects are not extracted and are reported (`content.notExtracted`, result partial); speaker notes are extracted as `[Notes]` |
 | XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments and charts are not extracted and are reported (`content.notExtracted`, result partial) |
-| EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts | EPUB is gated as one document |
+| ODT / ODP | styles with `text:display="none"`, white text without background, ≤2 pt text (through parent styles, from `content.xml` and `styles.xml`), `text:hidden-text` / `text:hidden-paragraph` marked hidden, sections with `text:display="none"`, shapes with `draw:display="none"`, slides with `presentation:visibility="hidden"`; pictures in hidden content are hidden content (`safety.hiddenOdf`) | conditional display (`text:display="condition"`) is treated as shown; notes and charts are not extracted |
+| EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts. An EML's HTML alternative is extracted and gated as its own part (`message body (HTML)`) and added as an `[HTML alternative]` block when it says something the plain-text body does not (`content.alternativesDiffer`). Part names (entries, attachments) are gated as text and cleaned before they become labels or `Source` paths: line breaks, invisible characters and brackets are neutralised, and attachment names cannot contain path separators; a name that reaches `QuarantineAt` is withheld. Attachments without a name are extracted under a generated one | EPUB is gated as one document |
 | Images (OCR) | OCR text is scanned like any text and its findings are scored higher | text the OCR engine does not see |
 
 **Structured model input.** `GetModelInput` returns segments with provenance instead of one string, so an application can
@@ -596,10 +599,14 @@ var result = new TextExtractor().GetText("scan.pdf", bytes, new ExtractionOption
 
 ### Extension vs content
 
-The extension picks the extractor. If that extractor fails and the magic bytes identify a different format, the
-document is retried once with that format's extractor (`RetryWithDetectedFormat`, default on). The retry never
-targets ZIP, EML or EPUB (a disguised archive is reported, not unpacked), never follows a safety-limit failure,
-and shares the original `Timeout`. Independently, any mismatch between extension and a strong binary signature
+The extension picks the extractor, unless a strong binary signature (PDF, OOXML, OpenDocument, OLE2) contradicts
+it: then the detected format's extractor runs first, so a tolerant parser (HTML, Markdown) cannot "succeed" on
+another format's bytes. The same applies to ZIP entries and EML/MSG attachments. If the extension's extractor fails
+and the magic bytes identify a different format, the document is retried once with that format's extractor. Both
+follow `RetryWithDetectedFormat` (default on), never target ZIP, EML, MSG or EPUB (a disguised archive is reported,
+not unpacked), never follow a safety-limit failure, and share the original `Timeout`. When the text still came from
+an extractor for another format than the content (a ZIP named `.md`), the content was not inspected:
+`safety.scanIncomplete` (Medium, so the AI profile requires review) and `ModelInput.IsPartial`. Independently, any mismatch between extension and a strong binary signature
 (PDF, OOXML, OpenDocument/ZIP, EPUB, OLE2) is reported as `content.typeMismatch`, and `GetTextWithMetadata` adds
 `file.detectedFormat`. Sibling extensions (`.xlsm`/`.xlsx`, `.docm`/`.docx`) and text heuristics (a `.txt`
 starting with `Date:`) are not mismatches. Format-specific metadata follows the extractor that ran, so a PDF named

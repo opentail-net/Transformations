@@ -301,6 +301,7 @@ public class TextExtractor : IDocumentTextExtractor
             var text = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, callerSinks, ref processor, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
+            UntrustedPart.ReportUnresolvedMismatch(effectiveOptions, fileName, mismatch, processor);
             withheld ??= RejectIfRequired(fileName, text, options.Safety, safety, effectiveOptions);
             if (withheld != null)
             {
@@ -348,6 +349,7 @@ public class TextExtractor : IDocumentTextExtractor
             var normalizedText = ExtractWithContentFallback(fileName, content, effectiveOptions, warnings, safety, callerSinks, ref processor!, out var withheld);
             sw.Stop();
             ReportMismatch(fileName, mismatch, effectiveOptions);
+            UntrustedPart.ReportUnresolvedMismatch(effectiveOptions, fileName, mismatch, processor);
             withheld ??= RejectIfRequired(fileName, normalizedText, options.Safety, safety, effectiveOptions);
             if (withheld != null)
             {
@@ -409,6 +411,10 @@ public class TextExtractor : IDocumentTextExtractor
                 ExtractionErrorKind.TooLarge);
 
         processor = Route(fileName, content);
+        // A strong signature that contradicts the extension wins: tolerant parsers (HTML, Markdown) would otherwise
+        // "succeed" on another format's bytes and leave the real content uninspected.
+        processor = UntrustedPart.PreferDetected(processor, ContentTypeDetector.DetectMismatch(Path.GetExtension(fileName), content),
+            _extractors, options);
         if (processor == null)
             return ($"Unsupported file type: {Path.GetExtension(fileName)}", ExtractionErrorKind.Unsupported);
 
@@ -1233,10 +1239,12 @@ public sealed record ExtractionOptions
     public TimeSpan? Timeout { get; init; }
 
     /// <summary>
-    /// When the extractor chosen by file extension fails and the content's magic bytes identify a different
-    /// format, retry once with that format's extractor and report
-    /// <see cref="ExtractionWarningCodes.ContentTypeMismatch"/>. Never retries into ZIP, EML or EPUB,
-    /// or after a safety limit was hit. Default <c>true</c>; set <c>false</c> to fail on the first attempt.
+    /// When a strong binary signature contradicts the file extension (also for ZIP entries and email attachments),
+    /// parse with the detected format's extractor; and when the extractor chosen by extension fails and the magic
+    /// bytes identify a different format, retry once with that format's extractor. The mismatch is reported as
+    /// <see cref="ExtractionWarningCodes.ContentTypeMismatch"/>. Never routes into ZIP, EML, MSG or EPUB, nor retries
+    /// after a safety limit was hit. Text read by an extractor for another format than the content is reported as
+    /// <see cref="SafetyFindingCodes.ScanIncomplete"/>. Default <c>true</c>; set <c>false</c> to parse by extension only.
     /// </summary>
     public bool RetryWithDetectedFormat { get; init; } = true;
 
@@ -1399,6 +1407,12 @@ public static class ExtractionWarningCodes
     /// (<see cref="ModelInput.IsPartial"/> is set). <c>Message</c> says how many of how many, and which were kept.
     /// </summary>
     public const string PagesOmitted = "content.pagesOmitted";
+
+    /// <summary>
+    /// An email's HTML and plain-text bodies (multipart/alternative) differ. Both were extracted and gated; the HTML
+    /// one follows the plain text as an <c>[HTML alternative]</c> block. A mail client may show either one.
+    /// </summary>
+    public const string AlternativesDiffer = "content.alternativesDiffer";
 
     /// <summary>
     /// Text came from OCR. It is untrusted: an image can carry instructions aimed at an AI reader that no

@@ -98,7 +98,9 @@ public sealed record ModelInput(
 
         bool partial = truncated || result.Warnings.Any(w =>
             w.Code.StartsWith("container.", StringComparison.Ordinal)
-            || w.Code is ExtractionWarningCodes.NeedsOcr or ExtractionWarningCodes.NotExtracted or ExtractionWarningCodes.PagesOmitted);
+            || w.Code is ExtractionWarningCodes.NeedsOcr or ExtractionWarningCodes.NotExtracted or ExtractionWarningCodes.PagesOmitted)
+            // A scan that stopped early, or content read by a parser for another format, was not fully inspected.
+            || result.Findings.Any(f => f.Code == SafetyFindingCodes.ScanIncomplete);
 
         return new ModelInput(fileName, segments, result.SafetyVerdict, result.Findings, result.Warnings,
             result.Quarantine?.Parts.Select(p => p.Source).ToList() ?? [],

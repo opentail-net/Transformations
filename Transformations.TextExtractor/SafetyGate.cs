@@ -134,6 +134,11 @@ public static class SafetyFindingCodes
     /// <summary>XLSX hidden or very hidden sheets, hidden rows and hidden columns.</summary>
     public const string HiddenXlsx = "safety.hiddenXlsx";
     /// <summary>
+    /// OpenDocument (ODT/ODP) text a reader does not see: hidden text styles, hidden-text and hidden-paragraph fields,
+    /// hidden sections and shapes, hidden slides.
+    /// </summary>
+    public const string HiddenOdf = "safety.hiddenOdf";
+    /// <summary>
     /// Wording aimed at an AI model ("ignore previous instructions", chat role tags, ...). Low when quoted, discussed or
     /// inside a sentence; Medium when written as a direct instruction to the reader.
     /// </summary>
@@ -492,11 +497,12 @@ internal static class SafetyGate
     private static List<Hit> FindInstructions(Folded folded, SafetyPolicy policy, List<string>? skipped = null)
     {
         var hits = new List<Hit>();
+        var seen = new HashSet<(int Start, int End, SafetyCategory Category)>(); // O(1) dedup: text can repeat a phrase thousands of times
         void Add(Match m, SafetyCategory category)
         {
             if (m.Length == 0) return;
             int start = folded.Map[m.Index], end = folded.Map[m.Index + m.Length - 1] + 1;
-            if (hits.Any(h => h.Start == start && h.End == end && h.Category == category)) return;
+            if (!seen.Add((start, end, category))) return;
             bool obfuscated = false;
             for (int i = m.Index; i < m.Index + m.Length && !obfuscated; i++)
                 obfuscated = folded.Changed[i];
@@ -540,11 +546,18 @@ internal static class SafetyGate
     /// <summary>Concealment wording within <see cref="CorrelationWindow"/> characters of an override, disclosure or tool action.</summary>
     private static void ScanCorrelated(string text, string source, List<Hit> hits, List<SafetyFinding> findings)
     {
+        // Partners sorted by start, so each concealment hit finds its nearest one by binary search, not a full pass.
+        var partners = hits.Where(h => h.Category is SafetyCategory.Override or SafetyCategory.Disclosure or SafetyCategory.ToolAction)
+            .OrderBy(h => h.Start).ToList();
+        if (partners.Count == 0) return;
+        var starts = partners.Select(h => h.Start).ToArray();
         foreach (var conceal in hits.Where(h => h.Category == SafetyCategory.Concealment))
         {
-            var partner = hits.FirstOrDefault(h => h.Category is SafetyCategory.Override or SafetyCategory.Disclosure or SafetyCategory.ToolAction
-                && Math.Abs(h.Start - conceal.Start) <= CorrelationWindow);
-            if (partner.Match == null) continue;
+            int i = Array.BinarySearch(starts, conceal.Start - CorrelationWindow);
+            if (i < 0) i = ~i;
+            while (i > 0 && starts[i - 1] >= conceal.Start - CorrelationWindow) i--; // first of equal starts
+            if (i >= starts.Length || starts[i] > conceal.Start + CorrelationWindow) continue;
+            var partner = partners[i];
 
             int start = Math.Min(conceal.Start, partner.Start), end = Math.Max(conceal.End, partner.End);
             // A list of example payloads in a security text is discussion, as for single instructions (IsAddressed).

@@ -57,16 +57,18 @@ public class ZipExtractor : ITextExtractor, IPartGatedContainer
             ExtractionGuard.ThrowIfCancellationRequested(options);
             if (processedEntries >= maxEntries)
             {
-                Warn(options, ExtractionWarningCodes.ContainerEntryLimit, entry.FullName, $"Stopped after {processedEntries} ZIP entries.");
+                Warn(options, ExtractionWarningCodes.ContainerEntryLimit, UntrustedPart.Clean(entry.FullName, true), $"Stopped after {processedEntries} ZIP entries.");
                 break;
             }
 
             processedEntries++;
             if (entry.Length == 0) continue;
+            // The entry name is document content: gated, and cleaned before it becomes a label or a provenance path.
+            var name = UntrustedPart.Name(entry.FullName, keepPathSeparators: true, options, "ZIP entry");
 
             if (totalDecompressed + entry.Length > maxBytes)
             {
-                Warn(options, ExtractionWarningCodes.ContainerByteLimit, entry.FullName, $"Skipped ZIP entry because decompressed bytes would exceed {maxBytes}.");
+                Warn(options, ExtractionWarningCodes.ContainerByteLimit, name, $"Skipped ZIP entry because decompressed bytes would exceed {maxBytes}.");
                 break;
             }
 
@@ -82,8 +84,8 @@ public class ZipExtractor : ITextExtractor, IPartGatedContainer
                     stubBytes = ExtractionGuard.ReadEntryWithBudget(entry, maxBytes, ref totalDecompressed, options);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { }
-                PartStub.Append(sb, $"[{entry.FullName}]", entry.FullName, ext, stubBytes, entry.Length, "ZIP entry", options);
-                if (BudgetSpent(options, entry, totalDecompressed, maxBytes)) break;
+                PartStub.Append(sb, $"[{name}]", name, ext, stubBytes, entry.Length, "ZIP entry", options);
+                if (BudgetSpent(options, name, totalDecompressed, maxBytes)) break;
                 continue;
             }
 
@@ -91,28 +93,31 @@ public class ZipExtractor : ITextExtractor, IPartGatedContainer
             {
                 byte[] entryBytes = ExtractionGuard.ReadEntryWithBudget(entry, maxBytes, ref totalDecompressed, options);
 
-                if (ContentTypeDetector.DetectMismatch(ext, entryBytes) is { } detected)
-                    Warn(options, ExtractionWarningCodes.ContentTypeMismatch, entry.FullName,
+                var detected = ContentTypeDetector.DetectMismatch(ext, entryBytes);
+                if (detected != null)
+                    Warn(options, ExtractionWarningCodes.ContentTypeMismatch, name,
                         $"Entry extension '{ext}' does not match its content, which is '{detected}'.");
+                processor = UntrustedPart.PreferDetected(processor, detected, _extractors, options)!;
 
-                using var scope = new SafetyScope(options, entry.FullName);
+                using var scope = new SafetyScope(options, name);
                 var text = TextNormalizer.Normalize(processor.ExtractText(entryBytes, scope.Options), preserveSpacing: processor is CodeExtractor);
-                if (scope.Complete(text, entry.FullName, scanText: processor is not IPartGatedContainer) is { } withheld)
+                UntrustedPart.ReportUnresolvedMismatch(scope.Options, name, detected, processor);
+                if (scope.Complete(text, name, scanText: processor is not IPartGatedContainer) is { } withheld)
                 {
-                    sb.AppendLine($"[{entry.FullName}] withheld: {withheld}");
+                    sb.AppendLine($"[{name}] withheld: {withheld}");
                     sb.AppendLine();
                 }
                 else if (!string.IsNullOrWhiteSpace(text))
                 {
-                    sb.AppendLine(processor is ImageExtractor ? $"[{entry.FullName}] (OCR)" : $"[{entry.FullName}]");
+                    sb.AppendLine(processor is ImageExtractor ? $"[{name}] (OCR)" : $"[{name}]");
                     sb.AppendLine(text);
                     sb.AppendLine();
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                if (BudgetSpent(options, entry, totalDecompressed, maxBytes)) break;
-                Warn(options, ExtractionWarningCodes.ContainerEntryFailed, entry.FullName, ex.Message);
+                if (BudgetSpent(options, name, totalDecompressed, maxBytes)) break;
+                Warn(options, ExtractionWarningCodes.ContainerEntryFailed, name, ex.Message);
             }
         }
 
@@ -123,10 +128,10 @@ public class ZipExtractor : ITextExtractor, IPartGatedContainer
     /// True once the archive's decompression budget is used up, counting bytes read by entries that failed. A header
     /// that under-reports an entry's size cannot make the extractor spend the budget again on every later entry.
     /// </summary>
-    private static bool BudgetSpent(ExtractionOptions? options, ZipArchiveEntry entry, long total, long maxBytes)
+    private static bool BudgetSpent(ExtractionOptions? options, string name, long total, long maxBytes)
     {
         if (total < maxBytes) return false;
-        Warn(options, ExtractionWarningCodes.ContainerByteLimit, entry.FullName,
+        Warn(options, ExtractionWarningCodes.ContainerByteLimit, name,
             $"Stopped: ZIP entries expanded past {maxBytes} decompressed bytes, whatever their headers declared.");
         return true;
     }

@@ -306,8 +306,9 @@ public class TextExtractorReviewFixTests
 
         var result = _extractor.GetText("deck.pptx", bomb, new ExtractionOptions { MaxDecompressedBytes = 1024 * 1024 });
 
+        // The DOCX signature routes it to the DOCX parser up front; the limit stops that one attempt, and nothing retries it.
         Assert.That(result.ErrorKind, Is.EqualTo(ExtractionErrorKind.LimitExceeded));
-        Assert.That(result.ExtractorName, Is.EqualTo(nameof(PptxExtractor)));
+        Assert.That(result.ExtractorName, Is.EqualTo(nameof(DocxExtractor)));
     }
 
     [Test]
