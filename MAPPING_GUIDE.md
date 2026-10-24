@@ -88,12 +88,19 @@ private static string FormatDate(DateTime value)
 
 ## Type Conversion Rules
 
-When source and target types differ:
+When source and target types differ, in this order:
 
-1. **Value -> string** uses `ToString()`.
-2. Other mismatches use `ConvertTo<T>()` from `Transformations.Core`.
+1. **Implicit conversions** are plain assignments: `int` to `int?`, `int` to `long`, a derived type to its base.
+2. **A nullable value to a non-nullable value** (including a `SourcePath` through a nullable member, which makes
+   `Customer?.Count` an `int?`) uses the value, or `default` when it is null; `TXMAP006` warns about it.
+3. **Anything to `string`** uses `ToString()` (`?.ToString() ?? string.Empty` for nullable sources).
+4. **`ConvertTo<T>()`** from `Transformations.Core`, only for the pairs it really converts: numeric and `bool` types
+   among themselves, `char` and integral types among themselves, and `string` to any of those or to `Guid`. A nullable
+   target converts to its underlying type; a null (or empty string) source stays null.
+5. Anything else (`Guid`, `DateTimeOffset` or `TimeSpan` to a non-string, `DateTime` to a number, `double` to `char`,
+   custom types) is `TXMAP002` and the member is left unmapped.
 
-That gives consistent conversion behavior across mapping and normal helper usage.
+A `Converter` taking `T` also accepts a `T?` source path; it receives the value or `default`.
 
 ## Multiple Targets
 
@@ -222,18 +229,25 @@ Converter methods must be static methods on the source type, accept exactly one 
 
 The generator emits mapping diagnostics when it can identify a likely configuration or generation problem.
 
-| ID | Meaning |
-| --- | --- |
-| `TXMAP001` | A target property is not mapped from the source. |
-| `TXMAP002` | A matching source and target property use an unsupported conversion. |
-| `TXMAP003` | A `[MapTo<T>]` source class is not `partial`. |
-| `TXMAP004` | A nested source class has a containing type that is not `partial`. |
-| `TXMAP005` | Multiple source properties map to the same target property. |
-| `TXMAP006` | A nullable source property maps to a non-nullable target property. |
-| `TXMAP007` | A `SourcePath` value does not resolve to public readable source properties. |
-| `TXMAP008` | A `Converter` method does not match the required static method signature. |
+| Code | Severity | When emitted |
+|------|----------|-------------|
+| `TXMAP001` | Warning | A target member has no mapping from the source |
+| `TXMAP002` | Warning | Source and target types have no supported conversion (the member is left unmapped) |
+| `TXMAP003` | Warning | The `[MapTo]` source class is not `partial` |
+| `TXMAP004` | Warning | A nested `[MapTo]` source has a containing type that is not `partial` |
+| `TXMAP005` | Warning | Several source members map to the same target member |
+| `TXMAP006` | Warning | A nullable source member maps to a non-nullable target member |
+| `TXMAP007` | Warning | A `SourcePath` does not resolve to public readable properties |
+| `TXMAP008` | Warning | A `Converter` method is missing or has the wrong signature |
+| `TXMAP009` | Info | An init-only target member is set on creation but not updated by `MapTo(existing)` |
+| `TXMAP010` | Warning | The target cannot be created (no accessible parameterless constructor, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
+| `TXMAP011` | Info | The reverse mapping is not generated because the source cannot be created |
+| `TXMAP012` | Warning | Two targets with the same simple name (different namespaces) would produce identical methods; the second is not generated |
+| `TXMAP013` | Warning | A non-public converter cannot be called (it is on a `[MapFrom]` source, or not accessible from the `[MapTo]` source) |
+| `TXMAP014` | Warning | The same mapping is declared by `[MapTo]` on the source and `[MapFrom]` on the target; the `[MapFrom]` is ignored |
 
-Default severity: **Warning**.
+Whatever the generator accepts compiles: a mapping it cannot generate correctly is left out and reported, never
+emitted as broken C#.
 
 ### Opt-in error mode
 
@@ -254,7 +268,7 @@ public partial class Contact
     [MapProperty("FullName")]
     public string Name { get; set; } = string.Empty;
 
-    public int Age { get; set; } // mapped via ConvertTo<string>() if target is string
+    public int Age { get; set; } // mapped via ToString() if the target is string
 
     [IgnoreMap]
     public string InternalNotes { get; set; } = string.Empty;

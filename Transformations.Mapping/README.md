@@ -82,22 +82,31 @@ public partial class User
 }
 ```
 
+A non-public converter on the `[MapTo]` source is called through an accessor the generator adds to the `partial`
+class (that, and the `From<Target>()` factory, is why the source must be `partial`).
+
 ---
 
 ## 🛠 Diagnostics
 
 The bundled Roslyn analyzer runs at build time and flags mapping problems before they reach production:
 
-| Code | When emitted |
-|------|-------------|
-| `TXMAP001` | A target member has no mapping from source |
-| `TXMAP002` | Unsupported type conversion between source and target properties |
-| `TXMAP003` | Source class is not `partial` |
-| `TXMAP004` | Ambiguous mapping — multiple sources match the same target |
-| `TXMAP005` | Nullable source mapped to non-nullable target without a converter |
-| `TXMAP006` | Invalid `SourcePath` — path segment not found on source type |
-| `TXMAP007` | Invalid `Converter` — method not found or wrong signature |
-| `TXMAP008` | Circular mapping reference detected |
+| Code | Severity | When emitted |
+|------|----------|-------------|
+| `TXMAP001` | Warning | A target member has no mapping from the source |
+| `TXMAP002` | Warning | Source and target types have no supported conversion (the member is left unmapped) |
+| `TXMAP003` | Warning | The `[MapTo]` source class is not `partial` |
+| `TXMAP004` | Warning | A nested `[MapTo]` source has a containing type that is not `partial` |
+| `TXMAP005` | Warning | Several source members map to the same target member |
+| `TXMAP006` | Warning | A nullable source member maps to a non-nullable target member |
+| `TXMAP007` | Warning | A `SourcePath` does not resolve to public readable properties |
+| `TXMAP008` | Warning | A `Converter` method is missing or has the wrong signature |
+| `TXMAP009` | Info | An init-only target member is set on creation but not updated by `MapTo(existing)` |
+| `TXMAP010` | Warning | The target cannot be created (no accessible parameterless constructor, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
+| `TXMAP011` | Info | The reverse mapping is not generated because the source cannot be created |
+| `TXMAP012` | Warning | Two targets with the same simple name (different namespaces) would produce identical methods; the second is not generated |
+| `TXMAP013` | Warning | A non-public converter cannot be called (it is on a `[MapFrom]` source, or not accessible from the `[MapTo]` source) |
+| `TXMAP014` | Warning | The same mapping is declared by `[MapTo]` on the source and `[MapFrom]` on the target; the `[MapFrom]` is ignored |
 
 Escalate `TXMAP001` from warning to build error via MSBuild:
 
