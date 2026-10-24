@@ -100,6 +100,12 @@ namespace Transformations.Mapping.Tests
         }
 
         [Test]
+        public void Reverse_OfNullableInt_FallsBackToDefaultInsteadOfFailing()
+        {
+            Assert.That(Review.FromReviewDto(new ReviewDto { Count = null }).Count, Is.EqualTo(0));
+        }
+
+        [Test]
         public void FromFactory_OnTheSource_MapsBack()
         {
             var back = Review.FromReviewDto(new ReviewDto { Count = 9, @event = "x" });

@@ -349,6 +349,85 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP002"));
         }
 
+        // ── Implicit conversions ─────────────────────────────────────────────
+
+        [TestCase("Dog?", "Animal?")]
+        [TestCase("Dog", "Animal")]
+        [TestCase("Dog", "IPet")]
+        [TestCase("string", "object")]
+        [TestCase("int", "object")]
+        [TestCase("Point", "IPet")]
+        [TestCase("Point", "object")]
+        public void ImplicitlyAssignablePairs_AreAssigned_NotReported(string sourceType, string targetType)
+        {
+            var result = Compile($$"""
+                using Transformations.Mapping;
+                public interface IPet { }
+                public class Animal { }
+                public class Dog : Animal, IPet { }
+                public struct Point : IPet { }
+                public class Dto { public {{targetType}} Value { get; set; } = default!; }
+                [MapTo<Dto>]
+                public partial class Source { public {{sourceType}} Value { get; set; } = default!; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP002"));
+            Assert.That(result.Generated, Does.Contain("@Value = source.@Value"));
+        }
+
+        // ── Reverse mapping ──────────────────────────────────────────────────
+
+        [TestCase("Mode")]
+        [TestCase("Tag")]
+        [TestCase("System.DateTimeOffset")]
+        [TestCase("System.TimeSpan")]
+        public void ToStringForward_WithoutAGenuineInverse_GeneratesNoReverseAssignment(string sourceType)
+        {
+            var result = Compile($$"""
+                using Transformations.Mapping;
+                public enum Mode { A }
+                public class Tag { }
+                public class Dto { public string Value { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source { public {{sourceType}} Value { get; set; } = default!; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("ToString()"), "the forward mapping is kept");
+            Assert.That(result.Generated, Does.Not.Contain("ConvertTo<"), "no reverse conversion is emitted");
+        }
+
+        [Test]
+        public void ReverseOfNullableStringIntoNonNullable_UsesAFallback_AndIsNotReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string? Name { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public string Name { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("source.@Name ?? string.Empty"));
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP015"));
+        }
+
+        [Test]
+        public void ReverseOfNullableReferenceIntoNonNullable_IsReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Tag { }
+                public class Dto { public Tag? Value { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public Tag Value { get; set; } = new Tag(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP015"));
+        }
+
         // ── Identifiers, usings, value types ─────────────────────────────────
 
         [Test]

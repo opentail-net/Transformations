@@ -245,6 +245,7 @@ The generator emits mapping diagnostics when it can identify a likely configurat
 | `TXMAP012` | Warning | Two targets with the same simple name (different namespaces) would produce identical methods; the second is not generated |
 | `TXMAP013` | Warning | A non-public converter cannot be called (it is on a `[MapFrom]` source, or not accessible from the `[MapTo]` source) |
 | `TXMAP014` | Warning | The same mapping is declared by `[MapTo]` on the source and `[MapFrom]` on the target; the `[MapFrom]` is ignored |
+| `TXMAP015` | Warning | The reverse mapping assigns a nullable target member to a non-nullable source member without a fallback (strings and value types get one; other reference types do not) |
 
 Whatever the generator accepts compiles: a mapping it cannot generate correctly is left out and reported, never
 emitted as broken C#.

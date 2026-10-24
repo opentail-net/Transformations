@@ -171,6 +171,15 @@ namespace Transformations.Mapping.Generator
             isEnabledByDefault: true,
             description: "[MapTo<T>] on the source and [MapFrom<S>] on the target describe the same mapping; generating both would make every mapping call ambiguous.");
 
+        private static readonly DiagnosticDescriptor ReverseNullableToNonNullableRisk = new DiagnosticDescriptor(
+            id: "TXMAP015",
+            title: "Reverse mapping may assign null to a non-nullable member",
+            messageFormat: "Target member '{0}.{1}' is nullable but source member '{2}.{3}' is non-nullable; the reverse mapping can assign null to it",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "The reverse mapping assigns a nullable target member to a non-nullable source member without a fallback. Make the source member nullable or make sure the target is never null when mapped back.");
+
         /// <summary>
         /// Initializes the source generator, registering syntax nodes and generating mappings.
         /// </summary>
@@ -629,8 +638,19 @@ namespace Transformations.Mapping.Generator
                 && sourceProp.SetMethod is { DeclaredAccessibility: Accessibility.Public }
                 && targetProp.GetMethod is { DeclaredAccessibility: Accessibility.Public })
             {
-                reverse = BuildConversion(context.Compilation, $"source.{Escape(targetProp.Name)}", targetProp.Type,
-                    IsNullableReferenceOrValueType(targetProp.Type), sourceProp.Type, IsNonNullableReferenceOrValueType(sourceProp.Type))?.Expression;
+                bool reverseSourceIsNullable = IsNullableReferenceOrValueType(targetProp.Type);
+                bool reverseTargetIsNonNullable = IsNonNullableReferenceOrValueType(sourceProp.Type);
+                var reverseConversion = BuildConversion(context.Compilation, $"source.{Escape(targetProp.Name)}", targetProp.Type,
+                    reverseSourceIsNullable, sourceProp.Type, reverseTargetIsNonNullable);
+                reverse = reverseConversion?.Expression;
+
+                // A plain assignment (no "?? default" / "?? string.Empty" fallback) lets the target's null reach the source.
+                if (reverseConversion is { Kind: ConversionKind.Direct } && !reverse!.Contains("??")
+                    && reverseSourceIsNullable && reverseTargetIsNonNullable)
+                {
+                    diagnostics.Add(Diagnostic.Create(ReverseNullableToNonNullableRisk, sourceLocation, context.TargetType.Name,
+                        targetProp.Name, context.SourceType.Name, sourceProp.Name));
+                }
             }
 
             mappingsByTarget[targetPropName] = new PropertyMapping(
