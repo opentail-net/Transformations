@@ -345,7 +345,7 @@ Failure kinds (`ExtractionErrorKind`):
 | `Unsupported` | No extractor is registered for the file type. |
 | `Binary` | The file is binary (image, executable, unknown archive) and only the plain-text fallback would have accepted it. Earlier versions returned an empty success here. |
 | `TooLarge` | The input is bigger than `MaxInputBytes`. It was not parsed; stream input stops being read once it passes the limit. |
-| `LimitExceeded` | A DOCX, XLSX/XLSM, PPTX, ODT or ODP file has more parts than `MaxContainerEntries` or expands past `MaxDecompressedBytes`. |
+| `LimitExceeded` | A DOCX, XLSX/XLSM, PPTX, ODT or ODP file has (or its directory record declares, checked before the archive is opened) more parts than `MaxContainerEntries`, or expands past `MaxDecompressedBytes`; an RTF file nests groups more than 1,000 deep. |
 | `TimedOut` | Parsing ran longer than `Timeout` and was stopped. |
 | `NeedsOcr` | The file is an image and no OCR engine is available (`OcrEngine`). |
 | `Quarantined` | The safety gate withheld the whole document (see [Safety gates and quarantine](#safety-gates-and-quarantine)). `Text` is empty; the reasons are in `Findings`. |
@@ -390,6 +390,7 @@ and as a `safety.finding` warning.
 | `safety.hiddenHtml` | Inline `display:none`, `visibility:hidden`, `font-size:0`, `opacity:0`, zero size with `overflow:hidden`, off-screen position, text colour equal to background, `hidden` attribute | Low | the hidden text contains instruction wording |
 | `safety.hiddenDocx` | Runs with `w:vanish`, white text without shading or highlight, font size of 2 pt or less | Low | as above |
 | `safety.hiddenPdf` | Letters in render mode 3 on a page with no image, below 1 pt, or outside the crop box | Low | as above |
+| `safety.hiddenRtf` | RTF `\v` hidden text, or a font size of 2 pt or less | Low | as above |
 | `safety.hiddenOdf` | ODT/ODP hidden text styles, hidden-text and hidden-paragraph fields, hidden sections and shapes, hidden slides | Low | as above |
 | `safety.instruction` | Instruction wording aimed at a model: "ignore previous instructions", "do not tell the user", "if you are an AI", chat role tags (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), plus `SafetyPolicy.AdditionalInstructionPhrases` | Low; Medium when written as a direct instruction (opens a sentence or line, or follows `system:` / `Note to the AI:`, and is not quoted or discussed); chat role tags stay Low | — |
 | `safety.ocrInstruction` | Instruction wording in a part that produced OCR text | Medium | — |
@@ -515,6 +516,8 @@ What each format is checked for (anything not listed is not inspected, which is 
 | XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments and charts are not extracted and are reported (`content.notExtracted`, result partial) |
 | ODT / ODP | styles with `text:display="none"`, white text without background, ≤2 pt text (through parent styles, from `content.xml` and `styles.xml`), `text:hidden-text` / `text:hidden-paragraph` marked hidden, sections with `text:display="none"`, shapes with `draw:display="none"`, slides with `presentation:visibility="hidden"`; pictures in hidden content are hidden content (`safety.hiddenOdf`) | conditional display (`text:display="condition"`) is treated as shown; notes and charts are not extracted |
 | EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts. An EML's HTML alternative is extracted and gated as its own part (`message body (HTML)`) and added as an `[HTML alternative]` block when it says something the plain-text body does not (`content.alternativesDiffer`). Part names (entries, attachments) are gated as text and cleaned before they become labels or `Source` paths: line breaks, invisible characters and brackets are neutralised, and attachment names cannot contain path separators; a name that reaches `QuarantineAt` is withheld. Attachments without a name are extracted under a generated one | EPUB is gated as one document |
+| RTF | `\v` hidden text and font sizes of 2 pt or less (`\fsN`), group-scoped and reset by `\plain` (`safety.hiddenRtf`); groups nested over 1,000 deep fail with `LimitExceeded` | colours, headers/footers and other destination groups (skipped) |
+| Markdown | raw HTML in the document is rendered and read by the HTML extractor, so everything in the HTML row applies (comments are dropped) | plain Markdown has no hidden-content mechanism |
 | Images (OCR) | OCR text is scanned like any text and its findings are scored higher | text the OCR engine does not see |
 
 **Structured model input.** `GetModelInput` returns segments with provenance instead of one string, so an application can

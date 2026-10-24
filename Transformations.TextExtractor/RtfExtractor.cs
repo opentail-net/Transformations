@@ -9,9 +9,22 @@ namespace Transformations.Text;
 /// Hex escapes (<c>\'hh</c>) are bytes in the active code page: the font's <c>\fcharset</c> when it names one,
 /// otherwise the document's <c>\ansicpg</c> (default Windows-1252). Double-byte code pages (Shift-JIS, GBK, Big5,
 /// Korean) combine consecutive escapes into one character.
+/// Hidden text (<c>\v</c>, and font sizes of 2 pt or less via <c>\fsN</c>) is group-scoped like the other character
+/// properties, reset by <c>\plain</c>, reported as hidden content and rendered by <see cref="ExtractionOptions.HiddenText"/>.
+/// Groups nested deeper than <see cref="MaxGroupDepth"/> fail the extraction with
+/// <see cref="ExtractionLimitExceededException"/>, so a file of millions of opening braces cannot exhaust memory.
 /// </summary>
 public class RtfExtractor : ITextExtractor
 {
+    /// <summary>Deepest group nesting accepted. Real documents stay far below it (Word writes a few dozen levels).</summary>
+    internal const int MaxGroupDepth = 1_000;
+
+    /// <summary>Character properties scoped to a group.</summary>
+    private readonly record struct CharState(int Uc, int Font, bool Vanish, bool Tiny)
+    {
+        public string? HiddenBy => Vanish ? "\\v (hidden text)" : Tiny ? "font size of 2 pt or less" : null;
+    }
+
     // \f0\fswiss\fcharset128 MS Gothic; → font 0 uses charset 128 (Shift-JIS).
     private static readonly Regex FontCharset = new(@"\\f(\d+)(?:\\[a-zA-Z]+-?\d* ?)*?\\fcharset(\d+)", RegexOptions.Compiled);
 
@@ -47,23 +60,52 @@ public class RtfExtractor : ITextExtractor
         // Track skip-depth: when >= 0 we are inside a group that should be suppressed
         int skipDepth = -1;
 
-        // UC value: how many bytes to skip after \uN (default 1 per spec)
-        var ucStack = new Stack<int>();
-        ucStack.Push(1);
+        // Character properties (\uc skip count, font, hidden flags) are scoped to the group: saved on '{', restored on '}'.
+        var saved = new Stack<CharState>();
+        var state = new CharState(Uc: 1, Font: -1, Vanish: false, Tiny: false);
         int pendingSkip = 0; // chars to skip (substitute chars after \uN)
 
-        // The current font is a character property, so it is scoped to the group like \uc.
-        var fontStack = new Stack<int>();
-        fontStack.Push(-1);
+        // Hidden runs: collected for the safety gate, and rendered by HiddenText where they end.
+        var mode = options?.HiddenText ?? HiddenTextMode.Mark;
+        var hiddenRun = new StringBuilder();
+        var hiddenRuns = new List<(string Text, string How)>();
+        string? hiddenRunHow = null;
+        void Emit(string text)
+        {
+            if (text.Length == 0) return;
+            if (state.HiddenBy is not { } how)
+            {
+                EndHiddenRun();
+                result.Append(text);
+                return;
+            }
+            hiddenRunHow ??= how;
+            hiddenRun.Append(text);
+        }
+        void Emit1(char ch) => Emit(ch.ToString());
+        void EndHiddenRun()
+        {
+            if (hiddenRun.Length == 0) return;
+            var hiddenText = hiddenRun.ToString();
+            hiddenRun.Clear();
+            if (!string.IsNullOrWhiteSpace(hiddenText))
+            {
+                hiddenRuns.Add((hiddenText.Trim(), hiddenRunHow!));
+                if (mode == HiddenTextMode.Keep) result.Append(hiddenText);
+                else if (SafetyGate.RenderHidden(options, hiddenText.Trim()) is { } marked)
+                    result.Append(' ').Append(marked).Append(' ');
+            }
+            hiddenRunHow = null;
+        }
 
         // Bytes from consecutive \'hh escapes, decoded together so double-byte characters stay whole.
         var pendingBytes = new List<byte>();
         void FlushBytes()
         {
             if (pendingBytes.Count == 0) return;
-            int font = fontStack.Peek() >= 0 ? fontStack.Peek() : defaultFont;
+            int font = state.Font >= 0 ? state.Font : defaultFont;
             int codePage = font >= 0 && fontCodePages.TryGetValue(font, out int cp) ? cp : documentCodePage;
-            result.Append(GetEncoding(codePage).GetString(pendingBytes.ToArray()));
+            Emit(GetEncoding(codePage).GetString(pendingBytes.ToArray()));
             pendingBytes.Clear();
         }
 
@@ -82,9 +124,10 @@ public class RtfExtractor : ITextExtractor
             if (c == '{')
             {
                 FlushBytes();
-                depth++;
-                ucStack.Push(ucStack.Peek()); // inherit UC value
-                fontStack.Push(fontStack.Peek());
+                if (++depth > MaxGroupDepth)
+                    throw new ExtractionLimitExceededException(
+                        $"RTF groups are nested more than {MaxGroupDepth} levels deep.");
+                saved.Push(state); // the group inherits the current properties
                 i++;
             }
             else if (c == '}')
@@ -92,8 +135,7 @@ public class RtfExtractor : ITextExtractor
                 FlushBytes();
                 if (depth == skipDepth) skipDepth = -1;
                 depth--;
-                if (ucStack.Count > 1) ucStack.Pop();
-                if (fontStack.Count > 1) fontStack.Pop();
+                if (saved.Count > 0) state = saved.Pop();
                 i++;
             }
             else if (skipDepth >= 0)
@@ -135,7 +177,7 @@ public class RtfExtractor : ITextExtractor
                 }
                 else if (next == '\\' || next == '{' || next == '}')
                 {
-                    result.Append(next);
+                    Emit1(next);
                     i++;
                 }
                 else if (next == '\n' || next == '\r')
@@ -160,11 +202,20 @@ public class RtfExtractor : ITextExtractor
                     switch (word)
                     {
                         case "par": case "pard": case "sect": case "page":
+                            EndHiddenRun(); // a hidden run ends with its paragraph
                             result.AppendLine(); break;
                         case "line":
-                            result.Append('\n'); break;
+                            Emit1('\n'); break;
                         case "tab":
-                            result.Append('\t'); break;
+                            Emit1('\t'); break;
+                        case "v":
+                            state = state with { Vanish = numStr != "0" }; break;
+                        case "fs":
+                            // \fsN is in half-points; 4 or less is 2 pt or less, which no reader can see.
+                            state = state with { Tiny = numStr != null && int.TryParse(numStr, out int halfPoints) && halfPoints is > 0 and <= 4 };
+                            break;
+                        case "plain":
+                            state = state with { Vanish = false, Tiny = false }; break;
                         case "u":
                             if (numStr != null && int.TryParse(numStr, out int unicode))
                             {
@@ -172,16 +223,13 @@ public class RtfExtractor : ITextExtractor
                                 // arrive as two escapes (a surrogate pair) that combine once appended.
                                 int unit = unicode < 0 ? unicode + 65536 : unicode;
                                 if (unit is >= 0 and <= 0xFFFF)
-                                    result.Append((char)unit);
+                                    Emit1((char)unit);
                             }
-                            pendingSkip = ucStack.Peek();
+                            pendingSkip = state.Uc;
                             break;
                         case "uc":
                             if (numStr != null && int.TryParse(numStr, out int ucVal))
-                            {
-                                if (ucStack.Count > 0) ucStack.Pop();
-                                ucStack.Push(ucVal);
-                            }
+                                state = state with { Uc = ucVal };
                             break;
                         case "ansicpg":
                             if (numStr != null && int.TryParse(numStr, out int ansiCodePage) && ansiCodePage > 0)
@@ -196,10 +244,7 @@ public class RtfExtractor : ITextExtractor
                         case "pca": documentCodePage = 850; break;
                         case "f":
                             if (numStr != null && int.TryParse(numStr, out int fontId))
-                            {
-                                fontStack.Pop();
-                                fontStack.Push(fontId);
-                            }
+                                state = state with { Font = fontId };
                             break;
                         // Skip known metadata destination groups
                         case "info": case "fonttbl": case "colortbl": case "stylesheet":
@@ -222,11 +267,16 @@ public class RtfExtractor : ITextExtractor
             else
             {
                 FlushBytes();
-                result.Append(c);
+                Emit1(c);
                 i++;
             }
         }
         FlushBytes();
+        EndHiddenRun();
+        if (hiddenRuns.Count > 0)
+            SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenRtf, "rtf",
+                string.Join(Environment.NewLine, hiddenRuns.Select(h => h.Text)),
+                string.Join(", ", hiddenRuns.Select(h => h.How).Distinct()));
 
         // Collapse excessive blank lines
         var text = result.ToString();

@@ -44,6 +44,33 @@ internal static class ExtractionGuard
             $"{omitted} of {total} {unit}s not extracted; kept {kept} (StartPage/EndPage/MaxPages)."));
     }
 
+    /// <summary>
+    /// The entry count a ZIP's end-of-central-directory record declares (ZIP64 record when the classic field is
+    /// saturated), or <c>null</c> when the record cannot be found. Read from the last 64 KB, without parsing the
+    /// central directory. A lying count only decides this early check; the real count is checked after opening.
+    /// </summary>
+    internal static long? DeclaredEntryCount(byte[] data)
+    {
+        const int eocdSize = 22;
+        int lowest = Math.Max(0, data.Length - eocdSize - ushort.MaxValue);
+        for (int i = data.Length - eocdSize; i >= lowest; i--)
+        {
+            if (data[i] != 0x50 || data[i + 1] != 0x4B || data[i + 2] != 0x05 || data[i + 3] != 0x06) continue;
+            long total = BitConverter.ToUInt16(data, i + 10);
+            // ZIP64: the locator sits just before the classic record and points at the ZIP64 record (total at +32).
+            if (total == ushort.MaxValue && i >= 20
+                && data[i - 20] == 0x50 && data[i - 19] == 0x4B && data[i - 18] == 0x06 && data[i - 17] == 0x07)
+            {
+                long zip64At = (long)BitConverter.ToUInt64(data, i - 20 + 8);
+                if (zip64At >= 0 && zip64At + 40 <= data.Length
+                    && data[zip64At] == 0x50 && data[zip64At + 1] == 0x4B && data[zip64At + 2] == 0x06 && data[zip64At + 3] == 0x06)
+                    total = (long)Math.Min(BitConverter.ToUInt64(data, (int)zip64At + 32), long.MaxValue);
+            }
+            return total;
+        }
+        return null;
+    }
+
     internal static bool IsZip(byte[] data)
         => data.Length >= 4 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04;
 
@@ -63,6 +90,12 @@ internal static class ExtractionGuard
         // A package inside a container spends the extraction's shared budget when there is one.
         var budget = options?.SharedBudget;
         long alreadyUsed = budget?.Used ?? 0;
+
+        // Opening the archive reads its whole central directory, so a package that declares millions of parts is
+        // rejected from its end-of-central-directory record first, before any entry objects are allocated.
+        if (DeclaredEntryCount(data) is long declaredParts && declaredParts > maxEntries)
+            throw new ExtractionLimitExceededException(
+                $"{format} package declares {declaredParts} parts; the limit is {maxEntries}.");
 
         using var ms = new MemoryStream(data, writable: false);
         using var zip = new ZipArchive(ms, ZipArchiveMode.Read);

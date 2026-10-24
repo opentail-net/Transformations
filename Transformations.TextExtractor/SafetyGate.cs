@@ -138,6 +138,8 @@ public static class SafetyFindingCodes
     /// hidden sections and shapes, hidden slides.
     /// </summary>
     public const string HiddenOdf = "safety.hiddenOdf";
+    /// <summary>RTF hidden text: <c>\v</c>, or a font size of 2 pt or less.</summary>
+    public const string HiddenRtf = "safety.hiddenRtf";
     /// <summary>
     /// Wording aimed at an AI model ("ignore previous instructions", chat role tags, ...). Low when quoted, discussed or
     /// inside a sentence; Medium when written as a direct instruction to the reader.
