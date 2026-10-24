@@ -152,9 +152,10 @@ public static class SafetyFindingCodes
     /// <summary>Concealment wording close to an override, disclosure or tool-action instruction.</summary>
     public const string CorrelatedInstructions = "safety.correlatedInstructions";
     /// <summary>
-    /// The scan of this part stopped early: a detector timed out, or more base64 runs (or longer ones) were present than
-    /// are decoded. The reason says what was skipped. Medium, so the AI-ingestion profile routes the result to review:
-    /// text that was not fully checked must not look clean.
+    /// The scan of this part stopped early: a detector timed out, more base64 runs (or longer ones) were present than
+    /// are decoded, or the content was read by an extractor for another format. The reason says what was skipped.
+    /// It fails closed: the verdict is <see cref="SafetyVerdict.ReviewRequired"/> under any enabled policy, whatever
+    /// <see cref="SafetyPolicy.ReviewAt"/> is, and <see cref="ModelInput.IsPartial"/> is set. Severity Medium.
     /// </summary>
     public const string ScanIncomplete = "safety.scanIncomplete";
     /// <summary>Payment wording next to new or changed bank details (business email compromise).</summary>
@@ -447,6 +448,37 @@ internal static class SafetyGate
                 { Category = SafetyCategory.ScanLimit, Confidence = SafetyConfidence.Low });
         return findings;
     }
+
+    private static readonly Regex OcrMarkerLine = new(@"^\[(?:Image|Page) \d+\] \(OCR\)(?: #\d{16})?[ \t]*\r?\n",
+        RegexOptions.Multiline | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
+
+    private static readonly Regex BlankLine = new(@"\r?\n[ \t]*\r?\n", RegexOptions.Compiled, TimeSpan.FromSeconds(2));
+
+    /// <summary>
+    /// The OCR text blocks in a unit's text: from after each extractor-written <c>[Image N] (OCR)</c> or
+    /// <c>[Page N] (OCR)</c> line to the next blank line (OCR blocks contain none). A forged marker can only make the
+    /// text after it scored more strictly.
+    /// </summary>
+    internal static List<(int Start, int Length)> OcrBlocks(string text)
+    {
+        var blocks = new List<(int, int)>();
+        try
+        {
+            foreach (Match m in OcrMarkerLine.Matches(text))
+            {
+                int start = m.Index + m.Length;
+                var blank = BlankLine.Match(text, start);
+                int end = blank.Success ? blank.Index : text.Length;
+                if (end > start) blocks.Add((start, end - start));
+            }
+        }
+        catch (RegexMatchTimeoutException) { return []; } // fall back to scoring the whole unit by its OCR flag
+        return blocks;
+    }
+
+    /// <summary>OCR text as one block without blank lines, so <see cref="OcrBlocks"/> can find where it ends.</summary>
+    internal static string WithoutBlankLines(string ocrText)
+        => string.Join(Environment.NewLine, ocrText.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => !string.IsNullOrWhiteSpace(l)));
 
     /// <summary>True when <paramref name="text"/> contains instruction wording (obfuscated forms included).</summary>
     internal static bool ContainsInstruction(string text, SafetyPolicy policy)
@@ -1059,8 +1091,27 @@ internal sealed class SafetyScope : IDisposable
     internal string? Complete(string text, string source, bool scanText)
     {
         var findings = new List<SafetyFinding>(_captured);
+        // OCR provenance is per block, not per unit: a document with one OCR'd picture keeps its own text scored as
+        // text. Blocks are the lines after an extractor's "(OCR)" marker, up to the next blank line. A unit with OCR text
+        // but no blocks (an image file, an image attachment) is OCR text as a whole.
+        var ocrBlocks = _fromOcr ? SafetyGate.OcrBlocks(text) : [];
+        bool wholeUnitIsOcr = _fromOcr && ocrBlocks.Count == 0;
         if (scanText)
-            findings.AddRange(SafetyGate.Scan(text, source, _fromOcr, Policy));
+        {
+            if (ocrBlocks.Count == 0)
+                findings.AddRange(SafetyGate.Scan(text, source, wholeUnitIsOcr, Policy));
+            else
+            {
+                var native = new StringBuilder(text);
+                foreach (var (start, length) in ocrBlocks)
+                    for (int i = start; i < start + length; i++)
+                        if (native[i] is not ('\n' or '\r')) native[i] = ' ';
+                findings.AddRange(SafetyGate.Scan(native.ToString(), source, fromOcr: false, Policy));
+                foreach (var (start, length) in ocrBlocks)
+                    findings.AddRange(SafetyGate.Scan(text.Substring(start, length), source, fromOcr: true, Policy)
+                        .Select(f => f with { Offset = f.Offset is int o ? o + start : null }));
+            }
+        }
 
         var deciding = findings.Where(f => !f.Withheld && Policy.Withholds(f.Severity)).ToList();
         string? reason = null;
@@ -1074,7 +1125,7 @@ internal sealed class SafetyScope : IDisposable
         // A unit that was scanned here and not withheld is a content segment; containers (scanText false) are not,
         // their parts are.
         if (reason == null && scanText && _outer?.SegmentSink is { } segments && !string.IsNullOrWhiteSpace(text))
-            segments(new ContentSegment(PartPath, null, _fromOcr ? ContentOrigin.Ocr : ContentOrigin.Text, text)
+            segments(new ContentSegment(PartPath, null, wholeUnitIsOcr ? ContentOrigin.Ocr : ContentOrigin.Text, text)
                 { Findings = findings });
 
         Forward(findings);

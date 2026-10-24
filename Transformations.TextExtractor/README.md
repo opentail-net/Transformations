@@ -261,7 +261,7 @@ public class DocumentProcessor(IDocumentTextExtractor extractor)
 
 Common metadata keys: `file.name`, `file.extension`, `file.bytes`, `text.length`, `text.lineCount`, `text.wordCount`, `extraction.extractor`, `extraction.durationMs`. If non-fatal container issues occur, metadata also includes `extraction.warningCount` and `extraction.warnings`.
 
-Metadata values taken from the document (titles, authors, subjects, attachment names, headings) and `file.name` go through the same safety gate as the text: findings name the field (`Source` = `metadata pdf.title`) and count towards `SafetyVerdict`, and a value whose finding reaches `QuarantineAt` is replaced by `[withheld by the safety gate]` and kept in `Quarantine`. Values that also appear in the text are scanned there. Treat metadata as untrusted, like the text.
+Metadata values taken from the document (titles, authors, subjects, attachment names, headings), `file.name` and the `extraction.warnings` summary (which quotes part names and parser messages) go through the same safety gate as the text: findings name the field (`Source` = `metadata pdf.title`) and count towards `SafetyVerdict`, and a value whose finding reaches `QuarantineAt` is replaced by `[withheld by the safety gate]` and kept in `Quarantine`. Values that also appear in the text are scanned there. Treat metadata, and `Warnings` messages and sources, as untrusted, like the text.
 
 Format-specific metadata:
 - **Markdown** — `markdown.headingCount`, `markdown.sectionCount`, `markdown.headings`
@@ -393,7 +393,7 @@ and as a `safety.finding` warning.
 | `safety.hiddenOdf` | ODT/ODP hidden text styles, hidden-text and hidden-paragraph fields, hidden sections and shapes, hidden slides | Low | as above |
 | `safety.instruction` | Instruction wording aimed at a model: "ignore previous instructions", "do not tell the user", "if you are an AI", chat role tags (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), plus `SafetyPolicy.AdditionalInstructionPhrases` | Low; Medium when written as a direct instruction (opens a sentence or line, or follows `system:` / `Note to the AI:`, and is not quoted or discussed); chat role tags stay Low | — |
 | `safety.ocrInstruction` | Instruction wording in a part that produced OCR text | Medium | — |
-| `safety.scanIncomplete` | A detector stopped early in this part: a pattern timed out, or base64 runs beyond the decode limits (256 runs, 1,048,576 characters, 65,536 per run) were left undecoded; or the content was read by an extractor for another format than it is. The reason says what was skipped. Sets `ModelInput.IsPartial` | Medium | — |
+| `safety.scanIncomplete` | A detector stopped early in this part: a pattern timed out, or base64 runs beyond the decode limits (256 runs, 1,048,576 characters, 65,536 per run) were left undecoded; or the content was read by an extractor for another format than it is. The reason says what was skipped. Fails closed: `SafetyVerdict.ReviewRequired` under any enabled policy, whatever `ReviewAt` is, and `ModelInput.IsPartial` | Medium | — |
 
 Invisible characters are removed before instruction wording is matched, so they cannot be used to split a phrase.
 
@@ -508,7 +508,7 @@ What each format is checked for (anything not listed is not inspected, which is 
 
 | Format | Hidden content detected | Not inspected |
 |---|---|---|
-| HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout, CSS background images; `<img>` by URL is never fetched and SVG/other non-raster data URIs cannot be OCRd: both are reported (`content.needsOcr`, result partial), except `cid:` parts (read by the email container) and icon-sized images |
+| HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout, CSS background images; `<img>` by URL is never fetched and SVG/other non-raster data URIs cannot be OCRd: both are reported (`content.needsOcr`, result partial), except `cid:` parts (read by the email container) and images whose width and height attributes are icon-sized with no class, id or inline sizing style that could show them larger |
 | DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions; the same checks in headers, footers, footnotes, endnotes and comments, which are extracted as `[Header]`, `[Footer]`, `[Footnote]`, `[Endnote]` and `[Comment]` lines after the body | text boxes in shapes not tied to a run, embedded objects |
 | PDF | invisible text not over an image, invisible text over an image that OCR shows does not match it (or that adds instruction wording or a long passage the image does not show), text under 1 pt, text outside the crop box, images placed off the page; page-sized pictures without a text layer are OCRd or reported as not inspected | text colour, overlapping text; invisible text over an image when no OCR engine is set (reported as unverified) |
 | PPTX | hidden slides, hidden shapes and groups, tables in hidden graphic frames | alt text; charts, SmartArt and embedded objects are not extracted and are reported (`content.notExtracted`, result partial); speaker notes are extracted as `[Notes]` |
@@ -575,8 +575,10 @@ is reported as `content.needsOcr`, so `ModelInput.IsPartial` tells you the docum
 Embedded pictures (the last row) are limited so a picture-heavy document stays fast (OCR takes around a second per
 page-sized image): at most `MaxOcrImages` per document (default 20; the rest are reported as `content.needsOcr`),
 icons under 100×40 pixels are skipped, a PDF image covering half a page or more with invisible text over it is treated
-as a searchable scan (its text layer is compared with it, not read twice), and `OcrEmbeddedImages = false` turns embedded OCR off. When a document
-contains OCR text, the safety gate scores instruction wording anywhere in it as OCR (Medium).
+as a searchable scan (its text layer is compared with it, not read twice), and `OcrEmbeddedImages = false` turns embedded OCR off. OCR provenance is per
+block: the text of each `[Image N] (OCR)` / `[Page N] (OCR)` block is scored as OCR (instruction wording Medium), the
+document's own text as text, and `ModelInput` labels only those blocks `ContentOrigin.Ocr`. An image file or image
+attachment is OCR text as a whole.
 
 ```csharp
 using Transformations.Text.Ocr;

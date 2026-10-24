@@ -82,6 +82,7 @@ internal static class EmbeddedImageOcr
         {
             var text = ImageExtractor.Recognize(image, format!, options!.OcrEngine!, options, where)?.Trim();
             if (string.IsNullOrWhiteSpace(text)) return;
+            text = SafetyGate.WithoutBlankLines(text); // one block, so the gate scores exactly this text as OCR
             if (hiddenHow != null)
             {
                 onHidden?.Invoke(text, hiddenHow);

@@ -322,7 +322,7 @@ public class PdfExtractor : ITextExtractor
 
         if (texts.Count == 0) return;
         sb.AppendLine(ModelInput.MarkerLine(options, "Page", pageNum, ocr: true));
-        sb.AppendLine(string.Join(Environment.NewLine, texts));
+        sb.AppendLine(SafetyGate.WithoutBlankLines(string.Join(Environment.NewLine, texts)));
         sb.AppendLine();
     }
 }

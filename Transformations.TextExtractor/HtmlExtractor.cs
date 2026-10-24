@@ -387,11 +387,26 @@ public class HtmlExtractor : ITextExtractor
         EmbeddedImageOcr.ReportSkipped(options, counter, "html");
     }
 
-    /// <summary>Width and height attributes below the OCR minimum: an icon, spacer or tracking pixel.</summary>
+    /// <summary>
+    /// Width and height attributes below the OCR minimum (an icon, spacer or tracking pixel), and nothing that could
+    /// display it larger: CSS can override the attributes, so an image with a class or id, or an inline style that sizes
+    /// or scales it, is not taken for an icon. The attributes are a hint, not proof.
+    /// </summary>
     private static bool IsIconSized(HtmlNode img)
-        => int.TryParse(img.GetAttributeValue("width", "").TrimEnd('p', 'x'), out int w)
-           && int.TryParse(img.GetAttributeValue("height", "").TrimEnd('p', 'x'), out int h)
-           && (w < EmbeddedImageOcr.MinWidth || h < EmbeddedImageOcr.MinHeight);
+    {
+        if (!int.TryParse(img.GetAttributeValue("width", "").TrimEnd('p', 'x'), out int w)
+            || !int.TryParse(img.GetAttributeValue("height", "").TrimEnd('p', 'x'), out int h)
+            || (w >= EmbeddedImageOcr.MinWidth && h >= EmbeddedImageOcr.MinHeight))
+            return false;
+        if (img.Attributes["class"] != null || img.Attributes["id"] != null) return false;
+        var style = img.GetAttributeValue("style", "");
+        return !SizingStyle.IsMatch(style);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex SizingStyle = new(
+        @"(^|[;\s])(width|height|min-width|min-height|max-width|max-height|transform|zoom|scale|inline-size|block-size|aspect-ratio)\s*:",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+        | System.Text.RegularExpressions.RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     private static bool IsBlockElement(string name) =>
         name is "p" or "div" or "br" or "li" or "h1" or "h2" or "h3" or "h4" or "h5" or "h6" or "tr";

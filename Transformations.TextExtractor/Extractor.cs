@@ -360,7 +360,6 @@ public class TextExtractor : IDocumentTextExtractor
             normalizedText = Truncate(normalizedText, options);
             // Metadata parses some formats again; the extraction's timeout and cancellation still apply.
             var metadata = BuildMetadata(fileName, content, normalizedText, processor, cancellation.Token);
-            ScanMetadata(metadata, normalizedText, options.Safety, effectiveOptions);
             if (mismatch != null)
                 metadata["file.detectedFormat"] = mismatch;
             metadata["extraction.extractor"] = processor!.GetType().Name;
@@ -370,6 +369,9 @@ public class TextExtractor : IDocumentTextExtractor
                 metadata["extraction.warningCount"] = warnings.Count.ToString();
                 metadata["extraction.warnings"] = string.Join(" | ", warnings.Select(w => $"{w.Code}:{w.Source}:{w.Message}"));
             }
+            // After every document-influenced value is in place: the warning summary carries part names and parser
+            // messages, so it is gated like the rest. The counts below then include what this scan found.
+            ScanMetadata(metadata, normalizedText, options.Safety, effectiveOptions);
             if (safety.Findings.Count > 0)
             {
                 metadata["safety.findingCount"] = safety.Findings.Count.ToString();
@@ -766,7 +768,10 @@ public class TextExtractor : IDocumentTextExtractor
         public SafetyVerdict Verdict(SafetyPolicy policy)
         {
             var inWithheld = new HashSet<SafetyFinding>(_withheld.SelectMany(p => p.Findings), ReferenceEqualityComparer.Instance);
-            if (_findings.Any(f => !f.Withheld && !inWithheld.Contains(f) && policy.RequiresReview(f.Severity)))
+            // An incomplete scan fails closed: content that was not fully checked needs review under any policy,
+            // whatever ReviewAt says, so a lenient policy cannot turn it into an automatic index.
+            if (_findings.Any(f => !f.Withheld && !inWithheld.Contains(f)
+                    && (policy.RequiresReview(f.Severity) || (policy.Enabled && f.Code == SafetyFindingCodes.ScanIncomplete))))
                 return SafetyVerdict.ReviewRequired;
             if (_withheld.Count > 0) return SafetyVerdict.PartsWithheld;
             return _findings.Count > 0 ? SafetyVerdict.Flagged : SafetyVerdict.NoKnownSignals;
@@ -889,14 +894,17 @@ public class TextExtractor : IDocumentTextExtractor
         return metadata;
     }
 
-    /// <summary>Metadata keys whose values come from the library itself (sizes, counts, timings), not from the document.</summary>
-    private static readonly string[] _derivedMetadataPrefixes = ["text.", "extraction.", "safety."];
+    /// <summary>
+    /// Metadata keys whose values come from the library itself (sizes, counts, timings, type names), not from the
+    /// document. <c>extraction.warnings</c> is not one of them: it quotes part names and parser messages.
+    /// </summary>
+    private static readonly string[] _derivedMetadataPrefixes = ["text.", "safety."];
     private static readonly HashSet<string> _derivedMetadataKeys = new(StringComparer.OrdinalIgnoreCase)
-        { "file.extension", "file.bytes", "file.detectedFormat" };
+        { "file.extension", "file.bytes", "file.detectedFormat", "extraction.extractor", "extraction.durationMs", "extraction.warningCount" };
 
     /// <summary>
     /// Runs the safety gate over metadata values taken from the document (titles, authors, subjects, attachment names,
-    /// headings) and the file name, since callers often put them in prompts or indexes. Findings name the field
+    /// headings), the file name and the warning summary, since callers often put them in prompts or indexes. Findings name the field
     /// (<c>metadata pdf.title</c>). A value with a finding that reaches <see cref="SafetyPolicy.QuarantineAt"/> is replaced
     /// and kept as a withheld part. Values that also appear in the extracted text were scanned there.
     /// </summary>
