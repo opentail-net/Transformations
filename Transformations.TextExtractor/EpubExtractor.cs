@@ -115,7 +115,7 @@ public class EpubExtractor : ITextExtractor
                 if (!string.IsNullOrWhiteSpace(text))
                 {
                     if (pageMarkers)
-                        sb.AppendLine($"[Chapter {chapterNum}]");
+                        sb.AppendLine(ModelInput.MarkerLine(options, "Chapter", chapterNum));
                     sb.AppendLine(text);
                     sb.AppendLine();
                 }

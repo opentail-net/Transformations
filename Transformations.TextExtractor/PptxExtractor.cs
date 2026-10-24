@@ -89,7 +89,7 @@ public class PptxExtractor : ITextExtractor
             if (slideSb.Length > 0 || slideMarkers)
             {
                 if (slideMarkers)
-                    sb.AppendLine($"[Slide {slideNum}]");
+                    sb.AppendLine(ModelInput.MarkerLine(options, "Slide", slideNum));
                 sb.Append(slideSb);
                 sb.AppendLine();
             }

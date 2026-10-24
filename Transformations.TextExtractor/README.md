@@ -521,9 +521,11 @@ foreach (var s in input.Segments)
 ```
 
 `Segment.Source` is the path through the container structure (`upload.zip/mail.eml/notes.txt`), recorded by the
-extractors, so document text cannot forge it. `Location` (`page 3`, `slide 2`, `chapter 1`) comes from page markers in
-the text; a document can contain marker-like lines, so treat it as a hint. Withheld parts never appear in a segment
-(only their names, in `WithheldSources`); `IsPartial` reports skipped entries, missing OCR and truncation by
+extractors, so document text cannot forge it. `Location` (`page 3`, `slide 2`, `chapter 1`) and an `Ocr` origin come
+from the marker lines the extractors write, which carry a random per-extraction tag; a marker-like line in the
+document's own text (`[Page 7]`, `[Image 1] (OCR)`) stays ordinary content. Withheld parts never appear in a segment
+(only their names, in `WithheldSources`); `IsPartial` reports skipped entries, missing OCR, content not extracted
+(`content.notExtracted`) and truncation by
 `MaxCharacters` (applied across segments); `IsTrusted` is always `false`.
 
 **Measured detection.** `TextExtractorSafetyCorpusTests` runs a labelled corpus (31 adversarial samples including

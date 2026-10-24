@@ -237,9 +237,10 @@ public class TextExtractor : IDocumentTextExtractor
     public ModelInput GetModelInput(string fileName, byte[] content, ExtractionOptions? options = null)
     {
         var segments = new List<ContentSegment>();
-        var effective = (options ?? ExtractionOptions.ForAiIngestion()) with { IncludePageMarkers = true, SegmentSink = segments.Add };
+        var effective = (options ?? ExtractionOptions.ForAiIngestion()) with
+            { IncludePageMarkers = true, SegmentSink = segments.Add, MarkerTag = ModelInput.NewMarkerTag() };
         var result = GetTextCore(fileName, content, effective);
-        return ModelInput.From(fileName, result, segments, effective.MaxCharacters);
+        return ModelInput.From(fileName, result, segments, effective.MaxCharacters, effective.MarkerTag!);
     }
 
     // ── Discovery ────────────────────────────────────────────────────────────
@@ -1262,6 +1263,9 @@ public sealed record ExtractionOptions
 
     /// <summary>Receives each extracted content segment with its provenance. Set by <see cref="TextExtractor.GetModelInput"/>.</summary>
     internal Action<ContentSegment>? SegmentSink { get; init; }
+
+    /// <summary>Tag on the marker lines extractors write, so they can be told from marker-shaped document text. Set by the facade.</summary>
+    internal string? MarkerTag { get; init; }
 
     /// <summary>
     /// Options for untrusted documents whose text goes to an AI model (RAG ingestion, agents):

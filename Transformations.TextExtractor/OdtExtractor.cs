@@ -89,7 +89,14 @@ public class OdtExtractor : ITextExtractor
                 var pageName = page.Attribute(DrawNs + "name")?.Value
                     ?? page.Attribute(PresentationNs + "class")?.Value
                     ?? $"Slide {slideNum}";
-                if (slideMarkers)
+                if (slideMarkers && options?.MarkerTag != null)
+                {
+                    // The page name comes from the document, so it is content; the marker is the slide number.
+                    sb.AppendLine(ModelInput.MarkerLine(options, "Slide", slideNum));
+                    if (pageName != $"Slide {slideNum}")
+                        sb.AppendLine($"[{pageName}]");
+                }
+                else if (slideMarkers)
                     sb.AppendLine($"[{pageName}]");
                 ExtractContent(page, sb, tableMode, options);
                 sb.AppendLine();

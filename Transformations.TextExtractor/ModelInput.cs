@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace Transformations.Text;
@@ -14,8 +15,8 @@ public enum ContentOrigin
 /// <summary>
 /// One piece of extracted text with its provenance. <see cref="Source"/> is the path through the container structure
 /// (<c>a.zip/mail.eml/notes.txt</c>), recorded by the extractors, so document text cannot forge it. <see cref="Location"/>
-/// (<c>page 3</c>, <c>slide 2</c>, <c>chapter 1</c>) comes from page markers in the extracted text; a document can contain
-/// marker-like lines, so treat it as a hint.
+/// (<c>page 3</c>, <c>slide 2</c>, <c>chapter 1</c>) and an <see cref="ContentOrigin.Ocr"/> origin come from the marker
+/// lines extractors write, which carry a per-extraction tag, so marker-like lines in the document's own text are content.
 /// </summary>
 public sealed record ContentSegment(string Source, string? Location, ContentOrigin Origin, string Text)
 {
@@ -40,8 +41,21 @@ public sealed record ModelInput(
     ExtractionErrorKind ErrorKind,
     string? ErrorMessage)
 {
-    private static readonly Regex Marker = new(@"^\[(?<kind>Page|Slide|Chapter|Image) (?<n>\d+)\](?<ocr> \(OCR\))?[ \t]*\r?$",
-        RegexOptions.Multiline | RegexOptions.Compiled);
+    /// <summary>
+    /// The page, slide, chapter or image marker line an extractor writes. Under <see cref="TextExtractor.GetModelInput"/>
+    /// each extraction gets a random tag that only these lines carry, so a marker-shaped line in the document's own text
+    /// stays content and cannot set a segment's location or <see cref="ContentOrigin"/>.
+    /// </summary>
+    internal static string MarkerLine(ExtractionOptions? options, string kind, int number, bool ocr = false)
+        => $"[{kind} {number}]{(ocr ? " (OCR)" : "")}{(options?.MarkerTag is { } tag ? " " + tag : "")}";
+
+    /// <summary>A fresh marker tag: digits only, so no safety scan reads it as hidden or encoded text.</summary>
+    internal static string NewMarkerTag()
+        => $"#{RandomNumberGenerator.GetInt32(100_000_000):D8}{RandomNumberGenerator.GetInt32(100_000_000):D8}";
+
+    private static Regex MarkerPattern(string tag)
+        => new($@"^\[(?<kind>Page|Slide|Chapter|Image) (?<n>\d+)\](?<ocr> \(OCR\))? {Regex.Escape(tag)}[ \t]*\r?$",
+            RegexOptions.Multiline);
 
     /// <summary>0–100 heuristic risk over all findings; see <see cref="ExtractionResult.RiskScore"/>.</summary>
     public int RiskScore => FraudSignals.RiskScore(Findings);
@@ -59,14 +73,16 @@ public sealed record ModelInput(
     public bool CanIndexWithoutReview => ErrorKind == ExtractionErrorKind.None
         && Verdict is SafetyVerdict.NoKnownSignals or SafetyVerdict.Flagged or SafetyVerdict.PartsWithheld;
 
-    internal static ModelInput From(string fileName, ExtractionResult result, IReadOnlyList<ContentSegment> raw, int? maxCharacters)
+    internal static ModelInput From(string fileName, ExtractionResult result, IReadOnlyList<ContentSegment> raw, int? maxCharacters,
+        string markerTag)
     {
+        var marker = MarkerPattern(markerTag);
         var segments = new List<ContentSegment>();
         bool truncated = false;
         if (result.ErrorKind == ExtractionErrorKind.None)
         {
             long budget = maxCharacters ?? long.MaxValue;
-            foreach (var piece in raw.SelectMany(Split))
+            foreach (var piece in raw.SelectMany(s => Split(s, marker)))
             {
                 if (budget <= 0) { truncated = true; break; }
                 var segment = piece;
@@ -90,9 +106,9 @@ public sealed record ModelInput(
     }
 
     /// <summary>Splits a segment at page/slide/chapter marker lines; findings follow their offsets.</summary>
-    private static IEnumerable<ContentSegment> Split(ContentSegment segment)
+    private static IEnumerable<ContentSegment> Split(ContentSegment segment, Regex marker)
     {
-        var markers = Marker.Matches(segment.Text);
+        var markers = marker.Matches(segment.Text);
         if (markers.Count == 0)
         {
             yield return segment with { Text = segment.Text.Trim() };

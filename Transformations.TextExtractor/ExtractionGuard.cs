@@ -35,7 +35,7 @@ internal static class ExtractionGuard
     /// <summary>
     /// Verifies that a ZIP-based document (DOCX, XLSX, PPTX, ODT, ...) stays within
     /// <see cref="ExtractionOptions.MaxContainerEntries"/> and <see cref="ExtractionOptions.MaxDecompressedBytes"/>
-    /// before a parser library opens it. Declared sizes in the ZIP headers are checked first as a cheap
+    /// before a parser library opens it. With a shared budget, both its parts and its bytes count against it. Declared sizes in the ZIP headers are checked first as a cheap
     /// reject, then every entry is actually decompressed into a counter, because headers can lie.
     /// Non-ZIP input is left alone.
     /// </summary>
@@ -55,6 +55,15 @@ internal static class ExtractionGuard
         if (zip.Entries.Count > maxEntries)
             throw new ExtractionLimitExceededException(
                 $"{format} package has {zip.Entries.Count} parts; the limit is {maxEntries}.");
+        if (budget != null)
+        {
+            // The package's parts spend the shared entry budget too, so a container of many small Office files cannot
+            // give each one a fresh allowance.
+            if (budget.Entries + zip.Entries.Count > maxEntries)
+                throw new ExtractionLimitExceededException(
+                    $"{format} package has {zip.Entries.Count} parts; with {budget.Entries} entries already processed in this extraction, that passes the shared limit of {maxEntries}.");
+            budget.Entries += zip.Entries.Count;
+        }
 
         long declared = alreadyUsed;
         foreach (var entry in zip.Entries)
@@ -302,6 +311,6 @@ internal sealed class ContainerBudget
     /// <summary>Bytes decompressed or decoded so far, failed entries included.</summary>
     public long Used;
 
-    /// <summary>Container entries (ZIP entries, EML attachments, EPUB spine items) processed so far.</summary>
+    /// <summary>Container entries (ZIP entries, EML attachments, EPUB spine items, Office package parts) processed so far.</summary>
     public int Entries;
 }

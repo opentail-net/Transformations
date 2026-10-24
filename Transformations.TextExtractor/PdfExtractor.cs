@@ -52,7 +52,7 @@ public class PdfExtractor : ITextExtractor
                 if (pageNum > end) break;
 
                 if (pageMarkers)
-                    sb.AppendLine($"[Page {pageNum}]");
+                    sb.AppendLine(ModelInput.MarkerLine(options, "Page", pageNum));
 
                 var layerOverImages = new List<Letter>();
                 var pageText = PageText(page, pageNum, options, hidden, layerOverImages);
@@ -317,7 +317,7 @@ public class PdfExtractor : ITextExtractor
         }
 
         if (texts.Count == 0) return;
-        sb.AppendLine($"[Page {pageNum}] (OCR)");
+        sb.AppendLine(ModelInput.MarkerLine(options, "Page", pageNum, ocr: true));
         sb.AppendLine(string.Join(Environment.NewLine, texts));
         sb.AppendLine();
     }

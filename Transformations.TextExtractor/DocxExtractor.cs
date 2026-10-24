@@ -44,7 +44,7 @@ public class DocxExtractor : ITextExtractor
         if (body == null) return string.Empty;
 
         if (pageMarkers)
-            sb.AppendLine("[Page 1]");
+            sb.AppendLine(ModelInput.MarkerLine(options, "Page", 1));
 
         foreach (var element in body.ChildElements)
         {
@@ -146,7 +146,7 @@ public class DocxExtractor : ITextExtractor
                 {
                     Flush();
                     pageNumber++;
-                    sb.AppendLine($"[Page {pageNumber}]");
+                    sb.AppendLine(ModelInput.MarkerLine(options, "Page", pageNumber));
                     continue;
                 }
 

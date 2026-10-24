@@ -78,7 +78,7 @@ internal static class EmbeddedImageOcr
                 if (SafetyGate.RenderHidden(options, text) is not { } rendered) return;
                 text = rendered;
             }
-            sb.AppendLine($"[Image {counter.Read}] (OCR)");
+            sb.AppendLine(ModelInput.MarkerLine(options, "Image", counter.Read, ocr: true));
             sb.AppendLine(text);
             sb.AppendLine();
         }

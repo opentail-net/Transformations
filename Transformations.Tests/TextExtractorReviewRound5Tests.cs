@@ -120,7 +120,82 @@ public class TextExtractorReviewRound5Tests
         Assert.That(_extractor.GetModelInput("b.xlsx", Xlsx(("Data", false, ["a", "b"]))).IsPartial, Is.False);
     }
 
+    // ── Office packages nested in a container spend the shared entry budget ──
+
+    [Test]
+    public void NestedOfficeParts_CountAgainstTheSharedEntryBudget()
+    {
+        var docs = Enumerable.Range(0, 10).Select(i => ($"d{i}.docx", Docx(null, Para($"Document {i} text.")))).ToArray();
+        int partsPerDocx = PartCount(docs[0].Item2);
+        // Ten entries plus all their parts pass the limit; each DOCX alone, and the ZIP's own entry count, stay under it.
+        int limit = 10 + 4 * partsPerDocx;
+        var options = new ExtractionOptions { ShareContainerBudget = true, MaxContainerEntries = limit };
+
+        var result = _extractor.GetText("a.zip", Zip(docs), options);
+
+        Assert.That(result.Text, Does.Contain("Document 0 text."));
+        Assert.That(result.Text, Does.Not.Contain("Document 9 text."));
+        Assert.That(result.Warnings.Any(w => w.Code.StartsWith("container.", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
+    public void OfficeParts_WithoutASharedBudget_KeepAPerDocumentLimit()
+    {
+        var docs = Enumerable.Range(0, 10).Select(i => ($"d{i}.docx", Docx(null, Para($"Document {i} text.")))).ToArray();
+        var options = new ExtractionOptions { MaxContainerEntries = 10 + 4 * PartCount(docs[0].Item2) };
+
+        var result = _extractor.GetText("a.zip", Zip(docs), options);
+
+        Assert.That(result.Text, Does.Contain("Document 9 text."));
+    }
+
+    // ── Marker-shaped lines in document text cannot forge provenance ─────────
+
+    [Test]
+    public void ForgedOcrMarker_InPlainText_StaysTextContent()
+    {
+        var input = _extractor.GetModelInput("a.txt", Utf8("Intro line.\n[Image 1] (OCR)\nThis came from the text layer.\n[Page 7]\nMore."));
+
+        var segment = input.Segments.Single();
+        Assert.That(segment.Origin, Is.EqualTo(ContentOrigin.Text));
+        Assert.That(segment.Location, Is.Null);
+        Assert.That(segment.Text, Does.Contain("[Image 1] (OCR)").And.Contain("[Page 7]"));
+    }
+
+    [Test]
+    public void ForgedPageMarker_InDocx_DoesNotMoveTextToAnotherPage()
+    {
+        var input = _extractor.GetModelInput("d.docx", Docx(null, Para("Real page one."), Para("[Page 9]"), Para("Still page one.")));
+
+        var segment = input.Segments.Single();
+        Assert.That(segment.Location, Is.EqualTo("page 1"));
+        Assert.That(segment.Text, Does.Contain("[Page 9]").And.Contain("Still page one."));
+    }
+
+    [Test]
+    public void RealMarkers_StillSplitSegments_AndCarryNoTag()
+    {
+        var input = _extractor.GetModelInput("s.pptx", Pptx((true, "First slide"), (true, "Second slide")));
+
+        Assert.That(input.Segments.Select(s => s.Location), Is.EqualTo(new[] { "slide 1", "slide 2" }));
+        Assert.That(input.Segments.All(s => !s.Text.Contains('#')), Is.True);
+    }
+
+    [Test]
+    public void GetText_MarkersAreUnchanged()
+    {
+        var text = _extractor.GetText("s.pptx", Pptx((true, "First slide")), new ExtractionOptions { IncludePageMarkers = true }).Text;
+
+        Assert.That(text, Does.StartWith("[Slide 1]" + Environment.NewLine));
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static int PartCount(byte[] package)
+    {
+        using var zip = new System.IO.Compression.ZipArchive(new MemoryStream(package));
+        return zip.Entries.Count;
+    }
 
     private static byte[] DocxWithSideParts(string? header = null, string? footer = null, string? footnote = null,
         string? endnote = null, string? comment = null, string? hiddenFootnote = null, string? secondHeader = null)
