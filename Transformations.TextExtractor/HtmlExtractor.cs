@@ -86,8 +86,7 @@ public class HtmlExtractor : ITextExtractor
         var tableMode = options?.TableMode ?? TableMode.KeyValue;
         var hidden = new HiddenText(cssRules);
         ExtractTextFromNode(doc.DocumentNode, sb, tableMode, options, hidden);
-        if (EmbeddedImageOcr.Enabled(options))
-            AppendDataImages(doc, sb, options!);
+        AppendDataImages(doc, sb, options, hidden);
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenHtml, "html",
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
@@ -345,7 +344,7 @@ public class HtmlExtractor : ITextExtractor
     }
 
     /// <summary>OCRs <c>&lt;img src="data:image/...;base64,..."&gt;</c> images (at most 16 MB each).</summary>
-    private static void AppendDataImages(HtmlDocument doc, StringBuilder sb, ExtractionOptions options)
+    private static void AppendDataImages(HtmlDocument doc, StringBuilder sb, ExtractionOptions? options, HiddenText hidden)
     {
         var images = doc.DocumentNode.SelectNodes("//img[@src]");
         if (images == null) return;
@@ -359,8 +358,13 @@ public class HtmlExtractor : ITextExtractor
                 || src.Length - comma > 16 * 1024 * 1024 * 4 / 3)
                 continue;
             var bytes = new byte[(src.Length - comma) * 3 / 4 + 3];
-            if (Convert.TryFromBase64String(src[(comma + 1)..].Trim(), bytes, out int written))
-                EmbeddedImageOcr.Append(sb, bytes[..written], "html image", options, counter);
+            if (!Convert.TryFromBase64String(src[(comma + 1)..].Trim(), bytes, out int written)) continue;
+            // An image inside a hidden element (or a <template>) is not shown: its text is hidden content.
+            string? how = null;
+            for (var node = img; node != null && how == null; node = node.ParentNode)
+                if (node.NodeType == HtmlNodeType.Element) how = HiddenBy(node, hidden.Rules);
+            EmbeddedImageOcr.Append(sb, bytes[..written], "html image", options, counter,
+                how == null ? null : $"image hidden by {how}", (text, why) => hidden.Add((text, why)));
         }
         EmbeddedImageOcr.ReportSkipped(options, counter, "html");
     }

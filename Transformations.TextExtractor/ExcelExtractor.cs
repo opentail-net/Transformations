@@ -129,8 +129,8 @@ public class ExcelExtractor : ITextExtractor
         }
         while (reader.NextResult());
 
-        if (EmbeddedImageOcr.Enabled(options) && ExtractionGuard.IsZip(fileData))
-            AppendImages(fileData, sb, options!);
+        if (ExtractionGuard.IsZip(fileData))
+            AppendImages(fileData, sb, options, hidden);
 
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenXlsx, "xlsx",
@@ -139,18 +139,33 @@ public class ExcelExtractor : ITextExtractor
         return sb.ToString().Trim();
     }
 
-    /// <summary>OCRs pictures placed on worksheets (drawing parts).</summary>
-    private static void AppendImages(byte[] fileData, StringBuilder sb, ExtractionOptions options)
+    /// <summary>
+    /// OCRs pictures placed on worksheets (the drawing's picture elements, not every media part). A picture on a hidden
+    /// sheet, or marked hidden itself, is hidden content.
+    /// </summary>
+    private static void AppendImages(byte[] fileData, StringBuilder sb, ExtractionOptions? options, List<(string Text, string How)> hidden)
     {
         using var ms = new MemoryStream(fileData);
         using var doc = global::DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Open(ms, false);
+        if (doc.WorkbookPart is not { } workbook) return;
         var counter = new EmbeddedImageOcr.Counter();
-        foreach (var sheet in doc.WorkbookPart?.WorksheetParts ?? [])
-            foreach (var image in sheet.DrawingsPart?.ImageParts ?? [])
+        var sheets = workbook.Workbook?.Sheets?.Elements<global::DocumentFormat.OpenXml.Spreadsheet.Sheet>().ToList() ?? [];
+        foreach (var sheetPart in workbook.WorksheetParts)
+        {
+            if (sheetPart.DrawingsPart is not { WorksheetDrawing: { } drawing } drawings) continue;
+            var sheet = sheets.FirstOrDefault(s => s.Id?.Value == workbook.GetIdOfPart(sheetPart));
+            bool sheetHidden = sheet?.State?.Value is { } state && state != global::DocumentFormat.OpenXml.Spreadsheet.SheetStateValues.Visible;
+            foreach (var picture in drawing.Descendants<global::DocumentFormat.OpenXml.Drawing.Spreadsheet.Picture>())
             {
-                using var s = image.GetStream();
-                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "xlsx image", options, counter);
+                if (picture.BlipFill?.Blip?.Embed?.Value is not { } id
+                    || drawings.GetPartById(id) is not global::DocumentFormat.OpenXml.Packaging.ImagePart part) continue;
+                bool hiddenPicture = picture.NonVisualPictureProperties?.NonVisualDrawingProperties?.Hidden?.Value == true;
+                using var s = part.GetStream();
+                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "xlsx image", options, counter,
+                    sheetHidden ? "picture on a hidden sheet" : hiddenPicture ? "hidden picture" : null,
+                    (text, why) => hidden.Add((text, why)));
             }
+        }
         EmbeddedImageOcr.ReportSkipped(options, counter, "xlsx");
     }
 

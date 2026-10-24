@@ -114,6 +114,7 @@ namespace Transformations.Tests
         }
 
         [Test]
+        [SetCulture("en-GB")] // asserts day/month dates and Monday-first weeks
         public void ConvertToDateTime_InvalidInputIncorrctFormat_ReturnsDefaultValue()
         {
             //// Setup
@@ -142,6 +143,7 @@ namespace Transformations.Tests
         }
 
         [Test]
+        [SetCulture("en-GB")] // asserts day/month dates and Monday-first weeks
         public void ConvertToDateTime_ValidInput_ReturnsValueAsCorrectType()
         {
             //// Setup

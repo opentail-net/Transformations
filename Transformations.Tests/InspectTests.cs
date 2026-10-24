@@ -234,6 +234,7 @@ namespace Transformations.Tests
         }
 
         [Test]
+        [SetCulture("en-GB")] // asserts day/month dates and Monday-first weeks
         public void Is_IsDate_ValidDate_ReturnsTrue()
         {
             //// Setup

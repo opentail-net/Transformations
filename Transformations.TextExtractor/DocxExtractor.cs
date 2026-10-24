@@ -68,16 +68,8 @@ public class DocxExtractor : ITextExtractor
             }
         }
 
-        if (EmbeddedImageOcr.Enabled(options) && wordDoc.MainDocumentPart is { } main)
-        {
-            var counter = new EmbeddedImageOcr.Counter();
-            foreach (var image in main.ImageParts)
-            {
-                using var s = image.GetStream();
-                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "docx image", options!, counter);
-            }
-            EmbeddedImageOcr.ReportSkipped(options!, counter, "docx");
-        }
+        if (wordDoc.MainDocumentPart is { } main)
+            AppendImages(main, body, sb, options, hidden);
 
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenDocx, "docx",
@@ -231,6 +223,30 @@ public class DocxExtractor : ITextExtractor
     }
 
     internal static string EscapeCsv(string value) => TableRenderer.EscapeCsv(value);
+
+    /// <summary>
+    /// OCRs the pictures the body shows (DrawingML blips and VML image data in runs), each once. A picture in a hidden
+    /// run is hidden content. Media parts the body does not reference are not shown and are ignored.
+    /// </summary>
+    private static void AppendImages(MainDocumentPart main, Body body, StringBuilder sb, ExtractionOptions? options, DocxHidden hidden)
+    {
+        var counter = new EmbeddedImageOcr.Counter();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var run in body.Descendants<Run>())
+        {
+            var ids = run.Descendants<global::DocumentFormat.OpenXml.Drawing.Blip>().Select(b => b.Embed?.Value)
+                .Concat(run.Descendants<global::DocumentFormat.OpenXml.Vml.ImageData>().Select(i => i.RelationshipId?.Value));
+            foreach (var id in ids)
+            {
+                if (id == null || !seen.Add(id) || main.GetPartById(id) is not ImagePart part) continue;
+                var how = HiddenBy(run, hidden);
+                using var s = part.GetStream();
+                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "docx image", options, counter,
+                    how == null ? null : $"image in hidden text ({how})", (text, why) => hidden.Add((text, why)));
+            }
+        }
+        EmbeddedImageOcr.ReportSkipped(options, counter, "docx");
+    }
 
     /// <summary>Hidden text found in one document, plus the styles that hide their text.</summary>
     private sealed class DocxHidden : List<(string Text, string How)>

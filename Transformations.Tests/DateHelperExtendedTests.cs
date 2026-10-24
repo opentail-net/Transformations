@@ -192,6 +192,7 @@ namespace Transformations.Tests
         #region FirstDateOfTheWeek / LastDateOfTheWeek
 
         [Test]
+        [SetCulture("en-GB")] // asserts day/month dates and Monday-first weeks
         public void FirstDateOfTheWeek_Wednesday_ReturnsPreviousMonday()
         {
             //// Setup - 2024-06-19 is a Wednesday
@@ -206,6 +207,7 @@ namespace Transformations.Tests
         }
 
         [Test]
+        [SetCulture("en-GB")] // asserts day/month dates and Monday-first weeks
         public void FirstDateOfTheWeek_Monday_ReturnsSameDay()
         {
             //// Setup - 2024-06-17 is a Monday
@@ -219,6 +221,7 @@ namespace Transformations.Tests
         }
 
         [Test]
+        [SetCulture("en-GB")] // asserts day/month dates and Monday-first weeks
         public void LastDateOfTheWeek_Wednesday_ReturnsFollowingSunday()
         {
             //// Setup - 2024-06-19 is a Wednesday

@@ -39,7 +39,6 @@ public class PdfExtractor : ITextExtractor
         bool pageMarkers = options?.IncludePageMarkers == true;
         var hidden = new List<(string Source, string Text, string How)>();
         var ocrCounter = new EmbeddedImageOcr.Counter();
-        bool ocrImages = EmbeddedImageOcr.Enabled(options);
 
         try
         {
@@ -55,13 +54,15 @@ public class PdfExtractor : ITextExtractor
                 if (pageMarkers)
                     sb.AppendLine($"[Page {pageNum}]");
 
-                var pageText = PageText(page, pageNum, options, hidden);
+                var layerOverImages = new List<Letter>();
+                var pageText = PageText(page, pageNum, options, hidden, layerOverImages);
+                if (layerOverImages.Count > 0)
+                    VerifyTextLayer(page, pageNum, layerOverImages, options, ocrCounter, hidden);
                 if (!string.IsNullOrWhiteSpace(pageText))
                 {
                     sb.AppendLine(pageText);
                     sb.AppendLine();
-                    if (ocrImages)
-                        AppendEmbeddedImages(page, pageNum, sb, options!, ocrCounter);
+                    AppendEmbeddedImages(page, pageNum, sb, options, ocrCounter, hidden);
                 }
                 else if (page.GetImages().Any() && ImageExtractor.OcrAvailable(options))
                 {
@@ -82,8 +83,7 @@ public class PdfExtractor : ITextExtractor
             throw new InvalidOperationException($"PDF extraction failed: {ex.Message}", ex);
         }
 
-        if (ocrImages)
-            EmbeddedImageOcr.ReportSkipped(options!, ocrCounter, "pdf");
+        EmbeddedImageOcr.ReportSkipped(options, ocrCounter, "pdf");
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenPdf,
                 string.Join(", ", hidden.Select(h => h.Source).Distinct()),
@@ -100,7 +100,7 @@ public class PdfExtractor : ITextExtractor
     /// invisible text elsewhere on the same page still is.
     /// </summary>
     private static string PageText(Page page, int pageNum, ExtractionOptions? options,
-        List<(string Source, string Text, string How)> hidden)
+        List<(string Source, string Text, string How)> hidden, List<Letter> layerOverImages)
     {
         var bounds = page.CropBox.Bounds;
         var imageAreas = page.NumberOfImages > 0 ? page.GetImages().Select(i => i.BoundingBox).ToList() : [];
@@ -110,9 +110,15 @@ public class PdfExtractor : ITextExtractor
         {
             if (string.IsNullOrWhiteSpace(letter.Value)) continue;
             string? how = null;
-            if (letter.RenderingMode is TextRenderingMode.Neither or TextRenderingMode.NeitherClip
-                && !OverAnImage(letter.BoundingBox, imageAreas))
+            if (letter.RenderingMode is TextRenderingMode.Neither or TextRenderingMode.NeitherClip)
+            {
+                if (OverAnImage(letter.BoundingBox, imageAreas))
+                {
+                    layerOverImages.Add(letter); // looks like a searchable scan's text layer; verified separately
+                    continue;
+                }
                 how = "render mode 3 (invisible)";
+            }
             else if (letter.PointSize is > 0 and < 1)
                 how = "font size below 1 pt";
             else if (letter.BoundingBox is var r && (r.Right < bounds.Left || r.Left > bounds.Right
@@ -169,25 +175,87 @@ public class PdfExtractor : ITextExtractor
     /// more is the scan behind a searchable PDF's text layer, which already holds its text, so it is skipped. Sizes are
     /// checked from the PDF's image dictionary before anything is decoded.
     /// </summary>
-    private static void AppendEmbeddedImages(Page page, int pageNum, StringBuilder sb, ExtractionOptions options,
-        EmbeddedImageOcr.Counter counter)
+    private static void AppendEmbeddedImages(Page page, int pageNum, StringBuilder sb, ExtractionOptions? options,
+        EmbeddedImageOcr.Counter counter, List<(string Source, string Text, string How)> hidden)
     {
         double pageArea = Math.Max(1, page.Width * page.Height);
+        var bounds = page.CropBox.Bounds;
+        long maxPixels = options?.MaxImagePixels ?? ExtractionOptions.Default.MaxImagePixels;
         foreach (var image in page.GetImages())
         {
             var box = image.BoundingBox;
             if (Math.Abs(box.Width * box.Height) >= pageArea / 2) continue;
             if (image.WidthInSamples < EmbeddedImageOcr.MinWidth || image.HeightInSamples < EmbeddedImageOcr.MinHeight) continue;
-            if ((long)image.WidthInSamples * image.HeightInSamples > options.MaxImagePixels)
+            if (!EmbeddedImageOcr.Enabled(options))
             {
-                options.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, $"page {pageNum}",
-                    $"Image of {image.WidthInSamples}x{image.HeightInSamples} pixels not read; the limit is {options.MaxImagePixels} (ExtractionOptions.MaxImagePixels)."));
+                counter.Unread++; // counted, not decoded
                 continue;
             }
+            if ((long)image.WidthInSamples * image.HeightInSamples > maxPixels)
+            {
+                options!.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, $"page {pageNum}",
+                    $"Image of {image.WidthInSamples}x{image.HeightInSamples} pixels not read; the limit is {maxPixels} (ExtractionOptions.MaxImagePixels)."));
+                continue;
+            }
+            bool offPage = box.Right < bounds.Left || box.Left > bounds.Right || box.Top < bounds.Bottom || box.Bottom > bounds.Top;
             byte[] encoded = image.TryGetPng(out var png) ? png : image.RawBytes.ToArray();
-            EmbeddedImageOcr.Append(sb, encoded, $"page {pageNum} image", options, counter);
+            EmbeddedImageOcr.Append(sb, encoded, $"page {pageNum} image", options, counter,
+                offPage ? "image placed outside the page" : null, (text, why) => hidden.Add(($"page {pageNum}", text, why)));
         }
     }
+
+    /// <summary>
+    /// Invisible text over an image is normally the text layer of a searchable scan, but geometry alone does not prove
+    /// it matches the picture. With OCR, the images under it are read and compared word by word: if more than half of
+    /// the layer's words (3+ letters) are not in the picture, the layer is hidden text (instruction wording in it is
+    /// then High). Without OCR the page is counted as unverified and reported, so the result is marked partial.
+    /// </summary>
+    private static void VerifyTextLayer(Page page, int pageNum, List<Letter> layer, ExtractionOptions? options,
+        EmbeddedImageOcr.Counter counter, List<(string Source, string Text, string How)> hidden)
+    {
+        var layerText = WordsToText(NearestNeighbourWordExtractor.Instance.GetWords(layer));
+        var layerWords = Words(layerText);
+        if (layerWords.Count < 3) return;
+        if (!EmbeddedImageOcr.Enabled(options))
+        {
+            counter.UnverifiedPages++;
+            return;
+        }
+
+        var centres = layer.Select(l => l.BoundingBox.Centroid).ToList();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        long maxPixels = options!.MaxImagePixels;
+        foreach (var image in page.GetImages())
+        {
+            var a = image.BoundingBox;
+            if (!centres.Any(c => c.X >= a.Left && c.X <= a.Right && c.Y >= a.Bottom && c.Y <= a.Top)) continue;
+            if ((long)image.WidthInSamples * image.HeightInSamples > maxPixels || counter.Read >= options.MaxOcrImages)
+            {
+                counter.UnverifiedPages++;
+                return;
+            }
+            byte[] encoded = image.TryGetPng(out var png) ? png : image.RawBytes.ToArray();
+            if (ContentTypeDetector.SniffExtension(encoded) is not { } format || !ContentTypeDetector.IsImageExtension(format)) continue;
+            counter.Read++;
+            try
+            {
+                seen.UnionWith(Words(ImageExtractor.Recognize(encoded, format, options.OcrEngine!, options, $"page {pageNum}")));
+            }
+            catch (ExtractionLimitExceededException)
+            {
+                counter.UnverifiedPages++;
+                return;
+            }
+        }
+
+        int unmatched = layerWords.Count(w => !seen.Contains(w));
+        if (unmatched * 2 > layerWords.Count)
+            hidden.Add(($"page {pageNum}", layerText, "invisible text over an image that does not match what the image shows"));
+    }
+
+    private static HashSet<string> Words(string text)
+        => System.Text.RegularExpressions.Regex.Matches(text.ToLowerInvariant(), @"[\p{L}\p{N}]{3,}")
+            .Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
 
     private static void AppendOcrPage(Page page, int pageNum, StringBuilder sb, ExtractionOptions options)
     {

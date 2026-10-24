@@ -52,7 +52,9 @@ public sealed record ModelInput(
     /// <summary>
     /// <c>true</c> when the policy allows indexing without a human check: extraction succeeded and the verdict is
     /// <see cref="SafetyVerdict.NoKnownSignals"/>, <see cref="SafetyVerdict.Flagged"/> or <see cref="SafetyVerdict.PartsWithheld"/>
-    /// (withheld parts are not in <see cref="Segments"/>). It does not mean the content is safe.
+    /// (withheld parts are not in <see cref="Segments"/>). It does not mean the content is safe. It does not consider
+    /// <see cref="IsPartial"/>: content that was not inspected (unread images, skipped entries) is not in the segments
+    /// either, so it cannot reach the model, but a human opening the original may see what no check saw.
     /// </summary>
     public bool CanIndexWithoutReview => ErrorKind == ExtractionErrorKind.None
         && Verdict is SafetyVerdict.NoKnownSignals or SafetyVerdict.Flagged or SafetyVerdict.PartsWithheld;

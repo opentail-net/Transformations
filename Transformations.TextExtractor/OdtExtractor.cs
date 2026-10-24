@@ -56,16 +56,16 @@ public class OdtExtractor : ITextExtractor
         var sb = new StringBuilder();
         AppendBody(body, sb, tableMode, slideMarkers, options);
 
-        if (EmbeddedImageOcr.Enabled(options))
+        // Pictures the content references (draw:image), each once; unused media in Pictures/ is not shown.
+        var counter = new EmbeddedImageOcr.Counter();
+        XNamespace xlink = "http://www.w3.org/1999/xlink";
+        foreach (var href in body.Descendants(DrawNs + "image").Select(i => i.Attribute(xlink + "href")?.Value).Distinct())
         {
-            var counter = new EmbeddedImageOcr.Counter();
-            foreach (var entry in zip.Entries.Where(e => e.FullName.StartsWith("Pictures/", StringComparison.Ordinal) && e.Length > 0))
-            {
-                using var s = entry.Open();
-                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), entry.FullName, options!, counter);
-            }
-            EmbeddedImageOcr.ReportSkipped(options!, counter, "odt");
+            if (href == null || zip.GetEntry(href) is not { Length: > 0 } entry) continue;
+            using var s = entry.Open();
+            EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), entry.FullName, options, counter);
         }
+        EmbeddedImageOcr.ReportSkipped(options, counter, "odt");
 
         return sb.ToString().Trim();
     }

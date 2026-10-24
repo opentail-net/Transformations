@@ -425,9 +425,11 @@ Limits of the detectors:
 - HTML: inline styles and the `hidden` attribute only. There is no CSS engine, so classes and stylesheets are not
   evaluated. Hidden text inside table cells is not separated.
 - DOCX: direct run formatting only; text hidden through a paragraph or character style is not detected.
-- PDF: invisible (render mode 3) text whose glyph centre lies inside an image's placement rectangle is treated as the
-  text layer of a searchable scan and counts as visible, so an instruction hidden under a picture is not detected as
-  hidden text (instruction wording in it is still reported as Low). Invisible text anywhere else on the page is hidden.
+- PDF: invisible (render mode 3) text whose glyph centre lies inside an image's placement rectangle looks like the
+  text layer of a searchable scan. With an OCR engine it is compared with what OCR reads in the image: if more than
+  half of its words are not in the picture, it is hidden text (an instruction in it is then High). Without OCR it
+  cannot be checked: it counts as visible and the page is reported as unverified (`content.needsOcr`, so `IsPartial`).
+  Invisible text anywhere else on the page is always hidden.
   Hidden letters are regrouped into words and lines by position, so the text of such a page may be laid out
   differently from the rest.
 - Flag emoji: the England, Scotland and Wales flags (the only standard emoji tag sequences) are ignored; other
@@ -500,7 +502,7 @@ What each format is checked for (anything not listed is not inspected, which is 
 |---|---|---|
 | HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout |
 | DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions | comments, footnotes, headers/footers (not extracted) |
-| PDF | invisible text not over an image, text under 1 pt, text outside the crop box | text colour, overlapping text, invisible text over an image |
+| PDF | invisible text not over an image, invisible text over an image that OCR shows does not match it, text under 1 pt, text outside the crop box, images placed off the page | text colour, overlapping text; invisible text over an image when no OCR engine is set (reported as unverified) |
 | PPTX | hidden slides, hidden shapes and groups | alt text, charts, SmartArt (not extracted); speaker notes are extracted as `[Notes]` |
 | XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments (not extracted) |
 | EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts | EPUB is gated as one document |
@@ -523,13 +525,13 @@ the text; a document can contain marker-like lines, so treat it as a hint. Withh
 (only their names, in `WithheldSources`); `IsPartial` reports skipped entries, missing OCR and truncation by
 `MaxCharacters` (applied across segments); `IsTrusted` is always `false`.
 
-**Measured detection.** `TextExtractorSafetyCorpusTests` runs a labelled corpus (23 adversarial samples, 4 documented
-gaps, 18 benign samples across HTML, DOCX, PDF, EML, ZIP, XLSX, PPTX, images and plain text) through the profile on
-every test run and prints recall and false-positive rate. Current result: 100% of the expected adversarial set and 85%
-including known gaps are routed to review or withheld; 0% of the benign set is. The known gaps are: a visible plain
-instruction (only Flagged, by design), an instruction split across table cells, hiding through an external
-stylesheet, and invisible PDF text over an image. These are figures on a small synthetic corpus, not a measure of
-real-world detection.
+**Measured detection.** `TextExtractorSafetyCorpusTests` runs a labelled corpus (31 adversarial samples including
+fraud scenarios, 4 documented gaps, 24 benign samples across HTML, DOCX, PDF, EML, ZIP, XLSX, PPTX, images and plain
+text) through the profile on every test run and prints recall and false-positive rate. Current result: 100% of the
+expected adversarial set and 89% including known gaps are routed to review or withheld; 0% of the benign set is. The
+known gaps are: a visible plain instruction (only Flagged, by design), an instruction split across table cells,
+hiding through an external stylesheet, and invisible PDF text over an image when no OCR engine is set. These are
+figures on a small synthetic corpus, not a measure of real-world detection.
 
 **Security contract.** Extracted text is untrusted data even when `SafetyVerdict` is `NoKnownSignals`: the detectors find
 known patterns, they cannot prove the absence of prompt injection. Keep document text separate from system instructions;
@@ -548,6 +550,13 @@ same safety gate as any other text (scored more strictly, as OCR):
 | Image file; EML/MSG attachment; EML inline (`cid:`) image; ZIP entry | its own part, gated and withheld on its own |
 | Scanned PDF page (no text layer) | `[Page N] (OCR)` |
 | Picture in DOCX, PPTX (shown slides), XLSX (sheet drawings), ODT/ODP; image on a PDF page that has text; HTML `data:` image | `[Image N] (OCR)` block in the document |
+
+Only pictures the document shows are read: DOCX drawings in the body, PPTX and XLSX picture elements, ODT
+`draw:image` references, HTML `<img>`; unused media parts are ignored. A picture that is hidden (in a hidden run,
+element or `<template>`, a hidden shape or sheet, or placed off a PDF page) is still read, and its text is hidden
+content: reported as such (an instruction in it is High) and rendered by `HiddenText` (dropped under the AI profile).
+Every picture that is not read, because there is no OCR engine, `OcrEmbeddedImages` is off, or the limit is reached,
+is reported as `content.needsOcr`, so `ModelInput.IsPartial` tells you the document was not fully inspected.
 
 Embedded pictures (the last row) are limited so a picture-heavy document stays fast (OCR takes around a second per
 page-sized image): at most `MaxOcrImages` per document (default 20; the rest are reported as `content.needsOcr`),

@@ -41,6 +41,7 @@ public class TextExtractorFraudSignalTests
     [TestCase("Buy a gift card for a friend this Christmas and send it straight to their inbox!")]
     [TestCase("Bitcoin rose 4% this week as markets rallied.")]
     [TestCase("Our new office address is 10 High Street.")]
+    [TestCase("Invoice 4471: please pay to IBAN GB12 3456 7890, sort code 12-34-56, SWIFT ABCDGB2L.")]
     public void NearMiss_IsNotFraud(string text)
     {
         Assert.That(Fraud(text), Is.Empty);

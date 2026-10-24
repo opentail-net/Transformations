@@ -19,7 +19,7 @@ internal static class FraudSignals
 
     // ── Cues ──
     private static readonly Regex Money = Cue(@"\b(invoices?|payments?|remittance|wire|bank\s+transfer|transfers?|payable|suppliers?|vendors?|beneficiar(y|ies))\b");
-    private static readonly Regex ChangedBankDetails = Cue(@"\b(new|updated?|changed?|different|alternative)\s+(bank(ing)?|account|payment|remittance)\s+(details|information|info|number|account)\b|\b(bank(ing)?|payment|account)\s+details\s+(have|has)\s+(changed|been\s+updated)\b|\b(iban|sort\s+code|routing\s+number|swift|bic)\b");
+    private static readonly Regex ChangedBankDetails = Cue(@"\b(new|updated?|changed?|different|alternative)\s+(bank(ing)?|account|payment|remittance)\s+(details|information|info|number|account)\b|\b(bank(ing)?|payment|account)\s+details\s+(have|has)\s+(changed|been\s+updated)\b|\b(new|updated?|changed?|different|alternative)\b[^.\n]{0,40}\b(iban|sort\s+code|routing\s+number|account\s+number|swift|bic)\b");
     private static readonly Regex CredentialRequest = Cue(@"\b(confirm|verify|validate|re-?enter|update|enter|provide|send)\s+(your|the)\s+(password|passcode|credentials|login\s+details|sign-?in\s+details|account\s+details|username\s+and\s+password)\b");
     private static readonly Regex AccountThreat = Cue(@"\b(account|mailbox|email|subscription|access|profile)\s+(will\s+be|has\s+been|is|was)\s+(temporarily\s+)?(suspended|locked|disabled|deactivated|terminated|closed|deleted|restricted|on\s+hold)\b");
     private static readonly Regex ActionLink = Cue(@"\b(verify|confirm|click|log\s*in|sign\s*in|update|validate|reactivate|restore)\b|https?://");

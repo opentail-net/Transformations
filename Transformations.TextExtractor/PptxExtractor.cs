@@ -49,7 +49,6 @@ public class PptxExtractor : ITextExtractor
 
         var hidden = new List<(string Text, string How)>();
         var ocrCounter = new EmbeddedImageOcr.Counter();
-        bool ocrImages = EmbeddedImageOcr.Enabled(options);
         int slideNum = 1;
         foreach (SlideId slideId in presPart.Presentation.SlideIdList.Elements<SlideId>())
         {
@@ -64,12 +63,16 @@ public class PptxExtractor : ITextExtractor
             var slideSb = new StringBuilder();
             AppendSlideText(slidePart, slideSb, options, hidden);
             AppendNotesText(slidePart, slideSb);
-            if (ocrImages && slidePart.Slide.Show?.Value != false)
-                foreach (var image in slidePart.ImageParts)
-                {
-                    using var s = image.GetStream();
-                    EmbeddedImageOcr.Append(slideSb, EmbeddedImageOcr.ReadPart(s), $"slide {slideNum} image", options!, ocrCounter);
-                }
+            // Pictures the slide shows. On a hidden slide their text becomes part of the hidden slide below.
+            foreach (var picture in slidePart.Slide.Descendants<Picture>())
+            {
+                if (picture.BlipFill?.Blip?.Embed?.Value is not { } id || slidePart.GetPartById(id) is not ImagePart part) continue;
+                bool hiddenPicture = picture.NonVisualPictureProperties?.NonVisualDrawingProperties?.Hidden?.Value == true
+                    || picture.Ancestors<GroupShape>().Any(g => g.NonVisualGroupShapeProperties?.NonVisualDrawingProperties?.Hidden?.Value == true);
+                using var s = part.GetStream();
+                EmbeddedImageOcr.Append(slideSb, EmbeddedImageOcr.ReadPart(s), $"slide {slideNum} image", options, ocrCounter,
+                    hiddenPicture ? "hidden picture" : null, (text, why) => hidden.Add((text, why)));
+            }
 
             if (slidePart.Slide.Show?.Value == false)
             {
@@ -92,8 +95,7 @@ public class PptxExtractor : ITextExtractor
             slideNum++;
         }
 
-        if (ocrImages)
-            EmbeddedImageOcr.ReportSkipped(options!, ocrCounter, "pptx");
+        EmbeddedImageOcr.ReportSkipped(options, ocrCounter, "pptx");
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenPptx, "pptx",
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
