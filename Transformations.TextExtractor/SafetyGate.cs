@@ -302,6 +302,13 @@ internal static class SafetyGate
         (SafetyCategory.RoleMarker, @"<<\s*/?SYS\s*>>"),
     ];
 
+    // The same patterns without word separators or boundaries, used only inside text joined from spaced letters:
+    // "i g n o r e   p r e v i o u s" normalises to single spaces, which joins into "ignoreprevious" with no gaps.
+    private static readonly (SafetyCategory Category, Regex Regex)[] BuiltInCompact = BuiltInPatterns
+        .Select(p => (p.Category, new Regex(p.Pattern.Replace(@"\s+", @"\s*").Replace(@"\b", ""),
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromSeconds(5))))
+        .ToArray();
+
     private static readonly (SafetyCategory Category, Regex Regex)[] BuiltIn = BuiltInPatterns
         .Select(p => (p.Category, new Regex(p.Pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled,
             TimeSpan.FromSeconds(5))))
@@ -310,8 +317,10 @@ internal static class SafetyGate
     private static readonly Regex Base64Run = new(@"(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/=])",
         RegexOptions.Compiled, TimeSpan.FromSeconds(5));
 
-    // ≥4 single letters with one consistent separator ("i g n o r e", "i.g.n.o.r.e").
-    private static readonly Regex SpacedLetters = new(@"(?<![\p{L}\p{N}])\p{L}([ .\-_])\p{L}(?:\1\p{L}){2,}(?![\p{L}\p{N}])",
+    // ≥4 single letters separated by any amount of whitespace, dots, dashes or underscores ("i g n o r e",
+    // "i  g  n", "i.g.n.o", one letter per line). Gaps of any width, between letters or between words, are all
+    // absorbed into one run; the compact patterns then find the words inside it.
+    private static readonly Regex SpacedLetters = new(@"(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_]+\p{L}(?![\p{L}\p{N}])){3,}",
         RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
 
     /// <summary>One instruction match, with its span in the original text.</summary>
@@ -416,10 +425,12 @@ internal static class SafetyGate
         void Add(Match m, SafetyCategory category)
         {
             if (m.Length == 0) return;
+            int start = folded.Map[m.Index], end = folded.Map[m.Index + m.Length - 1] + 1;
+            if (hits.Any(h => h.Start == start && h.End == end && h.Category == category)) return;
             bool obfuscated = false;
             for (int i = m.Index; i < m.Index + m.Length && !obfuscated; i++)
                 obfuscated = folded.Changed[i];
-            hits.Add(new Hit(m, folded.Map[m.Index], folded.Map[m.Index + m.Length - 1] + 1, category, obfuscated));
+            hits.Add(new Hit(m, start, end, category, obfuscated));
         }
 
         try
@@ -435,7 +446,18 @@ internal static class SafetyGate
                 foreach (Match m in Regex.Matches(folded.Text, pattern,
                              RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5)))
                     Add(m, SafetyCategory.Override);
+                foreach (var (runStart, runLength) in folded.JoinedRuns)
+                    for (var m = new Regex(string.Join(@"\s*", words), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                             TimeSpan.FromSeconds(5)).Match(folded.Text, runStart, runLength); m.Success; m = m.NextMatch())
+                        Add(m, SafetyCategory.Override);
             }
+
+            // Inside letter-spaced text the word gaps may be gone (any number of spaces normalises to one, and a single
+            // separator everywhere joins all words into one run), so the compact patterns are matched there too.
+            foreach (var (runStart, runLength) in folded.JoinedRuns)
+                foreach (var (category, regex) in BuiltInCompact)
+                    for (var m = regex.Match(folded.Text, runStart, runLength); m.Success; m = m.NextMatch())
+                        Add(m, category);
         }
         catch (RegexMatchTimeoutException)
         {
@@ -758,7 +780,7 @@ internal static class SafetyGate
     // single letters with one separator ("i g n o r e") are joined. Folded characters are marked Changed, so a match
     // that needed them is reported as obfuscated. The original text is never modified.
 
-    private readonly record struct Folded(string Text, int[] Map, bool[] Changed);
+    private readonly record struct Folded(string Text, int[] Map, bool[] Changed, IReadOnlyList<(int Start, int Length)> JoinedRuns);
 
     private static readonly Dictionary<char, char> Lookalikes = new()
     {
@@ -814,7 +836,7 @@ internal static class SafetyGate
             if (pair) i++;
         }
 
-        var result = new Folded(sb.ToString(), map.ToArray(), changed.ToArray());
+        var result = new Folded(sb.ToString(), map.ToArray(), changed.ToArray(), []);
         return JoinSpacedLetters(result);
     }
 
@@ -831,24 +853,33 @@ internal static class SafetyGate
 
         var drop = new bool[folded.Text.Length];
         var changed = (bool[])folded.Changed.Clone();
+        var letterCounts = new Dictionary<int, int>();
         foreach (Match run in runs)
+        {
+            int letters = 0;
             for (int i = run.Index; i < run.Index + run.Length; i++)
             {
-                if ((i - run.Index) % 2 == 1) drop[i] = true;
-                else changed[i] = true;
+                if (char.IsLetter(folded.Text[i])) { changed[i] = true; letters++; }
+                else drop[i] = true;
             }
+            letterCounts[run.Index] = letters;
+        }
+
 
         var sb = new StringBuilder(folded.Text.Length);
         var map = new List<int>(folded.Text.Length);
         var flags = new List<bool>(folded.Text.Length);
+        var joined = new List<(int Start, int Length)>();
         for (int i = 0; i < folded.Text.Length; i++)
         {
+            if (letterCounts.TryGetValue(i, out int letterCount))
+                joined.Add((sb.Length, letterCount)); // letters only, separators dropped
             if (drop[i]) continue;
             sb.Append(folded.Text[i]);
             map.Add(folded.Map[i]);
             flags.Add(changed[i]);
         }
-        return new Folded(sb.ToString(), map.ToArray(), flags.ToArray());
+        return new Folded(sb.ToString(), map.ToArray(), flags.ToArray(), joined);
     }
 
     // ── Excerpts ─────────────────────────────────────────────────────────────
