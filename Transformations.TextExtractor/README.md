@@ -111,7 +111,7 @@ OCR, image content is not read at all, so it is neither indexed nor checked: an 
 | `ErrorKind` is another failure | Do not index; log `ErrorKind` and `ErrorMessage` |
 | `CanIndexWithoutReview == false` (`ReviewRequired`) | Hold for human review, or index with a flag that keeps it out of agent/tool workflows |
 | `Verdict == PartsWithheld` | Index `Segments` (the withheld parts are not in them); review `WithheldSources` |
-| `IsPartial` | Record that the document is incomplete (skipped entries, unread images, truncation) |
+| `IsPartial` | Record that the document is incomplete (skipped entries, unread images, content not extracted, truncation) |
 | Otherwise | Index the segments, as **untrusted** content |
 
 Never index or prompt with `Quarantine.GetWithheldText()`: it exists for human reviewers.
@@ -366,6 +366,7 @@ Stable warning codes are exposed as `ExtractionWarningCodes` constants:
 | `container.entryFailed` | `ContainerEntryFailed` | An individual entry was selected for extraction but failed independently of the top-level document. |
 | `content.typeMismatch` | `ContentTypeMismatch` | The extension contradicts the content's binary signature (a DOCX named `invoice.pdf`, a PDF named `notes.txt`). Raised for the document itself, ZIP entries and EML attachments, on success and on failure. Disguised files are a common malware-delivery trick: quarantine or scan rather than index. |
 | `content.needsOcr` | `NeedsOcr` | An image part or scanned PDF page has no text layer and no OCR engine ran. |
+| `content.notExtracted` | `NotExtracted` | The document holds content the extractor does not read (PPTX charts, SmartArt, embedded objects; XLSX cell comments, charts). Sets `IsPartial`. |
 | `content.ocr` | `OcrText` | Text came from OCR. Treat it as untrusted. |
 | `safety.finding` | `SafetyFinding` | The safety gate found something; the full record is in `Findings`. |
 | `safety.withheld` | `ContentWithheld` | The safety gate withheld a part (replaced by a stub line) or the whole document. |
@@ -501,10 +502,10 @@ What each format is checked for (anything not listed is not inspected, which is 
 | Format | Hidden content detected | Not inspected |
 |---|---|---|
 | HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout |
-| DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions | comments, footnotes, headers/footers (not extracted) |
-| PDF | invisible text not over an image, invisible text over an image that OCR shows does not match it, text under 1 pt, text outside the crop box, images placed off the page | text colour, overlapping text; invisible text over an image when no OCR engine is set (reported as unverified) |
-| PPTX | hidden slides, hidden shapes and groups | alt text, charts, SmartArt (not extracted); speaker notes are extracted as `[Notes]` |
-| XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments (not extracted) |
+| DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions; the same checks in headers, footers, footnotes, endnotes and comments, which are extracted as `[Header]`, `[Footer]`, `[Footnote]`, `[Endnote]` and `[Comment]` lines after the body | text boxes in shapes not tied to a run, embedded objects |
+| PDF | invisible text not over an image, invisible text over an image that OCR shows does not match it (or that adds instruction wording or a long passage the image does not show), text under 1 pt, text outside the crop box, images placed off the page; page-sized pictures without a text layer are OCRd or reported as not inspected | text colour, overlapping text; invisible text over an image when no OCR engine is set (reported as unverified) |
+| PPTX | hidden slides, hidden shapes and groups | alt text; charts, SmartArt and embedded objects are not extracted and are reported (`content.notExtracted`, result partial); speaker notes are extracted as `[Notes]` |
+| XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments and charts are not extracted and are reported (`content.notExtracted`, result partial) |
 | EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts | EPUB is gated as one document |
 | Images (OCR) | OCR text is scanned like any text and its findings are scored higher | text the OCR engine does not see |
 
@@ -560,8 +561,8 @@ is reported as `content.needsOcr`, so `ModelInput.IsPartial` tells you the docum
 
 Embedded pictures (the last row) are limited so a picture-heavy document stays fast (OCR takes around a second per
 page-sized image): at most `MaxOcrImages` per document (default 20; the rest are reported as `content.needsOcr`),
-icons under 100×40 pixels are skipped, a PDF image covering half a page or more on a page with text is treated as a
-searchable scan (its text layer is used), and `OcrEmbeddedImages = false` turns embedded OCR off. When a document
+icons under 100×40 pixels are skipped, a PDF image covering half a page or more with invisible text over it is treated
+as a searchable scan (its text layer is compared with it, not read twice), and `OcrEmbeddedImages = false` turns embedded OCR off. When a document
 contains OCR text, the safety gate scores instruction wording anywhere in it as OCR (Medium).
 
 ```csharp

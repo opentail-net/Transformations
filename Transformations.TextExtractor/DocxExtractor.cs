@@ -69,7 +69,10 @@ public class DocxExtractor : ITextExtractor
         }
 
         if (wordDoc.MainDocumentPart is { } main)
+        {
+            AppendSideParts(main, sb, options, hidden);
             AppendImages(main, body, sb, options, hidden);
+        }
 
         if (hidden.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenDocx, "docx",
@@ -225,24 +228,73 @@ public class DocxExtractor : ITextExtractor
     internal static string EscapeCsv(string value) => TableRenderer.EscapeCsv(value);
 
     /// <summary>
-    /// OCRs the pictures the body shows (DrawingML blips and VML image data in runs), each once. A picture in a hidden
-    /// run is hidden content. Media parts the body does not reference are not shown and are ignored.
+    /// Text Word shows outside the body: headers and footers (each distinct one once, since sections usually repeat
+    /// them), footnotes, endnotes and comments, one labelled line each, after the body. Hidden runs in them are handled
+    /// as in the body. With page markers they follow the last page, so their location is the end of the document.
+    /// </summary>
+    private static void AppendSideParts(MainDocumentPart main, StringBuilder sb, ExtractionOptions? options, DocxHidden hidden)
+    {
+        var shown = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var part in main.HeaderParts)
+            AppendLabelled(sb, "Header", part.Header, options, hidden, shown);
+        foreach (var part in main.FooterParts)
+            AppendLabelled(sb, "Footer", part.Footer, options, hidden, shown);
+        foreach (var note in main.FootnotesPart?.Footnotes?.Elements<Footnote>() ?? [])
+            if (note.Type?.Value is null || note.Type.Value == FootnoteEndnoteValues.Normal)
+                AppendLabelled(sb, "Footnote", note, options, hidden, null);
+        foreach (var note in main.EndnotesPart?.Endnotes?.Elements<Endnote>() ?? [])
+            if (note.Type?.Value is null || note.Type.Value == FootnoteEndnoteValues.Normal)
+                AppendLabelled(sb, "Endnote", note, options, hidden, null);
+        foreach (var comment in main.WordprocessingCommentsPart?.Comments?.Elements<Comment>() ?? [])
+            AppendLabelled(sb, "Comment", comment, options, hidden, null);
+    }
+
+    private static void AppendLabelled(StringBuilder sb, string label, OpenXmlElement? root, ExtractionOptions? options,
+        DocxHidden hidden, HashSet<string>? shown)
+    {
+        if (root == null) return;
+        ExtractionGuard.ThrowIfCancellationRequested(options);
+        // Top-level paragraphs only: a text box's paragraphs sit inside a run and are already in its paragraph's text.
+        var text = string.Join(Environment.NewLine, root.Descendants<Paragraph>()
+            .Where(p => !p.Ancestors<Paragraph>().Any())
+            .Select(p => VisibleText(p, options, hidden).Trim())
+            .Where(t => t.Length > 0));
+        if (text.Length == 0 || shown?.Add(text) == false) return;
+        sb.AppendLine($"[{label}] {text}");
+    }
+
+    /// <summary>
+    /// OCRs the pictures the document shows (DrawingML blips and VML image data in runs) in the body, headers, footers,
+    /// notes and comments, each once per part. A picture in a hidden run is hidden content. Media parts nothing
+    /// references are not shown and are ignored.
     /// </summary>
     private static void AppendImages(MainDocumentPart main, Body body, StringBuilder sb, ExtractionOptions? options, DocxHidden hidden)
     {
         var counter = new EmbeddedImageOcr.Counter();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var run in body.Descendants<Run>())
+        var owners = new List<(OpenXmlPart Part, OpenXmlElement? Root)> { (main, body) };
+        owners.AddRange(main.HeaderParts.Select(p => ((OpenXmlPart)p, (OpenXmlElement?)p.Header)));
+        owners.AddRange(main.FooterParts.Select(p => ((OpenXmlPart)p, (OpenXmlElement?)p.Footer)));
+        if (main.FootnotesPart is { } footnotes) owners.Add((footnotes, footnotes.Footnotes));
+        if (main.EndnotesPart is { } endnotes) owners.Add((endnotes, endnotes.Endnotes));
+        if (main.WordprocessingCommentsPart is { } comments) owners.Add((comments, comments.Comments));
+
+        foreach (var (owner, root) in owners)
         {
-            var ids = run.Descendants<global::DocumentFormat.OpenXml.Drawing.Blip>().Select(b => b.Embed?.Value)
-                .Concat(run.Descendants<global::DocumentFormat.OpenXml.Vml.ImageData>().Select(i => i.RelationshipId?.Value));
-            foreach (var id in ids)
+            if (root == null) continue;
+            // Relationship IDs belong to the part that holds the run.
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var run in root.Descendants<Run>())
             {
-                if (id == null || !seen.Add(id) || main.GetPartById(id) is not ImagePart part) continue;
-                var how = HiddenBy(run, hidden);
-                using var s = part.GetStream();
-                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "docx image", options, counter,
-                    how == null ? null : $"image in hidden text ({how})", (text, why) => hidden.Add((text, why)));
+                var ids = run.Descendants<global::DocumentFormat.OpenXml.Drawing.Blip>().Select(b => b.Embed?.Value)
+                    .Concat(run.Descendants<global::DocumentFormat.OpenXml.Vml.ImageData>().Select(i => i.RelationshipId?.Value));
+                foreach (var id in ids)
+                {
+                    if (id == null || !seen.Add(id) || !owner.TryGetPartById(id, out var found) || found is not ImagePart part) continue;
+                    var how = HiddenBy(run, hidden);
+                    using var s = part.GetStream();
+                    EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "docx image", options, counter,
+                        how == null ? null : $"image in hidden text ({how})", (text, why) => hidden.Add((text, why)));
+                }
             }
         }
         EmbeddedImageOcr.ReportSkipped(options, counter, "docx");

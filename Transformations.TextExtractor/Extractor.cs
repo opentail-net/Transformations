@@ -1333,6 +1333,13 @@ public static class ExtractionWarningCodes
     public const string NeedsOcr = "content.needsOcr";
 
     /// <summary>
+    /// The document holds content this extractor does not read: PPTX charts, SmartArt or embedded objects, XLSX cell
+    /// comments or charts. Their text is not in the result and was not checked, so <see cref="ModelInput.IsPartial"/>
+    /// is set. <c>Source</c> names the slide or sheet.
+    /// </summary>
+    public const string NotExtracted = "content.notExtracted";
+
+    /// <summary>
     /// Text came from OCR. It is untrusted: an image can carry instructions aimed at an AI reader that no
     /// text-level check saw before OCR, so OCR text must go through the same safety checks as any other text.
     /// </summary>

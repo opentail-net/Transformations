@@ -81,7 +81,8 @@ public sealed record ModelInput(
         }
 
         bool partial = truncated || result.Warnings.Any(w =>
-            w.Code.StartsWith("container.", StringComparison.Ordinal) || w.Code == ExtractionWarningCodes.NeedsOcr);
+            w.Code.StartsWith("container.", StringComparison.Ordinal)
+            || w.Code is ExtractionWarningCodes.NeedsOcr or ExtractionWarningCodes.NotExtracted);
 
         return new ModelInput(fileName, segments, result.SafetyVerdict, result.Findings, result.Warnings,
             result.Quarantine?.Parts.Select(p => p.Source).ToList() ?? [],

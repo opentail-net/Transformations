@@ -140,8 +140,9 @@ public class ExcelExtractor : ITextExtractor
     }
 
     /// <summary>
-    /// OCRs pictures placed on worksheets (the drawing's picture elements, not every media part). A picture on a hidden
-    /// sheet, or marked hidden itself, is hidden content.
+    /// OCRs pictures placed on worksheets (the drawing's picture elements, not every media part), and reports cell
+    /// comments and charts, which are not extracted. A picture on a hidden sheet, or marked hidden itself, is hidden
+    /// content.
     /// </summary>
     private static void AppendImages(byte[] fileData, StringBuilder sb, ExtractionOptions? options, List<(string Text, string How)> hidden)
     {
@@ -152,8 +153,9 @@ public class ExcelExtractor : ITextExtractor
         var sheets = workbook.Workbook?.Sheets?.Elements<global::DocumentFormat.OpenXml.Spreadsheet.Sheet>().ToList() ?? [];
         foreach (var sheetPart in workbook.WorksheetParts)
         {
-            if (sheetPart.DrawingsPart is not { WorksheetDrawing: { } drawing } drawings) continue;
             var sheet = sheets.FirstOrDefault(s => s.Id?.Value == workbook.GetIdOfPart(sheetPart));
+            ReportNotExtracted(sheetPart, sheet?.Name?.Value, options);
+            if (sheetPart.DrawingsPart is not { WorksheetDrawing: { } drawing } drawings) continue;
             bool sheetHidden = sheet?.State?.Value is { } state && state != global::DocumentFormat.OpenXml.Spreadsheet.SheetStateValues.Visible;
             foreach (var picture in drawing.Descendants<global::DocumentFormat.OpenXml.Drawing.Spreadsheet.Picture>())
             {
@@ -167,6 +169,19 @@ public class ExcelExtractor : ITextExtractor
             }
         }
         EmbeddedImageOcr.ReportSkipped(options, counter, "xlsx");
+    }
+
+    /// <summary>Warns about sheet content that is not extracted, so the result is not mistaken for the whole sheet.</summary>
+    private static void ReportNotExtracted(global::DocumentFormat.OpenXml.Packaging.WorksheetPart sheetPart, string? sheetName,
+        ExtractionOptions? options)
+    {
+        if (options?.WarningSink is not { } sink) return;
+        var unread = new List<string>();
+        if (sheetPart.WorksheetCommentsPart != null) unread.Add("cell comments");
+        if (sheetPart.DrawingsPart?.ChartParts.Any() == true) unread.Add("charts");
+        if (unread.Count > 0)
+            sink(new ExtractionWarning(ExtractionWarningCodes.NotExtracted, $"sheet {sheetName ?? "?"}",
+                $"{string.Join(", ", unread)} not extracted; their text was not checked."));
     }
 
     /// <summary>Columns with zero width (hidden). Formats that do not report widths have none.</summary>

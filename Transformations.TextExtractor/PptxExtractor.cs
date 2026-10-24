@@ -73,6 +73,7 @@ public class PptxExtractor : ITextExtractor
                 EmbeddedImageOcr.Append(slideSb, EmbeddedImageOcr.ReadPart(s), $"slide {slideNum} image", options, ocrCounter,
                     hiddenPicture ? "hidden picture" : null, (text, why) => hidden.Add((text, why)));
             }
+            ReportNotExtracted(slidePart, slideNum, options);
 
             if (slidePart.Slide.Show?.Value == false)
             {
@@ -101,6 +102,19 @@ public class PptxExtractor : ITextExtractor
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
                 string.Join(", ", hidden.Select(h => h.How).Distinct()));
         return sb.ToString().Trim();
+    }
+
+    /// <summary>Warns about slide content that is not extracted, so the result is not mistaken for the whole slide.</summary>
+    private static void ReportNotExtracted(SlidePart slidePart, int slideNum, ExtractionOptions? options)
+    {
+        if (options?.WarningSink is not { } sink) return;
+        var unread = new List<string>();
+        if (slidePart.ChartParts.Any()) unread.Add("charts");
+        if (slidePart.DiagramDataParts.Any()) unread.Add("SmartArt");
+        if (slidePart.EmbeddedObjectParts.Any() || slidePart.EmbeddedPackageParts.Any()) unread.Add("embedded objects");
+        if (unread.Count > 0)
+            sink(new ExtractionWarning(ExtractionWarningCodes.NotExtracted, $"slide {slideNum}",
+                $"{string.Join(", ", unread)} not extracted; their text was not checked."));
     }
 
     private static void AppendSlideText(SlidePart slidePart, StringBuilder sb, ExtractionOptions? options,
