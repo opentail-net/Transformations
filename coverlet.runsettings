@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverage settings for CI: passed to dotnet test, with the XPlat Code Coverage collector, as its settings file.
+  Transformations.Core has no source of its own: its project compiles the same files as the Transformations
+  meta package (linked from ../Transformations). The tests exercise the meta package's copy, so Core's copy would
+  count the same code a second time at 0%. It is excluded; its code is measured through Transformations.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Exclude>[Transformations.Core]*</Exclude>
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
