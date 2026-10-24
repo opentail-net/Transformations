@@ -119,8 +119,10 @@ public class TextExtractorReviewRound7Tests
 
         var input = _extractor.GetModelInput("m.eml", eml);
 
+        // MimeKit may already strip the directory part (it does on Linux); either way the path has one level per container.
         var segment = input.Segments.Single(s => s.Text.Contains("Quarterly figures."));
-        Assert.That(segment.Source, Does.EndWith("x_.._inner.zip_secret.txt"));
+        Assert.That(segment.Source.Split('/'), Has.Length.EqualTo(2), segment.Source);
+        Assert.That(segment.Source, Does.StartWith("m.eml/").And.EndWith("secret.txt"));
     }
 
     [Test]
