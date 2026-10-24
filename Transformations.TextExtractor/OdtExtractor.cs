@@ -101,8 +101,7 @@ public class OdtExtractor : ITextExtractor
                 if (image.Attribute(xlink + "href")?.Value is not { } href || !seen.Add(href)
                     || zip.GetEntry(href) is not { Length: > 0 } entry) continue;
                 var how = rootHow ?? HiddenAncestor(image, context);
-                using var s = entry.Open();
-                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), entry.FullName, options, counter,
+                EmbeddedImageOcr.AppendPart(sb, entry.Open, entry.Length, entry.FullName, options, counter,
                     how == null ? null : $"image in {how}", (text, why) => context.Hidden.Add((text, why)));
             }
         }

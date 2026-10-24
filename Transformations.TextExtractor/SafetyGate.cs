@@ -357,11 +357,15 @@ internal static class SafetyGate
     private const string AddressedLeadWords = @"(?:[-*•·>]\s*|\d+[.)]\s*)?(?:(?:please|now|also|important|note|attention|urgent|ai|assistant|model|chatbot|bot|agent|llm|hey|ok|okay|and|then|first)[\s,:!]+){0,3}$";
     private const string AddressedBoundary = @"[\n.!?]\s*|\b(?:system|assistant|ai|instructions?|note\s+to\s+(?:the\s+)?(?:ai|assistant|model|llm|agent)s?)\s*:\s*";
 
-    private static readonly Regex AddressedLead = new($@"(?:\A\s*|{AddressedBoundary}){AddressedLeadWords}",
+    // A label opening a line ("Subject:", "Title:", "[Comment]", the extractors' own labels) is a line start too: the
+    // text after it is what the reader is told, as in "Subject: Ignore previous instructions".
+    private const string AddressedLineLabel = @"[ \t]*(?:\[[^\]\n]{1,40}\]|\p{L}[\p{L}\- ]{0,24}:)[ \t]*";
+
+    private static readonly Regex AddressedLead = new($@"(?:\A\s*|{AddressedBoundary}|(?:\A|\n){AddressedLineLabel}){AddressedLeadWords}",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
 
     // For a look-back window cut out of longer text, where its first character is not the start of the text.
-    private static readonly Regex AddressedLeadInside = new($@"(?:{AddressedBoundary}){AddressedLeadWords}",
+    private static readonly Regex AddressedLeadInside = new($@"(?:{AddressedBoundary}|\n{AddressedLineLabel}){AddressedLeadWords}",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
 
     // Not inside an address or domain ("sender@example.com", "attack.example.org").
@@ -386,7 +390,8 @@ internal static class SafetyGate
     private readonly record struct Hit(Match Match, int Start, int End, SafetyCategory Category, bool Obfuscated);
 
     /// <summary>Scans text that has already been extracted. Returns findings; does not report them.</summary>
-    internal static List<SafetyFinding> Scan(string text, string source, bool fromOcr, SafetyPolicy policy)
+    internal static List<SafetyFinding> Scan(string text, string source, bool fromOcr, SafetyPolicy policy,
+        CancellationToken cancellationToken = default)
     {
         var findings = new List<SafetyFinding>();
         if (!policy.Enabled || string.IsNullOrEmpty(text)) return findings;
@@ -398,7 +403,9 @@ internal static class SafetyGate
         var instructions = hits.Select(h => h.Match).ToList();
 
         ScanTagCharacters(text, source, policy, findings);
-        ScanBidi(text, source, instructions, folded, findings);
+        cancellationToken.ThrowIfCancellationRequested();
+        ScanBidi(text, source, instructions, folded, findings, skipped);
+        cancellationToken.ThrowIfCancellationRequested();
         ScanZeroWidth(text, source, instructions, folded, findings);
         for (int i = 0; i < findings.Count; i++)
             findings[i] = findings[i] with
@@ -441,8 +448,10 @@ internal static class SafetyGate
             .OrderBy(f => f.Offset));
 
         ScanCorrelated(text, source, hits, findings);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!FraudSignals.Scan(text, folded.Text, folded.Map, source, findings, Excerpt))
             skipped.Add("the fraud-signal check timed out");
+        cancellationToken.ThrowIfCancellationRequested();
         ScanEncoded(text, source, policy, findings, skipped);
         if (skipped.Count > 0)
             findings.Add(new SafetyFinding(SafetyFindingCodes.ScanIncomplete, SafetySeverity.Medium, source,
@@ -758,13 +767,24 @@ internal static class SafetyGate
     /// Terminators (PDF U+202C, PDI U+2069) only close spans and are not counted. Any control whose span overlaps
     /// instruction wording, and any suspicious control on the same line as instruction wording, is High.
     /// </summary>
-    private static void ScanBidi(string text, string source, List<Match> instructions, Folded folded, List<SafetyFinding> findings)
+    // Each bidi opener is judged within a bounded window, and at most MaxBidiOpeners are judged, so text with many
+    // controls on one long line costs linear time. Openers beyond the cap make the scan incomplete (fail closed).
+    private const int BidiWindow = 4096;
+    private const int MaxBidiOpeners = 1_000;
+
+    private static void ScanBidi(string text, string source, List<Match> instructions, Folded folded, List<SafetyFinding> findings,
+        List<string> skipped)
     {
-        int count = 0, first = -1;
+        int count = 0, first = -1, judged = 0;
         bool nearInstruction = false;
         for (int i = 0; i < text.Length; i++)
         {
             if (!IsBidiOpener(text[i])) continue;
+            if (++judged > MaxBidiOpeners)
+            {
+                skipped.Add($"the bidi check stopped after {MaxBidiOpeners} direction controls");
+                break;
+            }
             var (lineStart, lineEnd) = LineAround(text, i);
             int spanEnd = GovernedEnd(text, i, lineEnd);
 
@@ -838,11 +858,15 @@ internal static class SafetyGate
         return false;
     }
 
+    /// <summary>The line around <paramref name="i"/>, clipped to <see cref="BidiWindow"/> characters on each side.</summary>
     private static (int Start, int End) LineAround(string text, int i)
     {
-        int start = text.LastIndexOf('\n', i) + 1;
-        int end = text.IndexOf('\n', i);
-        return (start, end < 0 ? text.Length : end);
+        int from = Math.Max(0, i - BidiWindow);
+        int start = text.LastIndexOf('\n', i, i - from + 1) + 1;
+        if (start == 0) start = from;
+        int count = Math.Min(BidiWindow, text.Length - i);
+        int end = text.IndexOf('\n', i, count);
+        return (start, end < 0 ? i + count : end);
     }
 
     private static bool IsRightToLeft(char c)
@@ -1101,16 +1125,16 @@ internal sealed class SafetyScope : IDisposable
         if (scanText)
         {
             if (ocrBlocks.Count == 0)
-                findings.AddRange(SafetyGate.Scan(text, source, wholeUnitIsOcr, Policy));
+                findings.AddRange(SafetyGate.Scan(text, source, wholeUnitIsOcr, Policy, Options.CancellationToken));
             else
             {
                 var native = new StringBuilder(text);
                 foreach (var (start, length) in ocrBlocks)
                     for (int i = start; i < start + length; i++)
                         if (native[i] is not ('\n' or '\r')) native[i] = ' ';
-                findings.AddRange(SafetyGate.Scan(native.ToString(), source, fromOcr: false, Policy));
+                findings.AddRange(SafetyGate.Scan(native.ToString(), source, fromOcr: false, Policy, Options.CancellationToken));
                 foreach (var (start, length) in ocrBlocks)
-                    findings.AddRange(SafetyGate.Scan(text.Substring(start, length), source, fromOcr: true, Policy)
+                    findings.AddRange(SafetyGate.Scan(text.Substring(start, length), source, fromOcr: true, Policy, Options.CancellationToken)
                         .Select(f => f with { Offset = f.Offset is int o ? o + start : null }));
             }
         }

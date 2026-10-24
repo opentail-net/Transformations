@@ -65,6 +65,24 @@ public class RtfExtractor : ITextExtractor
         var state = new CharState(Uc: 1, Font: -1, Vanish: false, Tiny: false);
         int pendingSkip = 0; // chars to skip (substitute chars after \uN)
 
+        // Headers, footers and comments are shown (or listed) apart from the body: their text is collected into a side
+        // buffer while their group is open and added after the body as labelled lines, each distinct one once.
+        var target = result;
+        var side = new StringBuilder();
+        int sideDepth = -1;
+        string sideLabel = "";
+        var sideParts = new List<string>();
+        void EndSidePart()
+        {
+            EndHiddenRun();
+            var sideText = System.Text.RegularExpressions.Regex.Replace(side.ToString(), @"\s+", " ").Trim();
+            if (sideText.Length > 0 && !sideParts.Contains($"[{sideLabel}] {sideText}"))
+                sideParts.Add($"[{sideLabel}] {sideText}");
+            side.Clear();
+            target = result;
+            sideDepth = -1;
+        }
+
         // Hidden runs: collected for the safety gate, and rendered by HiddenText where they end.
         var mode = options?.HiddenText ?? HiddenTextMode.Mark;
         var hiddenRun = new StringBuilder();
@@ -76,7 +94,7 @@ public class RtfExtractor : ITextExtractor
             if (state.HiddenBy is not { } how)
             {
                 EndHiddenRun();
-                result.Append(text);
+                target.Append(text);
                 return;
             }
             hiddenRunHow ??= how;
@@ -91,9 +109,9 @@ public class RtfExtractor : ITextExtractor
             if (!string.IsNullOrWhiteSpace(hiddenText))
             {
                 hiddenRuns.Add((hiddenText.Trim(), hiddenRunHow!));
-                if (mode == HiddenTextMode.Keep) result.Append(hiddenText);
+                if (mode == HiddenTextMode.Keep) target.Append(hiddenText);
                 else if (SafetyGate.RenderHidden(options, hiddenText.Trim()) is { } marked)
-                    result.Append(' ').Append(marked).Append(' ');
+                    target.Append(' ').Append(marked).Append(' ');
             }
             hiddenRunHow = null;
         }
@@ -134,6 +152,7 @@ public class RtfExtractor : ITextExtractor
             {
                 FlushBytes();
                 if (depth == skipDepth) skipDepth = -1;
+                if (depth == sideDepth) EndSidePart();
                 depth--;
                 if (saved.Count > 0) state = saved.Pop();
                 i++;
@@ -171,9 +190,21 @@ public class RtfExtractor : ITextExtractor
                 FlushBytes();
                 if (next == '*')
                 {
-                    // \* marks an optional destination — skip the current group
-                    skipDepth = depth;
+                    // \* marks an optional destination: skipped, except comments (\*\annotation), which are collected.
                     i++;
+                    while (i < rtf.Length && rtf[i] is ' ' or '\r' or '\n') i++;
+                    if (sideDepth < 0 && string.CompareOrdinal(rtf, i, "\\annotation", 0, 11) == 0
+                        && (i + 11 >= rtf.Length || !char.IsLetter(rtf[i + 11])))
+                    {
+                        i += 11;
+                        if (i < rtf.Length && rtf[i] == ' ') i++;
+                        EndHiddenRun();
+                        sideDepth = depth;
+                        sideLabel = "Comment";
+                        target = side;
+                    }
+                    else
+                        skipDepth = depth;
                 }
                 else if (next == '\\' || next == '{' || next == '}')
                 {
@@ -203,7 +234,7 @@ public class RtfExtractor : ITextExtractor
                     {
                         case "par": case "pard": case "sect": case "page":
                             EndHiddenRun(); // a hidden run ends with its paragraph
-                            result.AppendLine(); break;
+                            target.AppendLine(); break;
                         case "line":
                             Emit1('\n'); break;
                         case "tab":
@@ -246,9 +277,23 @@ public class RtfExtractor : ITextExtractor
                             if (numStr != null && int.TryParse(numStr, out int fontId))
                                 state = state with { Font = fontId };
                             break;
+                        // Headers and footers are shown on the page: collected and added after the body.
+                        case "header": case "headerl": case "headerr": case "headerf":
+                        case "footer": case "footerl": case "footerr": case "footerf":
+                            if (sideDepth < 0)
+                            {
+                                EndHiddenRun();
+                                sideDepth = depth;
+                                sideLabel = word.StartsWith("header", StringComparison.Ordinal) ? "Header" : "Footer";
+                                target = side;
+                            }
+                            break;
+                        // Annotation author/ID groups label a comment; they are not its text.
+                        case "atnid": case "atnauthor": case "atndate": case "atnref":
+                            skipDepth = depth;
+                            break;
                         // Skip known metadata destination groups
                         case "info": case "fonttbl": case "colortbl": case "stylesheet":
-                        case "header": case "footer": case "headerf": case "footerf":
                         case "filetbl": case "listtable": case "listoverridetable":
                         case "rsidtbl": case "generator": case "fldinst":
                             skipDepth = depth;
@@ -272,7 +317,10 @@ public class RtfExtractor : ITextExtractor
             }
         }
         FlushBytes();
+        if (sideDepth >= 0) EndSidePart(); // an unclosed header or comment
         EndHiddenRun();
+        foreach (var part in sideParts)
+            result.AppendLine().Append(part);
         if (hiddenRuns.Count > 0)
             SafetyGate.ReportHidden(options, SafetyFindingCodes.HiddenRtf, "rtf",
                 string.Join(Environment.NewLine, hiddenRuns.Select(h => h.Text)),

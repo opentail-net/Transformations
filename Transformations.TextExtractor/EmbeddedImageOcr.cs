@@ -125,11 +125,77 @@ internal static class EmbeddedImageOcr
                 $"Invisible text over images on {counter.UnverifiedPages} pages was not compared with the images (needs OCR); it is treated as a searchable-scan text layer."));
     }
 
-    /// <summary>Reads a package part into memory (the package was checked against the decompression limits before parsing).</summary>
-    internal static byte[] ReadPart(Stream stream)
+    /// <summary>Largest embedded image read into memory; larger ones are reported as not inspected.</summary>
+    internal const long MaxImageBytes = 50L * 1024 * 1024;
+
+    /// <summary>Bytes read first, enough for every supported format's dimensions in practice.</summary>
+    private const int HeaderBytes = 1024 * 1024;
+
+    /// <summary>
+    /// Like <see cref="Append"/>, for an image in a package part, without reading the whole part up front: the declared
+    /// size is checked against <see cref="MaxImageBytes"/>, then only a prefix is read to learn the format and size, and
+    /// the full image is read only when it is going to be OCRd. Icons, images with OCR off and images over
+    /// <see cref="ExtractionOptions.MaxOcrImages"/> cost at most the prefix. <paramref name="declaredLength"/> is -1 when
+    /// unknown.
+    /// </summary>
+    internal static void AppendPart(StringBuilder sb, Func<Stream> open, long declaredLength, string where, ExtractionOptions? options,
+        Counter counter, string? hiddenHow = null, Action<string, string>? onHidden = null)
+    {
+        ExtractionGuard.ThrowIfCancellationRequested(options);
+        if (declaredLength > MaxImageBytes)
+        {
+            TooLarge(options, where, declaredLength);
+            return;
+        }
+
+        byte[] prefix;
+        bool complete;
+        using (var s = open())
+            (prefix, complete) = ReadUpTo(s, HeaderBytes);
+
+        var format = ContentTypeDetector.SniffExtension(prefix);
+        if (ContentTypeDetector.IsImageExtension(format) && ImageHeader.ReadSize(prefix) is var (width, height)
+            && !ShouldReadWithoutCounting(width, height, options, counter))
+            return; // an icon, or counted as not read: the rest of the image is never loaded
+
+        byte[] image = prefix;
+        if (!complete)
+        {
+            using var s = open();
+            (image, complete) = ReadUpTo(s, MaxImageBytes);
+            if (!complete)
+            {
+                TooLarge(options, where, -1);
+                return;
+            }
+        }
+        Append(sb, image, where, options, counter, hiddenHow, onHidden);
+    }
+
+    /// <summary><see cref="ShouldRead"/>'s decision, leaving the counting to <see cref="Append"/> when it reads.</summary>
+    private static bool ShouldReadWithoutCounting(int width, int height, ExtractionOptions? options, Counter counter)
+    {
+        if (width < MinWidth || height < MinHeight) return false;
+        if (!Enabled(options) || counter.Read >= options!.MaxOcrImages)
+            return ShouldRead(width, height, options, counter); // counts it as unread or over the limit
+        return true;
+    }
+
+    private static void TooLarge(ExtractionOptions? options, string where, long length)
+        => options?.WarningSink?.Invoke(new ExtractionWarning(ExtractionWarningCodes.NeedsOcr, where,
+            $"Embedded image {(length >= 0 ? $"of {length} bytes " : "")}not read: the limit is {MaxImageBytes} bytes."));
+
+    /// <summary>Reads at most <paramref name="limit"/> bytes; <c>Complete</c> is false when the stream had more.</summary>
+    private static (byte[] Bytes, bool Complete) ReadUpTo(Stream stream, long limit)
     {
         using var ms = new MemoryStream();
-        stream.CopyTo(ms);
-        return ms.ToArray();
+        var buffer = new byte[81920];
+        int read;
+        while ((read = stream.Read(buffer, 0, (int)Math.Min(buffer.Length, limit + 1 - ms.Length))) > 0)
+        {
+            ms.Write(buffer, 0, read);
+            if (ms.Length > limit) return (ms.ToArray()[..(int)limit], false);
+        }
+        return (ms.ToArray(), true);
     }
 }

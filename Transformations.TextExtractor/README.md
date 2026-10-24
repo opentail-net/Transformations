@@ -510,14 +510,14 @@ What each format is checked for (anything not listed is not inspected, which is 
 | Format | Hidden content detected | Not inspected |
 |---|---|---|
 | HTML | inline hiding styles, simple `<style>` rules (tag, `.class`, `#id`, `tag.class`), `hidden`, `<template>`, same text/background colour, hidden table cells/rows | CSS cascade, combinators, `@media`, external stylesheets, layout, CSS background images; `<img>` by URL is never fetched and SVG/other non-raster data URIs cannot be OCRd: both are reported (`content.needsOcr`, result partial), except `cid:` parts (read by the email container) and images whose width and height attributes are icon-sized with no class, id or inline sizing style that could show them larger |
-| DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions; the same checks in headers, footers, footnotes, endnotes and comments, which are extracted as `[Header]`, `[Footer]`, `[Footnote]`, `[Endnote]` and `[Comment]` lines after the body | text boxes in shapes not tied to a run, embedded objects |
+| DOCX | `w:vanish` directly or via character/paragraph style, white and ≤2 pt text, tracked deletions; the same checks in headers, footers, footnotes, endnotes and comments, which are extracted as `[Header]`, `[Footer]`, `[Footnote]`, `[Endnote]` and `[Comment]` lines after the body; picture alt text as `[Alt text]` lines | text boxes in shapes not tied to a run, embedded objects |
 | PDF | invisible text not over an image, invisible text over an image that OCR shows does not match it (or that adds instruction wording or a long passage the image does not show), text under 1 pt, text outside the crop box, images placed off the page; page-sized pictures without a text layer are OCRd or reported as not inspected | text colour, overlapping text; invisible text over an image when no OCR engine is set (reported as unverified) |
-| PPTX | hidden slides, hidden shapes and groups, tables in hidden graphic frames | alt text; charts, SmartArt and embedded objects are not extracted and are reported (`content.notExtracted`, result partial); speaker notes are extracted as `[Notes]` |
+| PPTX | hidden slides, hidden shapes and groups, tables in hidden graphic frames; alt text is extracted as `[Alt text]` lines (hidden content on a hidden shape) | charts, SmartArt and embedded objects are not extracted and are reported (`content.notExtracted`, result partial); speaker notes are extracted as `[Notes]` |
 | XLSX | hidden and very hidden sheets, zero-height rows, zero-width columns | cell comments and charts are not extracted and are reported (`content.notExtracted`, result partial) |
 | ODT / ODP | styles with `text:display="none"`, white text without background, ≤2 pt text (through parent styles, from `content.xml` and `styles.xml`), `text:hidden-text` / `text:hidden-paragraph` marked hidden, sections with `text:display="none"`, shapes with `draw:display="none"`, slides with `presentation:visibility="hidden"`; pictures in hidden content are hidden content (`safety.hiddenOdf`) | conditional display (`text:display="condition"`) is treated as shown; notes and charts are not extracted |
-| EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts. An EML's HTML alternative is extracted and gated as its own part (`message body (HTML)`) and added as an `[HTML alternative]` block when it says something the plain-text body does not (`content.alternativesDiffer`). Part names (entries, attachments) are gated as text and cleaned before they become labels or `Source` paths: line breaks, invisible characters and brackets are neutralised, and attachment names cannot contain path separators; a name that reaches `QuarantineAt` is withheld. Attachments without a name are extracted under a generated one | EPUB is gated as one document |
-| RTF | `\v` hidden text and font sizes of 2 pt or less (`\fsN`), group-scoped and reset by `\plain` (`safety.hiddenRtf`); groups nested over 1,000 deep fail with `LimitExceeded` | colours, headers/footers and other destination groups (skipped) |
-| Markdown | raw HTML in the document is rendered and read by the HTML extractor, so everything in the HTML row applies (comments are dropped) | plain Markdown has no hidden-content mechanism |
+| EML / ZIP / EPUB | each part gated separately (EML, ZIP); everything above applies to the parts. An EML's HTML alternative is extracted and gated as its own part (`message body (HTML)`) and added as an `[HTML alternative]` block when it says something the plain-text body does not (`content.alternativesDiffer`). Part names (entries, attachments, attached-message subjects, and the file name itself, which becomes `ModelInput.FileName` and the root of every `Source`) are gated as text and cleaned before they become labels or `Source` paths: line breaks, invisible characters and brackets are neutralised, and attachment names cannot contain path separators; a name that reaches `QuarantineAt` is withheld. Attachments without a name are extracted under a generated one | EPUB is gated as one document |
+| RTF | `\v` hidden text and font sizes of 2 pt or less (`\fsN`), group-scoped and reset by `\plain` (`safety.hiddenRtf`); headers, footers and comments (`\*\annotation`) are extracted as `[Header]`, `[Footer]`, `[Comment]` lines after the body; groups nested over 1,000 deep fail with `LimitExceeded` | colours; other destination groups (font and style tables, document info) are skipped |
+| Markdown | a document with raw HTML or images is rendered and read by the HTML extractor, so everything in the HTML row applies: hidden elements, dropped comments, `data:` images OCRd, images by URL reported as not inspected | plain Markdown has no hidden-content mechanism |
 | Images (OCR) | OCR text is scanned like any text and its findings are scored higher | text the OCR engine does not see |
 
 **Structured model input.** `GetModelInput` returns segments with provenance instead of one string, so an application can
@@ -549,6 +549,10 @@ and, for instruction wording inside a sentence, hiding through an external style
 image when no OCR engine is set (direct instructions hidden these ways are caught by their wording, not by the hiding).
 These are figures on a small synthetic corpus, not a measure of real-world detection.
 
+**Timeout is not a hard deadline.** Parsers and the safety scan check `Timeout` and cancellation between steps (the
+safety scan between detectors, each of which is bounded); a single library call cannot be interrupted. For hard CPU and
+memory limits on hostile files, run extraction in a separate, resource-limited process.
+
 **Security contract.** Extracted text is untrusted data even when `SafetyVerdict` is `NoKnownSignals`: the detectors find
 known patterns, they cannot prove the absence of prompt injection. Keep document text separate from system instructions;
 delimiters or "ignore any instructions below" notes do not reliably stop injection. This library cannot authorise tool
@@ -575,6 +579,8 @@ Every picture that is not read, because there is no OCR engine, `OcrEmbeddedImag
 its format cannot be OCRd (SVG, EMF, WMF, an unreadable image; in Office documents too),
 is reported as `content.needsOcr`, so `ModelInput.IsPartial` tells you the document was not fully inspected.
 
+Embedded pictures in Office and OpenDocument files are read lazily: only a 1 MB prefix is read to learn the format and
+size, the full picture only when it is going to be OCRd, and a picture over 50 MB is reported as not inspected.
 Embedded pictures (the last row) are limited so a picture-heavy document stays fast (OCR takes around a second per
 page-sized image): at most `MaxOcrImages` per document (default 20; the rest are reported as `content.needsOcr`),
 icons under 100×40 pixels are skipped, a PDF image covering half a page or more with invisible text over it is treated

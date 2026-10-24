@@ -240,7 +240,7 @@ public class TextExtractor : IDocumentTextExtractor
         var effective = (options ?? ExtractionOptions.ForAiIngestion()) with
             { IncludePageMarkers = true, SegmentSink = segments.Add, MarkerTag = ModelInput.NewMarkerTag() };
         var result = GetTextCore(fileName, content, effective);
-        return ModelInput.From(fileName, result, segments, effective.MaxCharacters, effective.MarkerTag!);
+        return ModelInput.From(UntrustedPart.Clean(fileName, keepPathSeparators: false), result, segments, effective.MaxCharacters, effective.MarkerTag!);
     }
 
     // ── Discovery ────────────────────────────────────────────────────────────
@@ -472,14 +472,16 @@ public class TextExtractor : IDocumentTextExtractor
     /// <summary>
     /// Extracts and runs the safety gate over the whole text: normalised, and before
     /// <see cref="ExtractionOptions.MaxCharacters"/> so nothing escapes the scan by truncation.
-    /// Containers that gate their own parts are not scanned again.
+    /// Containers that gate their own parts are not scanned again. The file name is untrusted too (an upload's name
+    /// comes from its sender): it is gated, and its cleaned form names the unit in findings and segment provenance.
     /// </summary>
     private static string ExtractGated(ITextExtractor processor, byte[] content, ExtractionOptions options, string fileName,
         out string? withheld)
     {
-        using var scope = new SafetyScope(options, fileName);
+        var name = UntrustedPart.Name(fileName, keepPathSeparators: false, options, "file");
+        using var scope = new SafetyScope(options, name);
         var text = Extract(processor, content, scope.Options);
-        withheld = scope.Complete(text, fileName, scanText: processor is not IPartGatedContainer);
+        withheld = scope.Complete(text, name, scanText: processor is not IPartGatedContainer);
         return text;
     }
 

@@ -162,8 +162,7 @@ public class ExcelExtractor : ITextExtractor
                 if (picture.BlipFill?.Blip?.Embed?.Value is not { } id
                     || drawings.GetPartById(id) is not global::DocumentFormat.OpenXml.Packaging.ImagePart part) continue;
                 bool hiddenPicture = picture.NonVisualPictureProperties?.NonVisualDrawingProperties?.Hidden?.Value == true;
-                using var s = part.GetStream();
-                EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "xlsx image", options, counter,
+                EmbeddedImageOcr.AppendPart(sb, () => part.GetStream(), -1, "xlsx image", options, counter,
                     sheetHidden ? "picture on a hidden sheet" : hiddenPicture ? "hidden picture" : null,
                     (text, why) => hidden.Add((text, why)));
             }

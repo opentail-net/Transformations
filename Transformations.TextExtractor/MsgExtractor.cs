@@ -116,7 +116,10 @@ public class MsgExtractor : ITextExtractor, IPartGatedContainer
 
             if (item is Storage.Message embedded)
             {
-                var name = string.IsNullOrWhiteSpace(embedded.Subject) ? $"attachment {index}.msg" : $"{embedded.Subject}.msg";
+                // The subject is message content: gated and cleaned before it becomes a label.
+                var name = string.IsNullOrWhiteSpace(embedded.Subject)
+                    ? $"attachment {index}.msg"
+                    : UntrustedPart.Name($"{embedded.Subject}.msg", keepPathSeparators: false, options, "attached message");
                 sb.AppendLine();
                 sb.AppendLine($"[Attachment: {name}] not extracted: attached Outlook message");
                 Warn(options, ExtractionWarningCodes.ContainerUnsupportedEntry, name, "Attached Outlook messages are not opened.");

@@ -71,6 +71,7 @@ public class DocxExtractor : ITextExtractor
         if (wordDoc.MainDocumentPart is { } main)
         {
             AppendSideParts(main, sb, options, hidden);
+            AppendAltText(body, sb, options, hidden);
             AppendImages(main, body, sb, options, hidden);
         }
 
@@ -249,6 +250,27 @@ public class DocxExtractor : ITextExtractor
             AppendLabelled(sb, "Comment", comment, options, hidden, null);
     }
 
+    /// <summary>
+    /// Alternative text (<c>wp:docPr descr</c>) of the body's pictures and shapes, as <c>[Alt text]</c> lines: not shown,
+    /// but read by screen readers and indexers, so it is gated. On a picture in a hidden run it is hidden content.
+    /// </summary>
+    private static void AppendAltText(Body body, StringBuilder sb, ExtractionOptions? options, DocxHidden hidden)
+    {
+        foreach (var props in body.Descendants<global::DocumentFormat.OpenXml.Drawing.Wordprocessing.DocProperties>())
+        {
+            if (props.Description?.Value is not { } alt || string.IsNullOrWhiteSpace(alt)) continue;
+            alt = alt.ReplaceLineEndings(" ").Trim();
+            if (props.Ancestors<Run>().FirstOrDefault() is { } run && HiddenBy(run, hidden) is { } how)
+            {
+                hidden.Add((alt, $"alt text of a picture in hidden text ({how})"));
+                if (SafetyGate.RenderHidden(options, alt) is { } rendered)
+                    sb.AppendLine(rendered);
+                continue;
+            }
+            sb.AppendLine($"[Alt text] {alt}");
+        }
+    }
+
     private static void AppendLabelled(StringBuilder sb, string label, OpenXmlElement? root, ExtractionOptions? options,
         DocxHidden hidden, HashSet<string>? shown)
     {
@@ -291,8 +313,7 @@ public class DocxExtractor : ITextExtractor
                 {
                     if (id == null || !seen.Add(id) || !owner.TryGetPartById(id, out var found) || found is not ImagePart part) continue;
                     var how = HiddenBy(run, hidden);
-                    using var s = part.GetStream();
-                    EmbeddedImageOcr.Append(sb, EmbeddedImageOcr.ReadPart(s), "docx image", options, counter,
+                    EmbeddedImageOcr.AppendPart(sb, () => part.GetStream(), -1, "docx image", options, counter,
                         how == null ? null : $"image in hidden text ({how})", (text, why) => hidden.Add((text, why)));
                 }
             }

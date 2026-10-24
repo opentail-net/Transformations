@@ -7,7 +7,8 @@ namespace Transformations.Text;
 
 /// <summary>
 /// Extracts text from PowerPoint presentations (.pptx files): text shapes (including shapes inside
-/// groups), tables, and speaker notes. Charts, SmartArt, alternative text and embedded objects are not extracted.
+/// groups), tables, speaker notes and alternative text (<c>[Alt text]</c> lines; on a hidden shape it is hidden content).
+/// Charts, SmartArt and embedded objects are not extracted and are reported as <see cref="ExtractionWarningCodes.NotExtracted"/>.
 /// Hidden slides (<c>show="0"</c>) and hidden shapes are reported as hidden text and follow
 /// <see cref="ExtractionOptions.HiddenText"/>.
 /// </summary>
@@ -69,10 +70,10 @@ public class PptxExtractor : ITextExtractor
                 if (picture.BlipFill?.Blip?.Embed?.Value is not { } id || slidePart.GetPartById(id) is not ImagePart part) continue;
                 bool hiddenPicture = picture.NonVisualPictureProperties?.NonVisualDrawingProperties?.Hidden?.Value == true
                     || picture.Ancestors<GroupShape>().Any(g => g.NonVisualGroupShapeProperties?.NonVisualDrawingProperties?.Hidden?.Value == true);
-                using var s = part.GetStream();
-                EmbeddedImageOcr.Append(slideSb, EmbeddedImageOcr.ReadPart(s), $"slide {slideNum} image", options, ocrCounter,
+                EmbeddedImageOcr.AppendPart(slideSb, () => part.GetStream(), -1, $"slide {slideNum} image", options, ocrCounter,
                     hiddenPicture ? "hidden picture" : null, (text, why) => hidden.Add((text, why)));
             }
+            AppendAltText(slidePart, slideSb, options, hidden);
             ReportNotExtracted(slidePart, slideNum, options);
 
             if (slidePart.Slide.Show?.Value == false)
@@ -103,6 +104,29 @@ public class PptxExtractor : ITextExtractor
                 string.Join(Environment.NewLine, hidden.Select(h => h.Text)),
                 string.Join(", ", hidden.Select(h => h.How).Distinct()));
         return sb.ToString().Trim();
+    }
+
+    /// <summary>
+    /// Alternative text (<c>descr</c>) of shapes, pictures and frames: not shown on the slide, but read by screen readers
+    /// and by anything that indexes the file, so it is extracted and gated. On a hidden shape or group it is hidden content.
+    /// </summary>
+    private static void AppendAltText(SlidePart slidePart, StringBuilder sb, ExtractionOptions? options, List<(string Text, string How)> hidden)
+    {
+        foreach (var nv in slidePart.Slide!.Descendants<NonVisualDrawingProperties>())
+        {
+            if (nv.Description?.Value is not { } alt || string.IsNullOrWhiteSpace(alt)) continue;
+            alt = alt.ReplaceLineEndings(" ").Trim();
+            bool hiddenShape = nv.Hidden?.Value == true
+                || nv.Ancestors<GroupShape>().Any(g => g.NonVisualGroupShapeProperties?.NonVisualDrawingProperties?.Hidden?.Value == true);
+            if (!hiddenShape)
+            {
+                sb.AppendLine($"[Alt text] {alt}");
+                continue;
+            }
+            hidden.Add((alt, "alt text of a hidden shape"));
+            if (SafetyGate.RenderHidden(options, alt) is { } rendered)
+                sb.AppendLine(rendered);
+        }
     }
 
     /// <summary>Warns about slide content that is not extracted, so the result is not mistaken for the whole slide.</summary>
