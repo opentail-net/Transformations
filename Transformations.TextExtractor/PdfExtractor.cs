@@ -62,7 +62,7 @@ public class PdfExtractor : ITextExtractor
                 {
                     sb.AppendLine(pageText);
                     sb.AppendLine();
-                    AppendEmbeddedImages(page, pageNum, sb, options, ocrCounter, hidden);
+                    AppendEmbeddedImages(page, pageNum, sb, options, ocrCounter, hidden, layerOverImages);
                 }
                 else if (page.GetImages().Any() && ImageExtractor.OcrAvailable(options))
                 {
@@ -148,10 +148,10 @@ public class PdfExtractor : ITextExtractor
     }
 
     private static bool OverAnImage(PdfRectangle glyph, List<PdfRectangle> imageAreas)
-    {
-        var centre = glyph.Centroid;
-        return imageAreas.Any(a => centre.X >= a.Left && centre.X <= a.Right && centre.Y >= a.Bottom && centre.Y <= a.Top);
-    }
+        => imageAreas.Any(a => Contains(a, glyph.Centroid));
+
+    private static bool Contains(PdfRectangle area, PdfPoint point)
+        => point.X >= area.Left && point.X <= area.Right && point.Y >= area.Bottom && point.Y <= area.Top;
 
     /// <summary>Joins words into lines, top to bottom and left to right, starting a line when the baseline moves.</summary>
     private static string WordsToText(IEnumerable<Word> words)
@@ -172,11 +172,13 @@ public class PdfExtractor : ITextExtractor
 
     /// <summary>
     /// OCRs pictures on a page that has a text layer (screenshots, scanned inserts). An image covering half the page or
-    /// more is the scan behind a searchable PDF's text layer, which already holds its text, so it is skipped. Sizes are
-    /// checked from the PDF's image dictionary before anything is decoded.
+    /// more with invisible text over it is the scan behind a searchable PDF's text layer: <see cref="VerifyTextLayer"/>
+    /// compares the two, so it is not read again here. A large image without such a layer (a full-page screenshot, a
+    /// poster) is read like any other, or reported as not inspected. Sizes are checked from the PDF's image dictionary
+    /// before anything is decoded.
     /// </summary>
     private static void AppendEmbeddedImages(Page page, int pageNum, StringBuilder sb, ExtractionOptions? options,
-        EmbeddedImageOcr.Counter counter, List<(string Source, string Text, string How)> hidden)
+        EmbeddedImageOcr.Counter counter, List<(string Source, string Text, string How)> hidden, List<Letter> layerOverImages)
     {
         double pageArea = Math.Max(1, page.Width * page.Height);
         var bounds = page.CropBox.Bounds;
@@ -184,7 +186,8 @@ public class PdfExtractor : ITextExtractor
         foreach (var image in page.GetImages())
         {
             var box = image.BoundingBox;
-            if (Math.Abs(box.Width * box.Height) >= pageArea / 2) continue;
+            if (Math.Abs(box.Width * box.Height) >= pageArea / 2 && layerOverImages.Any(l => Contains(box, l.BoundingBox.Centroid)))
+                continue;
             if (image.WidthInSamples < EmbeddedImageOcr.MinWidth || image.HeightInSamples < EmbeddedImageOcr.MinHeight) continue;
             if (!EmbeddedImageOcr.Enabled(options))
             {
@@ -208,7 +211,8 @@ public class PdfExtractor : ITextExtractor
     /// Invisible text over an image is normally the text layer of a searchable scan, but geometry alone does not prove
     /// it matches the picture. With OCR, the images under it are read and compared word by word: if more than half of
     /// the layer's words (3+ letters) are not in the picture, the layer is hidden text (instruction wording in it is
-    /// then High). Without OCR the page is counted as unverified and reported, so the result is marked partial.
+    /// then High). Otherwise only the words the picture does not show are checked, for instruction wording or a long
+    /// unbroken run. Without OCR the page is counted as unverified and reported, so the result is marked partial.
     /// </summary>
     private static void VerifyTextLayer(Page page, int pageNum, List<Letter> layer, ExtractionOptions? options,
         EmbeddedImageOcr.Counter counter, List<(string Source, string Text, string How)> hidden)
@@ -250,12 +254,46 @@ public class PdfExtractor : ITextExtractor
 
         int unmatched = layerWords.Count(w => !seen.Contains(w));
         if (unmatched * 2 > layerWords.Count)
+        {
             hidden.Add(($"page {pageNum}", layerText, "invisible text over an image that does not match what the image shows"));
+            return;
+        }
+
+        // A layer that mostly matches can still carry a short passage the picture does not show, such as an instruction
+        // appended to a genuine OCR layer. Unmatched words with instruction wording are hidden text (High); so is a long
+        // unbroken unmatched run (Low on its own). Shorter scattered misses are ordinary OCR error.
+        var tokens = WordPattern.Matches(layerText);
+        var missing = tokens.Where(m => !seen.Contains(m.Value.ToLowerInvariant())).ToList();
+        if (missing.Count == 0) return;
+        var missingText = string.Join(" ", missing.Select(m => m.Value));
+        if (SafetyGate.ContainsInstruction(missingText, options.Safety ?? SafetyPolicy.Default))
+        {
+            hidden.Add(($"page {pageNum}", missingText, "invisible text over an image, not shown in the image"));
+            return;
+        }
+
+        var runs = new List<string>();
+        for (int i = 0; i < tokens.Count;)
+        {
+            if (seen.Contains(tokens[i].Value.ToLowerInvariant())) { i++; continue; }
+            int j = i;
+            while (j + 1 < tokens.Count && !seen.Contains(tokens[j + 1].Value.ToLowerInvariant())) j++;
+            if (j - i + 1 >= MinUnmatchedRun)
+                runs.Add(layerText[tokens[i].Index..(tokens[j].Index + tokens[j].Length)]);
+            i = j + 1;
+        }
+        if (runs.Count > 0)
+            hidden.Add(($"page {pageNum}", string.Join(Environment.NewLine, runs), "invisible text over an image, not shown in the image"));
     }
 
+    /// <summary>Consecutive layer words missing from the OCR text that count as a hidden passage, not OCR error.</summary>
+    private const int MinUnmatchedRun = 8;
+
+    private static readonly System.Text.RegularExpressions.Regex WordPattern = new(@"[\p{L}\p{N}]{3,}",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static HashSet<string> Words(string text)
-        => System.Text.RegularExpressions.Regex.Matches(text.ToLowerInvariant(), @"[\p{L}\p{N}]{3,}")
-            .Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+        => WordPattern.Matches(text.ToLowerInvariant()).Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
 
     private static void AppendOcrPage(Page page, int pageNum, StringBuilder sb, ExtractionOptions options)
     {
