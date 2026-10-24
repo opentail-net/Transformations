@@ -189,6 +189,35 @@ public class TextExtractorReviewRound5Tests
         Assert.That(text, Does.StartWith("[Slide 1]" + Environment.NewLine));
     }
 
+    // ── The metadata pass obeys the extraction's cancellation and timeout ────
+
+    [Test]
+    public void Metadata_IsNotBuiltAfterCancellation()
+    {
+        // The mismatch warning is delivered after the text is extracted and before metadata is built, so cancelling
+        // there lands between the two phases. Before the fix the metadata pass ignored it and the call succeeded.
+        using var cts = new CancellationTokenSource();
+        var options = new ExtractionOptions
+        {
+            CancellationToken = cts.Token,
+            WarningSink = w => { if (w.Code == ExtractionWarningCodes.ContentTypeMismatch) cts.Cancel(); },
+        };
+        var docxNamedTxt = Docx(null, Para("Body text."));
+
+        Assert.Throws<OperationCanceledException>(() => _extractor.GetTextWithMetadata("notes.txt", docxNamedTxt, options));
+    }
+
+    [Test]
+    public void Metadata_StillBuiltWithoutCancellation()
+    {
+        var result = _extractor.GetTextWithMetadata("notes.txt", Docx(null, Para("Body text.")),
+            new ExtractionOptions { Timeout = TimeSpan.FromMinutes(1) });
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Metadata["extraction.extractor"], Is.EqualTo(nameof(DocxExtractor)));
+        Assert.That(result.Metadata.ContainsKey("docx.metadata"), Is.False, "docx.metadata is only written when reading fails");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static int PartCount(byte[] package)

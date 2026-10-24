@@ -356,7 +356,8 @@ public class TextExtractor : IDocumentTextExtractor
                     processor!.GetType().Name, sw.Elapsed) with { Warnings = warnings, Findings = safety.Findings, Quarantine = safety.Quarantine, SafetyVerdict = SafetyVerdict.Quarantined };
             }
             normalizedText = Truncate(normalizedText, options);
-            var metadata = BuildMetadata(fileName, content, normalizedText, processor);
+            // Metadata parses some formats again; the extraction's timeout and cancellation still apply.
+            var metadata = BuildMetadata(fileName, content, normalizedText, processor, cancellation.Token);
             if (mismatch != null)
                 metadata["file.detectedFormat"] = mismatch;
             metadata["extraction.extractor"] = processor!.GetType().Name;
@@ -786,8 +787,10 @@ public class TextExtractor : IDocumentTextExtractor
     }
 
     private static Dictionary<string, string> BuildMetadata(string fileName, byte[] content, string normalizedText,
-        ITextExtractor processor)
+        ITextExtractor processor, CancellationToken cancellationToken)
     {
+        // The parser libraries take no token, so it is checked before and after the format-specific pass (one per document).
+        cancellationToken.ThrowIfCancellationRequested();
         var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // Format-specific metadata follows the extractor that produced the text, so a PDF named
@@ -813,6 +816,7 @@ public class TextExtractor : IDocumentTextExtractor
         metadata["text.lineCount"] = CountLines(normalizedText).ToString();
         metadata["text.wordCount"] = CountWords(normalizedText).ToString();
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (extension.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase))
         {
@@ -868,6 +872,7 @@ public class TextExtractor : IDocumentTextExtractor
         if (extension.Equals(".pptx", StringComparison.OrdinalIgnoreCase))
             TryAddPptxMetadata(content, metadata);
 
+        cancellationToken.ThrowIfCancellationRequested();
         return metadata;
     }
 
