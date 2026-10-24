@@ -86,7 +86,7 @@ application as well.
 | It does | It does not |
 |---|---|
 | Find known signals: hidden text (HTML, DOCX, PDF, PPTX, XLSX), invisible Unicode, bidi tricks, lookalike or encoded instructions, AI-targeted wording, OCR text | Prove that text without findings is harmless. `SafetyVerdict.NoKnownSignals` means no *known* signal, nothing more |
-| Keep hidden text and withheld parts out of the text you get back | Understand meaning. A visible instruction in plain words is only flagged (Low), because security articles and quoted examples look the same |
+| Keep hidden text and withheld parts out of the text you get back | Understand meaning. A visible instruction written as a direct instruction (opening a sentence or line, or after `system:` / `Note to the AI:`) is Medium, so the AI profile routes it to review; quoted or discussed wording ("for example", "the phrase", "attackers", a quote mark) stays Low, and prefacing an instruction with such wording keeps it Low |
 | Say where each piece of text came from (file, archive entry, attachment, page, OCR) | Decide what your model or agent may do. Permissions are yours to enforce |
 | Bound parsing work (sizes, entries, pages, time) | Fully isolate hostile files. Some parser calls cannot be interrupted |
 
@@ -386,7 +386,7 @@ and as a `safety.finding` warning.
 | `safety.hiddenHtml` | Inline `display:none`, `visibility:hidden`, `font-size:0`, `opacity:0`, zero size with `overflow:hidden`, off-screen position, text colour equal to background, `hidden` attribute | Low | the hidden text contains instruction wording |
 | `safety.hiddenDocx` | Runs with `w:vanish`, white text without shading or highlight, font size of 2 pt or less | Low | as above |
 | `safety.hiddenPdf` | Letters in render mode 3 on a page with no image, below 1 pt, or outside the crop box | Low | as above |
-| `safety.instruction` | Instruction wording aimed at a model: "ignore previous instructions", "do not tell the user", "if you are an AI", chat role tags (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), plus `SafetyPolicy.AdditionalInstructionPhrases` | Low | — |
+| `safety.instruction` | Instruction wording aimed at a model: "ignore previous instructions", "do not tell the user", "if you are an AI", chat role tags (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), plus `SafetyPolicy.AdditionalInstructionPhrases` | Low; Medium when written as a direct instruction (opens a sentence or line, or follows `system:` / `Note to the AI:`, and is not quoted or discussed); chat role tags stay Low | — |
 | `safety.ocrInstruction` | Instruction wording in a part that produced OCR text | Medium | — |
 
 Invisible characters are removed before instruction wording is matched, so they cannot be used to split a phrase.
@@ -528,13 +528,15 @@ document's own text (`[Page 7]`, `[Image 1] (OCR)`) stays ordinary content. With
 (`content.notExtracted`) and truncation by
 `MaxCharacters` (applied across segments); `IsTrusted` is always `false`.
 
-**Measured detection.** `TextExtractorSafetyCorpusTests` runs a labelled corpus (31 adversarial samples including
-fraud scenarios, 4 documented gaps, 24 benign samples across HTML, DOCX, PDF, EML, ZIP, XLSX, PPTX, images and plain
+**Measured detection.** `TextExtractorSafetyCorpusTests` runs a labelled corpus (36 adversarial samples including
+fraud scenarios, 4 documented gaps, 26 benign samples across HTML, DOCX, PDF, EML, ZIP, XLSX, PPTX, images and plain
 text) through the profile on every test run and prints recall and false-positive rate. Current result: 100% of the
-expected adversarial set and 89% including known gaps are routed to review or withheld; 0% of the benign set is. The
-known gaps are: a visible plain instruction (only Flagged, by design), an instruction split across table cells,
-hiding through an external stylesheet, and invisible PDF text over an image when no OCR engine is set. These are
-figures on a small synthetic corpus, not a measure of real-world detection.
+expected adversarial set and 90% including known gaps are routed to review or withheld; 0% of the benign set is
+(including a prompt-injection training handout and a security advisory). The known gaps are: a visible instruction
+framed as an example ("For example: ignore…", kept Low like any discussion), an instruction split across table cells,
+and, for instruction wording inside a sentence, hiding through an external stylesheet and invisible PDF text over an
+image when no OCR engine is set (direct instructions hidden these ways are caught by their wording, not by the hiding).
+These are figures on a small synthetic corpus, not a measure of real-world detection.
 
 **Security contract.** Extracted text is untrusted data even when `SafetyVerdict` is `NoKnownSignals`: the detectors find
 known patterns, they cannot prove the absence of prompt injection. Keep document text separate from system instructions;

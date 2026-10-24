@@ -126,7 +126,10 @@ public static class SafetyFindingCodes
     public const string HiddenPptx = "safety.hiddenPptx";
     /// <summary>XLSX hidden or very hidden sheets, hidden rows and hidden columns.</summary>
     public const string HiddenXlsx = "safety.hiddenXlsx";
-    /// <summary>Wording aimed at an AI model ("ignore previous instructions", chat role tags, ...).</summary>
+    /// <summary>
+    /// Wording aimed at an AI model ("ignore previous instructions", chat role tags, ...). Low when quoted, discussed or
+    /// inside a sentence; Medium when written as a direct instruction to the reader.
+    /// </summary>
     public const string Instruction = "safety.instruction";
     /// <summary>Instruction wording in text that came from OCR.</summary>
     public const string OcrInstruction = "safety.ocrInstruction";
@@ -323,6 +326,40 @@ internal static class SafetyGate
     private static readonly Regex SpacedLetters = new(@"(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_]+\p{L}(?![\p{L}\p{N}])){3,}",
         RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
 
+    // A visible instruction is "addressed" when it opens a sentence or line (after a bullet, a role label such as
+    // "system:" or "Note to the AI:", and at most three lead-in words like "please" or "assistant,"), is not quoted, and
+    // nothing in the 200 characters before it discusses it ("for example", "the phrase", "attackers", "injection").
+    // Security articles and quoted examples then stay Low; text that simply tells the reader what to do is Medium.
+    private const int AddressedLookBack = 200;
+
+    private const string AddressedLeadWords = @"(?:[-*•·>]\s*|\d+[.)]\s*)?(?:(?:please|now|also|important|note|attention|urgent|ai|assistant|model|chatbot|bot|agent|llm|hey|ok|okay|and|then|first)[\s,:!]+){0,3}$";
+    private const string AddressedBoundary = @"[\n.!?]\s*|\b(?:system|assistant|ai|instructions?|note\s+to\s+(?:the\s+)?(?:ai|assistant|model|llm|agent)s?)\s*:\s*";
+
+    private static readonly Regex AddressedLead = new($@"(?:\A\s*|{AddressedBoundary}){AddressedLeadWords}",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
+
+    // For a look-back window cut out of longer text, where its first character is not the start of the text.
+    private static readonly Regex AddressedLeadInside = new($@"(?:{AddressedBoundary}){AddressedLeadWords}",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
+
+    // Not inside an address or domain ("sender@example.com", "attack.example.org").
+    private static readonly Regex DiscussionCue = new(
+        @"(?<![@./])\b(e\.g|for\s+example|for\s+instance|such\s+as|examples?|phrases?|strings?|quote[sd]?|quoting|wording|attacks?|attackers?|injections?|payloads?|malicious|jailbreaks?|known\s+as|called)\b(?![@./]\w)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
+
+    private static bool IsDiscussed(string text, int start)
+        => DiscussionCue.IsMatch(text[Math.Max(0, start - AddressedLookBack)..start]);
+
+    private static bool IsAddressed(string text, Hit hit)
+    {
+        if (hit.Category == SafetyCategory.RoleMarker) return false; // chat-template tokens are discussed in technical text
+        if (IsDiscussed(text, hit.Start)) return false;
+        int from = Math.Max(0, hit.Start - AddressedLookBack);
+        var before = text[from..hit.Start];
+        if (before.TrimEnd() is { Length: > 0 } trimmed && trimmed[^1] is '"' or '\'' or '“' or '‘' or '«' or '`' or '„') return false;
+        return (from == 0 ? AddressedLead : AddressedLeadInside).IsMatch(before);
+    }
+
     /// <summary>One instruction match, with its span in the original text.</summary>
     private readonly record struct Hit(Match Match, int Start, int End, SafetyCategory Category, bool Obfuscated);
 
@@ -358,12 +395,17 @@ internal static class SafetyGate
                         ? "Instruction wording disguised with lookalike characters or letter spacing, together with concealment wording."
                         : "Instruction wording disguised with lookalike characters, compatibility forms or letter spacing.",
                     excerpt) { Offset = h.Start, Category = SafetyCategory.Obfuscation, Confidence = concealment ? SafetyConfidence.High : SafetyConfidence.Medium });
+            else if (fromOcr)
+                findings.Add(new SafetyFinding(SafetyFindingCodes.OcrInstruction, SafetySeverity.Medium, source,
+                    "Instruction wording aimed at an AI model, in OCR text.",
+                    excerpt) { Offset = h.Start, Category = h.Category, Confidence = SafetyConfidence.Low });
+            else if (IsAddressed(text, h))
+                findings.Add(new SafetyFinding(SafetyFindingCodes.Instruction, SafetySeverity.Medium, source,
+                    "Instruction wording aimed at an AI model, written as a direct instruction rather than quoted or discussed.",
+                    excerpt) { Offset = h.Start, Category = h.Category, Confidence = SafetyConfidence.Medium });
             else
-                findings.Add(new SafetyFinding(
-                    fromOcr ? SafetyFindingCodes.OcrInstruction : SafetyFindingCodes.Instruction,
-                    fromOcr ? SafetySeverity.Medium : SafetySeverity.Low,
-                    source,
-                    fromOcr ? "Instruction wording aimed at an AI model, in OCR text." : "Instruction wording aimed at an AI model.",
+                findings.Add(new SafetyFinding(SafetyFindingCodes.Instruction, SafetySeverity.Low, source,
+                    "Instruction wording aimed at an AI model.",
                     excerpt) { Offset = h.Start, Category = h.Category, Confidence = SafetyConfidence.Low });
         }
 
@@ -476,6 +518,8 @@ internal static class SafetyGate
             if (partner.Match == null) continue;
 
             int start = Math.Min(conceal.Start, partner.Start), end = Math.Max(conceal.End, partner.End);
+            // A list of example payloads in a security text is discussion, as for single instructions (IsAddressed).
+            if (IsDiscussed(text, start)) continue;
             findings.Add(new SafetyFinding(SafetyFindingCodes.CorrelatedInstructions, SafetySeverity.Medium, source,
                 $"Concealment wording next to a {partner.Category.ToString().ToLowerInvariant()} instruction.",
                 Excerpt(text, start, end - start)) { Offset = start, Category = SafetyCategory.Concealment, Confidence = SafetyConfidence.Medium });
