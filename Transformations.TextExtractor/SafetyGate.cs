@@ -768,7 +768,8 @@ internal static class SafetyGate
     /// instruction wording, and any suspicious control on the same line as instruction wording, is High.
     /// </summary>
     // Each bidi opener is judged within a bounded window, and at most MaxBidiOpeners are judged, so text with many
-    // controls on one long line costs linear time. Openers beyond the cap make the scan incomplete (fail closed).
+    // controls on one long line costs linear time. Openers beyond the cap, and spans longer than the window, make the
+    // scan incomplete (fail closed); instruction correlation always uses the whole line.
     private const int BidiWindow = 4096;
     private const int MaxBidiOpeners = 1_000;
 
@@ -776,7 +777,8 @@ internal static class SafetyGate
         List<string> skipped)
     {
         int count = 0, first = -1, judged = 0;
-        bool nearInstruction = false;
+        bool nearInstruction = false, truncatedReported = false;
+        int lineStart = 0, lineEnd = -1; // true bounds of the line holding the current opener, found once per line
         for (int i = 0; i < text.Length; i++)
         {
             if (!IsBidiOpener(text[i])) continue;
@@ -785,11 +787,27 @@ internal static class SafetyGate
                 skipped.Add($"the bidi check stopped after {MaxBidiOpeners} direction controls");
                 break;
             }
-            var (lineStart, lineEnd) = LineAround(text, i);
-            int spanEnd = GovernedEnd(text, i, lineEnd);
+            if (i > lineEnd)
+            {
+                lineStart = text.LastIndexOf('\n', i) + 1;
+                int nl = text.IndexOf('\n', i);
+                lineEnd = nl < 0 ? text.Length : nl;
+            }
 
-            bool overlapsInstruction = instructions.Any(m => InstructionStart(folded, m) < spanEnd && InstructionEnd(folded, m) > i);
-            bool suspicious = !IsLegitimateBidi(text, i, spanEnd, lineStart, lineEnd);
+            // Legitimacy is judged within the window; instruction correlation uses the real line, and a span the
+            // window cut short is taken to govern the rest of the line (and reported, since it was not judged whole).
+            int windowStart = Math.Max(lineStart, i - BidiWindow), windowEnd = Math.Min(lineEnd, i + BidiWindow);
+            int spanEnd = GovernedEnd(text, i, windowEnd);
+            bool truncated = spanEnd == windowEnd && windowEnd < lineEnd;
+            if (truncated && !truncatedReported)
+            {
+                skipped.Add($"a bidi-controlled span longer than {BidiWindow} characters was judged on its first {BidiWindow}");
+                truncatedReported = true;
+            }
+            int governedEnd = truncated ? lineEnd : spanEnd;
+
+            bool overlapsInstruction = instructions.Any(m => InstructionStart(folded, m) < governedEnd && InstructionEnd(folded, m) > i);
+            bool suspicious = !IsLegitimateBidi(text, i, spanEnd, windowStart, windowEnd);
             if (!suspicious && !overlapsInstruction) continue;
 
             count++;
@@ -856,17 +874,6 @@ internal static class SafetyGate
             if (char.IsLetter(c)) return false;
         }
         return false;
-    }
-
-    /// <summary>The line around <paramref name="i"/>, clipped to <see cref="BidiWindow"/> characters on each side.</summary>
-    private static (int Start, int End) LineAround(string text, int i)
-    {
-        int from = Math.Max(0, i - BidiWindow);
-        int start = text.LastIndexOf('\n', i, i - from + 1) + 1;
-        if (start == 0) start = from;
-        int count = Math.Min(BidiWindow, text.Length - i);
-        int end = text.IndexOf('\n', i, count);
-        return (start, end < 0 ? i + count : end);
     }
 
     private static bool IsRightToLeft(char c)

@@ -72,11 +72,12 @@ public class RtfExtractor : ITextExtractor
         int sideDepth = -1;
         string sideLabel = "";
         var sideParts = new List<string>();
+        var sideSeen = new HashSet<string>(StringComparer.Ordinal); // order from the list, membership in O(1)
         void EndSidePart()
         {
             EndHiddenRun();
             var sideText = System.Text.RegularExpressions.Regex.Replace(side.ToString(), @"\s+", " ").Trim();
-            if (sideText.Length > 0 && !sideParts.Contains($"[{sideLabel}] {sideText}"))
+            if (sideText.Length > 0 && sideSeen.Add($"[{sideLabel}] {sideText}"))
                 sideParts.Add($"[{sideLabel}] {sideText}");
             side.Clear();
             target = result;
