@@ -32,6 +32,11 @@ jobs:
       - name: Test with coverage (net8.0, net9.0, net10.0)
         run: dotnet test Transformations.Tests/Transformations.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings
 
+      # The mapping generator's tests compile the generated code for each supported (and rejected) input. No coverage
+      # collection here, so the coverage gate below still reads only the main test run's report.
+      - name: Test mapping generator
+        run: dotnet test Transformations.Mapping.Tests/Transformations.Mapping.Tests.csproj --configuration Release --no-build
+
       - name: Verify coverage thresholds
         shell: pwsh
         run: |
