@@ -71,7 +71,9 @@ namespace Transformations.Analyzers
 
             string key = containingType + "." + method.Name;
 
-            if (DeprecatedMethods.TryGetValue(key, out string? replacement))
+            // The name table only says which names have been deprecated. A current overload that shares a name with a
+            // deprecated one is not deprecated, so only a member marked [Obsolete] is reported.
+            if (DeprecatedMethods.TryGetValue(key, out string? replacement) && IsObsolete(method))
             {
                 Location location = GetMethodNameLocation(invocation) ?? invocation.Syntax.GetLocation();
 
@@ -83,6 +85,19 @@ namespace Transformations.Analyzers
 
                 context.ReportDiagnostic(diagnostic);
             }
+        }
+
+        private static bool IsObsolete(IMethodSymbol method)
+        {
+            foreach (AttributeData attribute in method.GetAttributes())
+            {
+                if (attribute.AttributeClass?.Name == "ObsoleteAttribute")
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static Location? GetMethodNameLocation(IInvocationOperation invocation)

@@ -74,6 +74,29 @@ namespace Transformations.Analyzers.Tests
         }
 
         [Test]
+        public async Task Analyzer_CurrentOverloadWithDeprecatedName_NoDiagnostic()
+        {
+            // The name table is keyed on type and method name. A current overload that shares the name of a removed
+            // deprecated one must not be reported: only members marked [Obsolete] are deprecated.
+            string testCode = """
+                public static class ComparableHelper
+                {
+                    public static bool IsBetween(this int actual, int minValue, int maxValue) => actual >= minValue && actual <= maxValue;
+                }
+
+                public class Test
+                {
+                    public void Run()
+                    {
+                        var x = 5.IsBetween(1, 10);
+                    }
+                }
+                """;
+
+            await AnalyzerVerifier.VerifyAnalyzerAsync(testCode);
+        }
+
+        [Test]
         public async Task Analyzer_NamespacedHelperCall_ReportsDiagnostic()
         {
             // The library's EnumHelper lives in the Transformations namespace, so its display name is
