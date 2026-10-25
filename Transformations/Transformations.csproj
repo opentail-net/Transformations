@@ -20,6 +20,9 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.13" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The shared helpers are compiled once, in Transformations.Core. Compiling them here as well put each type in two
+         assemblies, and any consumer that referenced both got ambiguous calls (CS0121). -->
+    <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
     <ProjectReference Include="..\Transformations.Analyzers\Transformations.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Transformations.Analyzers.CodeFixes\Transformations.Analyzers.CodeFixes.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Transformations.Dapper\Transformations.Dapper.csproj" Aliases="TransformationsDapper" />
@@ -29,6 +32,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Transformations.Web\SelectListExtensions.cs" Link="SelectListExtensions.cs" />
+  </ItemGroup>
+  <!-- Files Transformations.Core compiles from this folder. Excluded here so each type is defined once. -->
+  <ItemGroup>
+    <Compile Remove="AdditionalStringHelper.cs;ArrayHelper.cs;BasicTypeConverter.cs;BatchTransformations.cs;BitConvertor.cs;CollectionHelper.cs;ComparableHelper.cs;ConverterOld.cs;DateHelper.cs;DirectoryInfoHelper.cs;DiagnosticExtensions.cs;EnumHelper.cs;ExtensionHelper.cs;FileInfoHelper.cs;Helper.cs;HolidayHelper.cs;Inspect.cs;DiagnosticsProbe.cs;MiscHelper.cs;MeasurementExtensions.cs;RegExHelper.cs;RangeSemanticsHelper.cs;ObjectDelta.cs;Resilience.cs;SemanticStringComparer.cs;StopwatchHelper.cs;StreamHelper.cs;StreamExtensions.cs;StringHelper.cs;TimeSpanHelper.cs;Transform.cs;TransformationsHelper.cs;WebAndFileExtensions.cs;Properties\Resources.Designer.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />

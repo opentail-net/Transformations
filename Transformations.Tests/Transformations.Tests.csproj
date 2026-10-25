@@ -28,6 +28,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Transformations.TestDocuments\Transformations.TestDocuments.csproj" />
     <ProjectReference Include="..\Transformations.TextExtractor\Transformations.Text.csproj" />
+    <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
     <ProjectReference Include="..\Transformations\Transformations.csproj" />
   </ItemGroup>
 
