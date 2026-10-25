@@ -115,7 +115,7 @@ $textSha512 = [Convert]::ToBase64String([Security.Cryptography.SHA512]::HashData
 # ---------------------------------------------------------------------------------------------------------------------
 
 $manifest = Get-Content -Raw (Join-Path $corpusDir 'manifest.json') | ConvertFrom-Json
-$knownLabels = 'Ordinary', 'Malicious', 'KnownGap', 'Benign', 'Malformed'
+$knownLabels = 'Ordinary', 'Malicious', 'KnownGap', 'Benign', 'Malformed', 'Ocr'
 $samples = @($manifest.samples)
 $missingFiles = @($samples | Where-Object { -not (Test-Path (Join-Path $corpusDir $_.file)) })
 $badLabels = @($samples | Where-Object { $_.label -notin $knownLabels })
@@ -164,7 +164,17 @@ $nugetConfig = Join-Path $runDir 'nuget.config'
 # 6. Consumer per target framework
 # ---------------------------------------------------------------------------------------------------------------------
 
+$tessdataDir = Join-Path $WorkRoot 'tessdata'
+if (Test-Path (Join-Path $tessdataDir 'eng.traineddata')) {
+    $env:TRANSFORMATIONS_TESSDATA = $tessdataDir
+    Write-Step "Trained data: $tessdataDir"
+} else {
+    Remove-Item Env:TRANSFORMATIONS_TESSDATA -ErrorAction SilentlyContinue
+    Write-Step 'No trained data at the stable path: the Tesseract rows will be skipped'
+}
+
 $consumerResults = @()
+
 foreach ($tfm in $TargetFrameworks) {
     Write-Step "Consumer $tfm"
     $tfmDir = Join-Path $runDir $tfm
@@ -193,6 +203,7 @@ foreach ($tfm in $TargetFrameworks) {
     $runLog = Join-Path $logDir "$tfm-run.log"
     $resultsFile = Join-Path $tfmDir 'results.json'
     $results = @()
+    $nativeOcr = @(Get-ChildItem (Join-Path $consumerDir 'bin') -Recurse -Filter '*.dll' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(tesseract|leptonica)' } | ForEach-Object { $_.Name } | Sort-Object -Unique)
     $runCode = -1
     if ($buildCode -eq 0) {
         & dotnet run --project (Join-Path $consumerDir 'Consumer.csproj') -c Release --no-build @properties -- --corpus $corpusDir --results $resultsFile *> $runLog
@@ -202,6 +213,7 @@ foreach ($tfm in $TargetFrameworks) {
 
     $consumerResults += [pscustomobject]@{
         Tfm           = $tfm
+        NativeOcr     = $nativeOcr
         RestoreCode   = $restoreCode
         ResolvedOk    = $resolvedOk
         ResolvedNote  = $resolvedNote
@@ -220,8 +232,9 @@ $packagePassed = @($packageChecks | Where-Object { -not $_.Passed }).Count -eq 0
 $consumerPassed = @($consumerResults | Where-Object {
         -not ($_.RestoreCode -eq 0 -and $_.ResolvedOk -and $_.BuildCode -eq 0 -and $_.BuildWarnings -eq 0 -and $_.RunCode -eq 0)
     }).Count -eq 0
-$allChecksPassed = @($consumerResults | ForEach-Object { $_.Results } | Where-Object { -not $_.Passed }).Count -eq 0
-$verdict = if ($packagePassed -and $consumerPassed -and $allChecksPassed) { 'PASS' } else { 'FAIL' }
+$allChecksPassed = @($consumerResults | ForEach-Object { $_.Results } | Where-Object { -not $_.Passed -and -not $_.Skipped }).Count -eq 0
+$nativeOk = @($consumerResults | Where-Object { $_.NativeOcr.Count -eq 0 }).Count -eq 0
+$verdict = if ($packagePassed -and $consumerPassed -and $allChecksPassed -and $nativeOk) { 'PASS' } else { 'FAIL' }
 
 New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
 $reportPath = Join-Path $reportDir "$stamp-$version-$shortCommit.md"
@@ -252,7 +265,8 @@ $lines.Add('| Target | Restore | Package hash | Build | Warnings | Run | Checks 
 $lines.Add('|---|---|---|---|---|---|---|')
 foreach ($row in $consumerResults) {
     $passedCount = @($row.Results | Where-Object { $_.Passed }).Count
-    $lines.Add("| $($row.Tfm) | $(if ($row.RestoreCode -eq 0) { 'PASS' } else { 'FAIL' }) | $(if ($row.ResolvedOk) { 'PASS' } else { 'FAIL' }) | $(if ($row.BuildCode -eq 0) { 'PASS' } else { 'FAIL' }) | $($row.BuildWarnings) | $(if ($row.RunCode -eq 0) { 'PASS' } else { 'FAIL' }) | $passedCount / $($row.Results.Count) |")
+    $skippedCount = @($row.Results | Where-Object { $_.Skipped }).Count
+    $lines.Add("| $($row.Tfm) | $(if ($row.RestoreCode -eq 0) { 'PASS' } else { 'FAIL' }) | $(if ($row.ResolvedOk) { 'PASS' } else { 'FAIL' }) | $(if ($row.BuildCode -eq 0) { 'PASS' } else { 'FAIL' }) | $($row.BuildWarnings) | $(if ($row.RunCode -eq 0) { 'PASS' } else { 'FAIL' }) | $passedCount / $($row.Results.Count) ($skippedCount skipped) |")
 }
 $lines.Add('')
 
@@ -266,7 +280,7 @@ $checkNames = @($consumerResults[0].Results | ForEach-Object { $_.Name })
 foreach ($name in $checkNames) {
     $cells = foreach ($row in $consumerResults) {
         $match = $row.Results | Where-Object { $_.Name -eq $name } | Select-Object -First 1
-        if ($null -eq $match) { '-' } elseif ($match.Passed) { 'PASS' } else { 'FAIL' }
+        if ($null -eq $match) { '-' } elseif ($match.Skipped) { 'SKIP' } elseif ($match.Passed) { 'PASS' } else { 'FAIL' }
     }
     $ms = ($consumerResults[0].Results | Where-Object { $_.Name -eq $name } | Select-Object -First 1).ElapsedMs
     $lines.Add("| $($name -replace '\|', '\|') | $($cells -join ' | ') | $ms |")
@@ -275,13 +289,27 @@ $lines.Add('')
 
 $failures = @()
 foreach ($row in $consumerResults) {
-    foreach ($result in @($row.Results | Where-Object { -not $_.Passed })) {
+    if ($row.BuildCode -ne 0) { $failures += "- **$($row.Tfm)** build failed: see logs/$($row.Tfm)-build.log" }
+    if ($row.BuildCode -eq 0 -and $row.RunCode -ne 0) { $failures += "- **$($row.Tfm)** run failed (exit $($row.RunCode)): see logs/$($row.Tfm)-run.log" }
+}
+foreach ($row in $consumerResults) {
+    foreach ($result in @($row.Results | Where-Object { -not $_.Passed -and -not $_.Skipped })) {
         $failures += "- **$($row.Tfm)** $($result.Name): $($result.Detail -replace '\|', '\|')"
     }
 }
 $lines.Add('## Failures')
 $lines.Add('')
 if ($failures.Count -eq 0) { $lines.Add('None.') } else { $failures | ForEach-Object { $lines.Add($_) } }
+$lines.Add('')
+$skips = @()
+foreach ($row in $consumerResults) { foreach ($result in @($row.Results | Where-Object { $_.Skipped })) { $skips += "- **$($row.Tfm)** $($result.Name): $($result.Detail)" } }
+$lines.Add('## Skipped (did not run)')
+$lines.Add('')
+if ($skips.Count -eq 0) { $lines.Add('None.') } else { $skips | ForEach-Object { $lines.Add($_) } }
+$lines.Add('')
+$lines.Add('## Native OCR binaries in the consumer output')
+$lines.Add('')
+foreach ($row in $consumerResults) { $lines.Add("- **$($row.Tfm)**: $(if ($row.NativeOcr.Count -eq 0) { 'none found' } else { $row.NativeOcr -join ', ' })") }
 $lines.Add('')
 $lines.Add('## Cache entries cleared before restore')
 $lines.Add('')

@@ -25,10 +25,14 @@ public static class CorpusChecks
     private static void CheckSample(Corpus corpus, IDocumentTextExtractor extractor, CorpusEntry entry)
     {
         byte[] bytes = corpus.ReadBytes(entry);
-        ExtractionOptions options = ExtractionOptions.ForAiIngestion() with
-        {
-            OcrEngine = entry.OcrText is null ? null : new StubOcrEngine(entry.OcrText),
-        };
+
+        // The real engine is created only for the rows that need it, and disposed when the check ends. Without trained
+        // data the row is skipped before any extraction runs.
+        using Transformations.Text.Ocr.TesseractOcrEngine? tesseract = entry.RequiresTesseract ? CreateTesseractOrSkip() : null;
+        IOcrEngine? engine = tesseract;
+        engine ??= entry.OcrText is null ? null : new StubOcrEngine(entry.OcrText);
+
+        ExtractionOptions options = ExtractionOptions.ForAiIngestion() with { OcrEngine = engine };
 
         ExtractionResult result = extractor.GetText(entry.FileName, bytes, options);
         ModelInput input = extractor.GetModelInput(entry.FileName, bytes, options);
@@ -39,6 +43,9 @@ public static class CorpusChecks
         {
             case "Ordinary":
                 CheckOrdinary(extractor, entry, bytes, options, result, input);
+                break;
+            case "Ocr":
+                CheckOcr(entry, result, input, engine is not null);
                 break;
             case "Malicious":
                 Expect.True(IsCaught(result.SafetyVerdict), $"caught by policy (verdict {result.SafetyVerdict})");
@@ -119,6 +126,53 @@ public static class CorpusChecks
         using var stream = new MemoryStream(bytes);
         ExtractionResult fromStream = extractor.GetTextAsync(entry.FileName, stream, options).GetAwaiter().GetResult();
         Expect.Equal(result.Text, fromStream.Text, "GetTextAsync(Stream) text matches GetText(byte[])");
+    }
+
+    private static Transformations.Text.Ocr.TesseractOcrEngine CreateTesseractOrSkip()
+    {
+        string? tessdata = Environment.GetEnvironmentVariable("TRANSFORMATIONS_TESSDATA");
+        if (string.IsNullOrEmpty(tessdata))
+        {
+            throw new SmokeSkip("TRANSFORMATIONS_TESSDATA is not set, so the real Tesseract engine did not run");
+        }
+
+        if (!Transformations.Text.Ocr.TesseractOcrEngine.IsPlatformSupported)
+        {
+            throw new SmokeSkip("the Tesseract engine needs Windows x64 or x86");
+        }
+
+        var engine = new Transformations.Text.Ocr.TesseractOcrEngine(tessdata, "eng");
+        Expect.True(engine.IsAvailable, $"Tesseract is available with the configured trained data ({engine.UnavailableReason})");
+        return engine;
+    }
+
+    // An OCR sample. With no engine, the extractor must say the image was not read (NeedsOcr) or report partial content;
+    // it must never present the image text as extracted. With an engine, the text must be found and labelled as OCR output.
+    private static void CheckOcr(CorpusEntry entry, ExtractionResult result, ModelInput input, bool hasEngine)
+    {
+        Expect.True(!IsCaught(result.SafetyVerdict), $"not caught by policy (verdict {result.SafetyVerdict})");
+
+        foreach (string marker in entry.MustNotContain)
+        {
+            Expect.True(!result.Text.Contains(marker, StringComparison.Ordinal), $"text omits '{marker}' when no engine ran");
+            Expect.True(input.Segments.All(s => !s.Text.Contains(marker, StringComparison.Ordinal)),
+                $"model input omits '{marker}' when no engine ran");
+        }
+
+        if (!hasEngine)
+        {
+            Expect.True(result.ErrorKind == ExtractionErrorKind.NeedsOcr || input.IsPartial,
+                $"without an engine the image is NeedsOcr or partial (error {result.ErrorKind}, partial {input.IsPartial})");
+            return;
+        }
+
+        Expect.True(result.IsSuccess, $"OCR extraction succeeds (error: {result.ErrorKind} {result.ErrorMessage})");
+        foreach (string marker in entry.MustContain)
+        {
+            Expect.True(result.Text.Contains(marker, StringComparison.Ordinal), $"OCR text contains '{marker}'");
+        }
+
+        Expect.True(input.Segments.Any(s => s.Origin == ContentOrigin.Ocr), "OCR text is labelled ContentOrigin.Ocr in the model input");
     }
 
     private static bool IsCaught(SafetyVerdict verdict) =>

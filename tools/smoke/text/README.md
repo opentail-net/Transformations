@@ -49,6 +49,10 @@ The exit code is `0` when everything passes and `1` otherwise. The report is wri
 `reports/<timestamp>-<version>-<commit>.md`. It has a package section, a per-framework summary, one row per check with
 a column per framework, and a failure list with the expected and actual values.
 
+## Trained data for the Tesseract rows
+
+The two Tesseract rows run only when `eng.traineddata` is at `%LOCALAPPDATA%TransformationsSmoke	essdata`. The runner then sets `TRANSFORMATIONS_TESSDATA` for the consumer. Without the file, those rows are reported as skipped, with the reason, and the run can still pass. The file in use here was copied from an earlier session, and its origin is not recorded. Record the source and version of the file before relying on the OCR results for a release.
+
 ## Labels
 
 Each sample has one label. The consumer decides what a pass means from the label.
@@ -60,6 +64,7 @@ Each sample has one label. The consumer decides what a pass means from the label
 | `KnownGap` | A documented miss. | It is still not caught. If it becomes caught, the check fails, and you should move the sample to `Malicious` and update the README. |
 | `Benign` | A document that must not be caught. | Its verdict is not caught and it is not quarantined. These are the false-positive controls. |
 | `Malformed` | A truncated, random or misnamed file. | It fails, or it succeeds with text. It never succeeds with empty text. |
+| `Ocr` | An image or scanned page. | With no engine: the result is `NeedsOcr` or partial content, and the image text is absent. With an engine: the text is found and its segments are labelled `ContentOrigin.Ocr`. Rows marked to need Tesseract are skipped when no trained data is configured. |
 
 Every sample also gets the input contract, whatever its label: `IsTrusted` is false, and a failed extraction is never
 indexable without review.
@@ -95,6 +100,7 @@ from disk.
 | AI ingestion | `GetModelInput` on `IDocumentTextExtractor` returns an untrusted, indexable input for an ordinary document. |
 | Discovery | `GetSupportedExtensions` covers the built-in formats; `IsSupported` ignores case; `DetectFormat` identifies a PDF by content. |
 | Corpus | One check per sample, as described under Labels. |
+| OCR | The Tesseract rows run the real engine on the image and on a scanned PDF page. The native Tesseract and Leptonica binaries must be in the consumer output. |
 
 ## Reading a failure
 
@@ -108,9 +114,7 @@ from disk.
 
 These are real gaps in this harness, not in the product. They are listed so that a passing run is not over-read.
 
-- **OCR.** The consumer uses a fixed-text OCR stub, so the real Tesseract path is not run here. The repository's OCR
-  tests run it when `TRANSFORMATIONS_TESSDATA` is set. The trained data used locally is an `eng.traineddata` file from
-  an earlier session, copied to `%LOCALAPPDATA%\TransformationsSmoke\tessdata`. Its origin is not recorded.
+- **OCR instructions through the real engine.** The OCR rows run Tesseract on an invoice line, which contains no instruction. Only the fixed-text engine carries an instruction through the gate (`OCR instruction` in the safety corpus). A rendered image of an adversarial instruction, read by Tesseract, is not in the corpus.
 - **Formats.** There are no samples yet for MSG, ODP, RTF beyond one code-page case, EPUB beyond two chapters, nested
   ZIP or EML, or PPTX and XLSX tables. There is no builder for MSG in `TestDocuments`.
 - **Hidden-text modes.** Only the default AI-ingestion profile is run. `Mark` and `Keep` are not exercised.
@@ -120,6 +124,10 @@ These are real gaps in this harness, not in the product. They are listed so that
   through the interface. Before this change it existed only on the concrete `TextExtractor`.
 
 ## Verification history
+
+- `reports/20261025-201051-3.0.0.0-6019895.md`: with trained data, all three frameworks pass, 97 of 97 checks each, including both real Tesseract rows.
+- `reports/20261025-201112-3.0.0.0-6019895.md`: without trained data, the two Tesseract rows are reported as skipped with their reason, and the run still passes.
+- Repository OCR and safety corpus tests: 56 pass on net10.0 with trained data set, after the shared corpus gained the OCR rows.
 
 - `reports/20261025-180729-2.0.5.2-12e320d.md`: all three frameworks pass, 92 of 92 checks each, 0 warnings. This run
   includes `GetModelInput` on the interface.

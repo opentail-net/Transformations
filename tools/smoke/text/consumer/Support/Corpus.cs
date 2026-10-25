@@ -16,7 +16,8 @@ public sealed record CorpusEntry(
     [property: JsonPropertyName("note")] string Note,
     [property: JsonPropertyName("ocrText")] string? OcrText,
     [property: JsonPropertyName("mustContain")] IReadOnlyList<string> MustContain,
-    [property: JsonPropertyName("mustNotContain")] IReadOnlyList<string> MustNotContain);
+    [property: JsonPropertyName("mustNotContain")] IReadOnlyList<string> MustNotContain,
+    [property: JsonPropertyName("requiresTesseract")] bool RequiresTesseract);
 
 /// <summary>Reads manifest.json and the sample files it points to. The corpus is data, not code.</summary>
 public sealed class Corpus

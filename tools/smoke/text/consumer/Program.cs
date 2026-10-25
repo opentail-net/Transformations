@@ -38,9 +38,15 @@ internal static class Program
             var clock = Stopwatch.StartNew();
             string detail = string.Empty;
             bool passed = true;
+            bool skipped = false;
             try
             {
                 check.Run();
+            }
+            catch (SmokeSkip skip)
+            {
+                skipped = true;
+                detail = skip.Message;
             }
             catch (Exception ex)
             {
@@ -49,12 +55,14 @@ internal static class Program
             }
 
             clock.Stop();
-            results.Add(new CheckResult(check.Name, passed, detail, clock.ElapsedMilliseconds));
-            Console.WriteLine(passed ? $"PASS {check.Name}" : $"FAIL {check.Name} - {detail}");
+            results.Add(new CheckResult(check.Name, passed, skipped, detail, clock.ElapsedMilliseconds));
+            string status = skipped ? "SKIP" : passed ? "PASS" : "FAIL";
+            Console.WriteLine(detail.Length == 0 ? $"{status} {check.Name}" : $"{status} {check.Name} - {detail}");
         }
 
-        int failed = results.Count(r => !r.Passed);
-        Console.WriteLine($"{results.Count - failed}/{results.Count} checks passed on {RuntimeInformation.FrameworkDescription}");
+        int failed = results.Count(r => !r.Passed && !r.Skipped);
+        int skippedCount = results.Count(r => r.Skipped);
+        Console.WriteLine($"{results.Count - failed - skippedCount}/{results.Count} checks passed, {skippedCount} skipped, on {RuntimeInformation.FrameworkDescription}");
 
         if (resultsPath is not null)
         {

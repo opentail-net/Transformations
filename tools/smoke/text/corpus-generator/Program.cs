@@ -17,7 +17,7 @@ bool force = args.Skip(1).Contains("--force");
 string filesDir = Path.Combine(corpusDir, "files");
 Directory.CreateDirectory(filesDir);
 
-var samples = SafetyCorpus.All().Concat(OrdinaryCorpus.All()).ToList();
+var samples = SafetyCorpus.All().Concat(OrdinaryCorpus.All()).Concat(OcrCorpus.All()).ToList();
 var ids = new HashSet<string>(StringComparer.Ordinal);
 var entries = new List<ManifestEntry>();
 int written = 0;
@@ -44,7 +44,8 @@ foreach (CorpusSample sample in samples)
         Note: sample.Note,
         OcrText: sample.OcrText,
         MustContain: sample.MustContain?.ToArray() ?? [],
-        MustNotContain: sample.MustNotContain?.ToArray() ?? []));
+        MustNotContain: sample.MustNotContain?.ToArray() ?? [],
+        RequiresTesseract: sample.RequiresTesseract));
 }
 
 var manifest = new Manifest(SchemaVersion: 1, Samples: entries);
@@ -74,6 +75,7 @@ internal sealed record ManifestEntry(
     string Note,
     string? OcrText,
     string[] MustContain,
-    string[] MustNotContain);
+    string[] MustNotContain,
+    bool RequiresTesseract);
 
 internal sealed record Manifest(int SchemaVersion, IReadOnlyList<ManifestEntry> Samples);
