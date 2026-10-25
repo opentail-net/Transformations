@@ -143,7 +143,8 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.Generated, Does.Not.Contain("target.@Name ="));
         }
 
-        [TestCase("public class UserDto { public UserDto(int id) { Id = id; } public int Id { get; set; } }", "no accessible parameterless constructor")]
+        [TestCase("public class UserDto { public UserDto(int id, string secret) { Id = id; } public int Id { get; set; } }", "has all of its parameters mapped")]
+        [TestCase("public class UserDto { private UserDto() { } public int Id { get; set; } }", "no accessible constructor")]
         [TestCase("public abstract class UserDto { public int Id { get; set; } }", "abstract")]
         [TestCase("public class UserDto { public int Id { get; set; } public required string Code { get; set; } }", "required members")]
         public void TargetThatCannotBeCreated_GetsOnlyMapToExisting(string target, string reason)
@@ -1063,7 +1064,7 @@ namespace Transformations.Mapping.Tests
         // ── Constructors with optional parameters ────────────────────────────
 
         [Test]
-        public void TwoOptionalParameterConstructors_AreAmbiguous_AndReported()
+        public void TwoOptionalParameterConstructors_AreResolvedByWhichOneTakesAMappedMember()
         {
             var result = Compile("""
                 using Transformations.Mapping;
@@ -1078,8 +1079,27 @@ namespace Transformations.Mapping.Tests
                 """);
 
             AssertCompiles(result);
-            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP010"));
-            Assert.That(result.Generated, Does.Not.Contain("new global::Dto()"));
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP010"));
+            Assert.That(result.Generated, Does.Contain("new global::Dto(source.@Id)"));
+        }
+
+        [Test]
+        public void ConstructorsThatFitEquallyWell_AreReported_NotGuessed()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto
+                {
+                    public Dto(int id, string? a = null) { Id = id; }
+                    public Dto(int id, int? b = null) { Id = id; }
+                    public int Id { get; }
+                }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Diagnostics.Single(d => d.Id == "TXMAP010").GetMessage(), Does.Contain("equally well"));
         }
 
         [Test]
@@ -1702,6 +1722,243 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.Generated, Does.Contain("global::System.Linq.Enumerable.ToList").And.Contain("item.@One == null"));
             Assert.That(result.Generated, Does.Contain("Projection to NodeDto is not available"));
             Assert.That(result.Generated, Does.Not.Contain("Projection to Dto is not available"));
+        }
+
+        // ── Constructors ─────────────────────────────────────────────────────
+
+        [Test]
+        public void PositionalRecordTarget_IsCreatedThroughItsConstructor()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public record PersonDto(string Name, int Age);
+                [MapTo<PersonDto>]
+                public partial class Person { public string Name { get; set; } = ""; public int Age { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP010"));
+            Assert.That(result.Generated, Does.Contain("new global::PersonDto(source.@Name, source.@Age)"));
+        }
+
+        [Test]
+        public void ParameterNamesMatchMembersIgnoringCase()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public Dto(string name, int AGE) { Name = name; Age = AGE; } public string Name { get; } public int Age { get; } }
+                [MapTo<Dto>]
+                public partial class Source { public string Name { get; set; } = ""; public int Age { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("new global::Dto(source.@Name, source.@Age)"));
+        }
+
+        [Test]
+        public void ConstructorArgumentsAndInitialisersAreCombined()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public Dto(int id) { Id = id; } public int Id { get; } public string Label { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } public string Label { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            string forward = result.Generated.Substring(result.Generated.IndexOf("ToDto(this", StringComparison.Ordinal),
+                result.Generated.IndexOf("MapTo(this", StringComparison.Ordinal) - result.Generated.IndexOf("ToDto(this", StringComparison.Ordinal));
+            Assert.That(forward, Does.Contain("new global::Dto(source.@Id)"));
+            Assert.That(forward, Does.Contain("@Label = source.@Label,"));
+            Assert.That(forward, Does.Not.Contain("@Id = source.@Id,"), "a constructor argument is not assigned again");
+        }
+
+        [Test]
+        public void MapToExisting_NeverAssignsAMemberOnlyTheConstructorSets()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public record PersonDto(string Name, int Age);
+                public class Immutable { public Immutable(int id) { Id = id; } public int Id { get; } public string Label { get; set; } = ""; }
+                [MapTo<PersonDto>]
+                [MapTo<Immutable>]
+                public partial class Source { public string Name { get; set; } = ""; public int Age { get; set; } public int Id { get; set; } public string Label { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Not.Contain("target.@Name ="));
+            Assert.That(result.Generated, Does.Not.Contain("target.@Id ="));
+            Assert.That(result.Generated, Does.Contain("target.@Label = source.@Label;"));
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP009"));
+        }
+
+        [Test]
+        public void UnmappedOptionalParameters_TakeTheirDefaults()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public enum Mode { A, B }
+                public class Dto
+                {
+                    public Dto(int id, string text = "x\"y", Mode mode = Mode.B, decimal price = 1.5m, bool flag = true, char letter = 'q',
+                        double ratio = 2.5, int? maybe = 7, string? none = null, long big = 5, byte small = 3, float single = 1.25f, int last = 0)
+                    { Id = id; Last = last; }
+                    public int Id { get; }
+                    public int Last { get; }
+                }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } public int Last { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP010"));
+        }
+
+        [Test]
+        public void TrailingOptionalParametersAreOmitted()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public Dto(int id, string label = "none", int extra = 4) { Id = id; } public int Id { get; } }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("""new global::Dto(source.@Id, "none", (int)4)"""));
+        }
+
+        [Test]
+        public void OptionalArgumentsAreAllPassed_SoOverloadResolutionCannotBeAmbiguous()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto
+                {
+                    public Dto(int id, string? label = null) { Id = id; }
+                    public Dto(int id, string? label, int extra) { Id = id; }
+                    public int Id { get; }
+                }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP010"));
+        }
+
+        [Test]
+        public void CopyConstructorsAndInaccessibleOnesAreNotUsed()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto
+                {
+                    public Dto(Dto other) { Id = other.Id; }
+                    private Dto(int id, string secret) { Id = id; }
+                    public Dto(int id) { Id = id; }
+                    public int Id { get; }
+                }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } public string Secret { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("new global::Dto(source.@Id)"));
+        }
+
+        [Test]
+        public void ParameterWhoseTypeCannotTakeTheMemberValue_RulesTheConstructorOut()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public Dto(System.DateTime id) { } public int Id { get; } }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP010"));
+        }
+
+        [Test]
+        public void RequiredMembersAreSatisfiedByTheConstructorOrTheInitialiser()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public Dto(int id) { Id = id; } public int Id { get; } public required string Code { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } public string Code { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP010"));
+        }
+
+        [Test]
+        public void GenericAndStructTargetsUseTheirConstructors()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Box<T> { public Box(T value) { Value = value; } public T Value { get; } }
+                public readonly struct Point { public Point(int x, int y) { X = x; Y = y; } public int X { get; } public int Y { get; } }
+                public class Dto { public Box<string> Boxed { get; set; } = new(""); public Point At { get; set; } }
+                public class Inner { public string Value { get; set; } = ""; }
+                public class PointSource { public int X { get; set; } public int Y { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public Inner Boxed { get; set; } = new(); public PointSource At { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("new global::Point(source.@X, source.@Y)"));
+            Assert.That(result.Generated, Does.Contain("new global::Box<string>(source.@Value)"));
+        }
+
+        [Test]
+        public void RecordSource_IsCreatedByTheReverseFactory()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Name { get; set; } = ""; public int Age { get; set; } }
+                [MapTo<Dto>]
+                public partial record Person(string Name, int Age);
+                public class Use { public Person Call(Dto d) => Person.FromDto(d); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("new global::Person(source.@Name, source.@Age)"));
+        }
+
+        [Test]
+        public void MapPropertyRenameOntoAConstructorMember_IsAccepted()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public record Dto(string Label);
+                [MapTo<Dto>]
+                public partial class Source { [MapProperty("Label")] public string Title { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP020"));
+            Assert.That(result.Generated, Does.Contain("new global::Dto(source.@Title)"));
+        }
+
+        [Test]
+        public void ProjectTo_UsesTheConstructor_AndNestedRecordsAreProjected()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public record InnerDto(int Id);
+                public record Dto(string Name, InnerDto Inner);
+                public class Inner { public int Id { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public string Name { get; set; } = ""; public Inner Inner { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Not.Contain("Projection to Dto is not available"));
+            Assert.That(result.Generated, Does.Contain("new global::InnerDto(item.@Inner.@Id)"));
         }
 
         // ── Helper cache keys ────────────────────────────────────────────────

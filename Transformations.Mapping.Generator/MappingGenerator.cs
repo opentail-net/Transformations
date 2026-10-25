@@ -37,7 +37,6 @@ namespace Transformations.Mapping.Generator
         private const string MapFromAttributeFullName = "Transformations.Mapping.MapFromAttribute`1";
         private const string IgnoreMapAttributeFullName = "Transformations.Mapping.IgnoreMapAttribute";
         private const string MapPropertyAttributeFullName = "Transformations.Mapping.MapPropertyAttribute";
-        private const string SetsRequiredMembersAttributeFullName = "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute";
 
         internal static readonly SymbolDisplayFormat FullyQualifiedWithNullability =
             SymbolDisplayFormat.FullyQualifiedFormat.AddMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
@@ -129,8 +128,8 @@ namespace Transformations.Mapping.Generator
 
         private static readonly DiagnosticDescriptor InitOnlyNotUpdated = new DiagnosticDescriptor(
             id: "TXMAP009",
-            title: "Init-only target member is not updated by MapTo",
-            messageFormat: "Target member '{0}.{1}' is init-only: it is set when a new {0} is created, but MapTo(existing) cannot update it",
+            title: "Init-only or constructor-set target member is not updated by MapTo",
+            messageFormat: "Target member '{0}.{1}' is init-only or set only through a constructor: it is set when a new {0} is created, but MapTo(existing) cannot update it",
             category: "Mapping",
             defaultSeverity: DiagnosticSeverity.Info,
             isEnabledByDefault: true,
@@ -489,7 +488,9 @@ namespace Transformations.Mapping.Generator
         {
             if (targetTypes.Count == 0) return;
 
-            var known = new HashSet<string>(targetTypes.SelectMany(t => GetSettableProperties(compilation, t)).Select(p => p.Name), StringComparer.Ordinal);
+            var known = new HashSet<string>(
+                targetTypes.SelectMany(t => GetSettableProperties(compilation, t).Concat(ConstructionPlanner.ConstructorBindableProperties(compilation, t))).Select(p => p.Name),
+                StringComparer.Ordinal);
             string targetNames = string.Join(", ", targetTypes.Select(t => t.Name));
             foreach (var sourceProp in GetReadableProperties(compilation, sourceType))
             {
@@ -599,8 +600,9 @@ namespace Transformations.Mapping.Generator
             CancellationToken ct)
         {
             string sourceFullName = sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var propertyMappings = BuildPropertyMappings(new MappingContext(compilation, sourceType, targetType, sourceFullName, isMapTo, wrappers,
+            var built = BuildPropertyMappings(new MappingContext(compilation, sourceType, targetType, sourceFullName, isMapTo, wrappers,
                 diagnostics, helpers, ct));
+            var propertyMappings = built.Properties;
 
             var mappedTargetNames = new HashSet<string>(propertyMappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal);
             var unmapped = GetSettableProperties(compilation, targetType)
@@ -609,7 +611,7 @@ namespace Transformations.Mapping.Generator
                 .ToList();
 
             string targetDisplay = targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            string? createProblem = ConstructionProblem(compilation, targetType, mappedTargetNames);
+            string? createProblem = built.Plan.Problem;
             if (createProblem != null)
             {
                 diagnostics.Add(DiagnosticInfo.Create(CannotCreateTarget, location, targetType.Name, createProblem));
@@ -620,8 +622,21 @@ namespace Transformations.Mapping.Generator
                 diagnostics.Add(DiagnosticInfo.Create(InitOnlyNotUpdated, location, targetType.Name, prop.TargetPropertyName));
             }
 
+            // Reverse: the source is created from the target's members, by a constructor and/or its settable members.
             var reverseNames = new HashSet<string>(propertyMappings.Where(p => p.CanReverse).Select(p => p.SourceReversePropertyName!), StringComparer.Ordinal);
-            string? reverseProblem = ConstructionProblem(compilation, sourceType, reverseNames);
+            var reversePlan = ConstructionPlanner.Plan(compilation, sourceType, reverseNames);
+            string? reverseProblem = reversePlan.Problem;
+            if (reverseProblem == null)
+            {
+                // A source member nothing can set (no setter, and the chosen constructor does not take it) has no reverse assignment.
+                var sourceSettable = new HashSet<string>(GetSettableProperties(compilation, sourceType).Select(p => p.Name), StringComparer.Ordinal);
+                propertyMappings = propertyMappings
+                    .Select(p => p.CanReverse && !sourceSettable.Contains(p.SourceReversePropertyName!) && !reversePlan.BoundMembers.Contains(p.SourceReversePropertyName!)
+                        ? p.WithoutReverse()
+                        : p)
+                    .ToList();
+            }
+
             if (reverseProblem != null)
             {
                 diagnostics.Add(DiagnosticInfo.Create(ReverseNotGenerated, location, targetType.Name, sourceType.Name, reverseProblem));
@@ -635,7 +650,9 @@ namespace Transformations.Mapping.Generator
                 canCreate: createProblem == null,
                 canReverse: reverseProblem == null,
                 hasFromFactoryConflict: isMapTo && HasFromFactoryConflict(sourceType, targetType),
-                access: AccessFor(sourceType, targetType));
+                access: AccessFor(sourceType, targetType),
+                createArguments: built.Plan.Arguments,
+                reverseArguments: reversePlan.Arguments);
         }
 
         private static List<TypeDeclarationModel>? GetContainingTypes(INamedTypeSymbol sourceType, List<DiagnosticInfo> diagnostics)
@@ -738,70 +755,57 @@ namespace Transformations.Mapping.Generator
         private static bool IsMapFromAttribute(INamedTypeSymbol attrType)
             => attrType.IsGenericType && attrType.OriginalDefinition.ToDisplayString() == "Transformations.Mapping.MapFromAttribute<TSource>";
 
-        /// <summary>
-        /// Why generated code cannot write <c>new T() { ... }</c> assigning <paramref name="assigned"/>, or <c>null</c>.
-        /// </summary>
-        internal static string? ConstructionProblem(CSharpCompilation compilation, INamedTypeSymbol type, ISet<string> assigned)
-        {
-            if (type.TypeKind == TypeKind.Interface) return "it is an interface";
-            if (type.IsAbstract) return "it is abstract";
-            if (type.IsStatic) return "it is static";
-
-            IMethodSymbol? constructor = null;
-            if (!type.IsValueType)
-            {
-                var callable = type.InstanceConstructors
-                    .Where(c => c.Parameters.All(p => p.IsOptional || p.IsParams) && IsAccessible(compilation, c))
-                    .ToList();
-
-                // new T() binds to a true parameterless constructor; with only optional-parameter ones, a single candidate
-                // is fine and several are ambiguous.
-                constructor = callable.FirstOrDefault(c => c.Parameters.Length == 0) ?? (callable.Count == 1 ? callable[0] : null);
-                if (constructor == null)
-                {
-                    return callable.Count > 1
-                        ? "calling its constructor without arguments is ambiguous between its optional-parameter constructors"
-                        : "it has no accessible parameterless constructor";
-                }
-            }
-
-            bool setsRequiredMembers = constructor?.GetAttributes()
-                .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttributeFullName) == true;
-            if (!setsRequiredMembers)
-            {
-                var missing = RequiredMemberNames(type).Where(n => !assigned.Contains(n)).ToList();
-                if (missing.Count > 0) return $"its required members are not all mapped ({string.Join(", ", missing)})";
-            }
-
-            return null;
-        }
-
-        private static IEnumerable<string> RequiredMemberNames(INamedTypeSymbol type)
-        {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            for (INamedTypeSymbol? current = type; current != null; current = current.BaseType)
-            {
-                foreach (var member in current.GetMembers())
-                {
-                    bool required = member is IPropertySymbol { IsRequired: true } || member is IFieldSymbol { IsRequired: true };
-                    if (required && seen.Add(member.Name)) yield return member.Name;
-                }
-            }
-        }
-
         internal static bool IsAccessible(CSharpCompilation compilation, ISymbol symbol)
             => compilation.IsSymbolAccessibleWithin(symbol, compilation.Assembly);
 
         // ── Property mappings ───────────────────────────────────────────────
 
-        internal static List<PropertyMapping> BuildPropertyMappings(MappingContext context)
+        /// <summary>The members mapped for a pair of types, and how the target is created.</summary>
+        internal sealed class PropertyMappingResult
+        {
+            public PropertyMappingResult(List<PropertyMapping> properties, ConstructionPlan plan)
+            {
+                Properties = properties;
+                Plan = plan;
+            }
+
+            public List<PropertyMapping> Properties { get; }
+            public ConstructionPlan Plan { get; }
+        }
+
+        /// <summary>The target member names some source member will be mapped to (renames included), before any conversion is tried.</summary>
+        private static HashSet<string> ReachableTargetNames(CSharpCompilation compilation, INamedTypeSymbol sourceType)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var sourceProp in GetReadableProperties(compilation, sourceType))
+            {
+                if (HasAttribute(sourceProp, IgnoreMapAttributeFullName)) continue;
+
+                var attributes = GetMapPropertyAttributes(sourceProp);
+                if (attributes.Count == 0) names.Add(sourceProp.Name);
+                else foreach (var attribute in attributes) names.Add(attribute.TargetPropertyName);
+            }
+
+            return names;
+        }
+
+        internal static PropertyMappingResult BuildPropertyMappings(MappingContext context)
         {
             var compilation = context.Compilation;
             var sourceType = context.SourceType;
             var targetType = context.TargetType;
             var diagnostics = context.Diagnostics;
             var ct = context.Cancellation;
+
+            // Members a constructor sets (a record's positional properties, a read-only property with a matching
+            // parameter) are mapped too, once a constructor that can take them is chosen.
+            var firstPlan = ConstructionPlanner.Plan(compilation, targetType, ReachableTargetNames(compilation, sourceType));
             var targetProps = GetSettableProperties(compilation, targetType).ToDictionary(p => p.Name, StringComparer.Ordinal);
+            foreach (var property in ConstructionPlanner.ConstructorBindableProperties(compilation, targetType))
+            {
+                if (firstPlan.BoundMembers.Contains(property.Name) && !targetProps.ContainsKey(property.Name)) targetProps[property.Name] = property;
+            }
+
             var mappingsByTarget = new Dictionary<string, PropertyMapping>(StringComparer.Ordinal);
 
             foreach (var sourceProp in GetReadableProperties(compilation, sourceType))
@@ -836,7 +840,19 @@ namespace Transformations.Mapping.Generator
                 }
             }
 
-            return mappings;
+            // The constructor is chosen again from what was really mapped: a member whose conversion failed is no longer available.
+            var settable = new HashSet<string>(GetSettableProperties(compilation, targetType).Select(p => p.Name), StringComparer.Ordinal);
+            // When the first choice already failed (no constructor fits, or several fit equally), that reason stands: nothing
+            // that needed the constructor was mapped, so planning again would only blame the missing mappings.
+            var plan = firstPlan.Problem != null
+                ? firstPlan
+                : ConstructionPlanner.Plan(compilation, targetType, new HashSet<string>(mappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal));
+            if (plan.Problem == null)
+            {
+                mappings = mappings.Where(m => settable.Contains(m.TargetPropertyName) || plan.BoundMembers.Contains(m.TargetPropertyName)).ToList();
+            }
+
+            return new PropertyMappingResult(mappings, plan);
         }
 
         private static void AddPropertyMapping(
@@ -908,7 +924,6 @@ namespace Transformations.Mapping.Generator
             // Reverse: a plain property (no path, no converter) whose source setter and target getter generated code can use.
             string? reverse = null;
             if (context.ComputeReverse && source.IsPlainProperty && !hasConverter
-                && sourceProp.SetMethod is { DeclaredAccessibility: Accessibility.Public }
                 && targetProp.GetMethod is { DeclaredAccessibility: Accessibility.Public })
             {
                 bool reverseSourceIsNullable = IsNullableReferenceOrValueType(targetProp.Type);
@@ -938,7 +953,7 @@ namespace Transformations.Mapping.Generator
                 projectionExpression: projection,
                 sourceReversePropertyName: reverse == null ? null : sourceProp.Name,
                 reverseExpression: reverse,
-                canUpdate: targetProp.SetMethod?.IsInitOnly != true);
+                canUpdate: targetProp.SetMethod is { DeclaredAccessibility: Accessibility.Public, IsInitOnly: false });
         }
 
         /// <summary>
@@ -1781,13 +1796,9 @@ namespace Transformations.Mapping.Generator
 
             if (cachedExpression)
             {
-                sb.AppendLine($"{indent}private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{model.SourceFullName}, {target.TargetFullName}>> {expressionFieldName} = item => new {target.TargetFullName}()");
-                sb.AppendLine($"{indent}{{");
-                foreach (var prop in target.Properties)
-                {
-                    sb.AppendLine($"{indent}    {Escape(prop.TargetPropertyName)} = {Receiver.Render(prop.ProjectionExpression!, "item")},");
-                }
-                sb.AppendLine($"{indent}}};");
+                AppendCreation(sb, indent,
+                    $"private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{model.SourceFullName}, {target.TargetFullName}>> {expressionFieldName} = item => ",
+                    target.TargetFullName, target.CreateArguments, target.Properties, p => Receiver.Render(p.ProjectionExpression!, "item"), p => p.TargetPropertyName, ";");
                 sb.AppendLine();
             }
 
@@ -1819,13 +1830,8 @@ namespace Transformations.Mapping.Generator
             }
             else
             {
-                sb.AppendLine($"{indent}    return global::System.Linq.Queryable.Select(source, item => new {target.TargetFullName}()");
-                sb.AppendLine($"{indent}    {{");
-                foreach (var prop in target.Properties)
-                {
-                    sb.AppendLine($"{indent}        {Escape(prop.TargetPropertyName)} = {Receiver.Render(prop.ProjectionExpression!, "item")},");
-                }
-                sb.AppendLine($"{indent}    }});");
+                AppendCreation(sb, indent + "    ", "return global::System.Linq.Queryable.Select(source, item => ", target.TargetFullName, target.CreateArguments,
+                    target.Properties, p => Receiver.Render(p.ProjectionExpression!, "item"), p => p.TargetPropertyName, ");");
             }
 
             sb.AppendLine($"{indent}}}");
@@ -1852,15 +1858,8 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}{target.Access} static {target.TargetFullName} To{target.TargetClassName}{GetTypeParameterList(model)}(this {model.SourceFullName} source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             AppendNullGuard(sb, indent);
-            sb.AppendLine($"{indent}    return new {target.TargetFullName}()");
-            sb.AppendLine($"{indent}    {{");
-
-            foreach (var prop in target.Properties)
-            {
-                sb.AppendLine($"{indent}        {Escape(prop.TargetPropertyName)} = {Receiver.Render(prop.ForwardExpression, "source")},");
-            }
-
-            sb.AppendLine($"{indent}    }};");
+            AppendCreation(sb, indent + "    ", "return ", target.TargetFullName, target.CreateArguments, target.Properties,
+                p => Receiver.Render(p.ForwardExpression, "source"), p => p.TargetPropertyName, ";");
             sb.AppendLine($"{indent}}}");
         }
 
@@ -1907,16 +1906,42 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}    if (source == null) return null!;");
             sb.AppendLine();
 
-            sb.AppendLine($"{indent}    return new {model.SourceFullName}()");
-            sb.AppendLine($"{indent}    {{");
+            AppendCreation(sb, indent + "    ", "return ", model.SourceFullName, target.ReverseArguments, target.Properties.Where(p => p.CanReverse).ToList(),
+                p => Receiver.Render(p.ReverseExpression!, "source"), p => p.SourceReversePropertyName!, ";");
+            sb.AppendLine($"{indent}}}");
+        }
 
-            foreach (var prop in target.Properties.Where(p => p.CanReverse))
+        /// <summary>
+        /// <c>head new Type(arguments) { Member = value, ... }terminator</c>. A constructor argument takes its member's
+        /// expression and is not assigned again in the initialiser; positional arguments only, because an expression
+        /// tree cannot contain a named argument.
+        /// </summary>
+        private static void AppendCreation(StringBuilder sb, string indent, string head, string type, IReadOnlyList<ConstructorArgument> arguments,
+            IReadOnlyList<PropertyMapping> properties, Func<PropertyMapping, string> expression, Func<PropertyMapping, string> member, string terminator)
+        {
+            string ArgumentOf(ConstructorArgument argument)
+                => argument.PropertyName == null
+                    ? argument.Literal ?? "default"
+                    : expression(properties.First(p => member(p) == argument.PropertyName || p.TargetPropertyName == argument.PropertyName));
+
+            var bound = new HashSet<string>(arguments.Where(a => a.PropertyName != null).Select(a => a.PropertyName!), StringComparer.Ordinal);
+            var initialised = properties.Where(p => !bound.Contains(p.TargetPropertyName)).ToList();
+            string call = $"new {type}({string.Join(", ", arguments.Select(ArgumentOf))})";
+
+            if (initialised.Count == 0)
             {
-                sb.AppendLine($"{indent}        {Escape(prop.SourceReversePropertyName!)} = {Receiver.Render(prop.ReverseExpression!, "source")},");
+                sb.AppendLine($"{indent}{head}{call}{terminator}");
+                return;
             }
 
-            sb.AppendLine($"{indent}    }};");
-            sb.AppendLine($"{indent}}}");
+            sb.AppendLine($"{indent}{head}{call}");
+            sb.AppendLine($"{indent}{{");
+            foreach (var property in initialised)
+            {
+                sb.AppendLine($"{indent}    {Escape(member(property))} = {expression(property)},");
+            }
+
+            sb.AppendLine($"{indent}}}{terminator}");
         }
 
         private static void EmitHelpers(StringBuilder sb, MappingModel model, string indent)
@@ -1932,14 +1957,8 @@ namespace Transformations.Mapping.Generator
                 {
                     case HelperKind.Object:
                         if (helper.NullGuard) sb.AppendLine($"{body}if (source == null) return null!;");
-                        sb.AppendLine($"{body}return new {helper.ReturnType}()");
-                        sb.AppendLine($"{body}{{");
-                        foreach (var property in helper.Properties)
-                        {
-                            sb.AppendLine($"{body}    {Escape(property.TargetPropertyName)} = {Receiver.Render(property.ForwardExpression, "source")},");
-                        }
-
-                        sb.AppendLine($"{body}}};");
+                        AppendCreation(sb, body, "return ", helper.ReturnType, helper.Arguments, helper.Properties,
+                            p => Receiver.Render(p.ForwardExpression, "source"), p => p.TargetPropertyName, ";");
                         break;
 
                     case HelperKind.Collection:

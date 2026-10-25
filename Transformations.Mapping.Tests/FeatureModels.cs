@@ -184,6 +184,68 @@ namespace Transformations.Mapping.Tests.Features
         public Level AsNumber { get; set; }
     }
 
+    // ── Constructors ─────────────────────────────────────────────────────────
+
+    public record PersonRecord(string Name, int Age);
+
+    public class ImmutablePerson
+    {
+        public ImmutablePerson(string name, int age)
+        {
+            Name = name;
+            Age = age;
+        }
+
+        public string Name { get; }
+        public int Age { get; }
+    }
+
+    public class MixedTarget
+    {
+        public MixedTarget(int id, string label = "none")
+        {
+            Id = id;
+            Label = label;
+        }
+
+        public int Id { get; }
+        public string Label { get; }
+        public string Extra { get; set; } = string.Empty;
+    }
+
+    public record AddressRecord(string City);
+
+    public record CustomerRecord(string Name, AddressRecord? Address, List<AddressRecord> Previous);
+
+    [MapTo<PersonRecord>]
+    [MapTo<ImmutablePerson>]
+    [MapTo<MixedTarget>]
+    public partial class PersonSource
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+        public int Id { get; set; }
+        public string Extra { get; set; } = string.Empty;
+    }
+
+    [MapTo<CustomerRecord>]
+    public partial class CustomerSource
+    {
+        public string Name { get; set; } = string.Empty;
+        public Address? Address { get; set; }
+        public List<Address> Previous { get; set; } = new List<Address>();
+    }
+
+    /// <summary>A positional record as the source: its reverse factory creates it through the constructor.</summary>
+    [MapTo<PersonDtoForRecord>]
+    public partial record PersonFromRecord(string Name, int Age);
+
+    public class PersonDtoForRecord
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+    }
+
     // ── A collection reached through a nullable path ─────────────────────────
 
     public class LineHolder

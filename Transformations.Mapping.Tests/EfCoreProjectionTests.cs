@@ -35,6 +35,7 @@ namespace Transformations.Mapping.Tests.EfCore
     }
 
     [MapTo<EfOrderDto>]
+    [MapTo<EfOrderSummary>]
     public partial class EfOrder
     {
         public int Id { get; set; }
@@ -72,6 +73,15 @@ namespace Transformations.Mapping.Tests.EfCore
         public List<EfLineDto> Lines { get; set; } = new List<EfLineDto>();
         public EfPriorityDto Priority { get; set; }
     }
+
+    // Positional records: created through their constructors, in the SQL projection too.
+    public record EfAddressSummary(string City);
+
+    public record EfCustomerSummary(int Id, string Name, EfAddressSummary? Address);
+
+    public record EfLineSummary(string Sku, int Quantity, EfPriorityDto Priority);
+
+    public record EfOrderSummary(int Id, string Title, EfCustomerSummary Customer, List<EfLineSummary> Lines);
 
     public class EfShopContext : DbContext
     {
@@ -151,6 +161,21 @@ namespace Transformations.Mapping.Tests.EfCore
             Assert.That(first.Lines.Single(l => l.Sku == "a").Priority, Is.EqualTo(EfPriorityDto.High));
             Assert.That(second.Customer.Address, Is.Null, "an optional navigation that is missing projects to null");
             Assert.That(second.Lines, Is.Empty);
+        }
+
+        [Test]
+        public void ProjectTo_PositionalRecords_AreCreatedThroughTheirConstructorsInSql()
+        {
+            var summaries = _db.Orders.OrderBy(o => o.Title).ProjectToEfOrderSummary().ToList();
+
+            Assert.That(summaries, Has.Count.EqualTo(2));
+            Assert.That(summaries[0].Title, Is.EqualTo("first"));
+            Assert.That(summaries[0].Customer.Name, Is.EqualTo("Ada"));
+            Assert.That(summaries[0].Customer.Address, Is.EqualTo(new EfAddressSummary("Paris")));
+            Assert.That(summaries[0].Lines.OrderBy(l => l.Sku).ToList(),
+                Is.EqualTo(new[] { new EfLineSummary("a", 2, EfPriorityDto.High), new EfLineSummary("b", 1, EfPriorityDto.Low) }));
+            Assert.That(summaries[1].Customer.Address, Is.Null);
+            Assert.That(summaries[1].Lines, Is.Empty);
         }
 
         [Test]

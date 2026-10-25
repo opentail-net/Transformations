@@ -108,8 +108,8 @@ The bundled Roslyn analyzer runs at build time and flags mapping problems before
 | `TXMAP006` | Warning | A nullable source member maps to a non-nullable target member |
 | `TXMAP007` | Warning | A `SourcePath` does not resolve to public readable properties (a name inherited from two unrelated interfaces is ambiguous and does not resolve) |
 | `TXMAP008` | Warning | A `Converter` method is missing or has the wrong signature (it must take its argument by value; `ref` and `out` are not supported) |
-| `TXMAP009` | Info | An init-only target member is set on creation but not updated by `MapTo(existing)` |
-| `TXMAP010` | Warning | The target cannot be created (no accessible parameterless constructor, several ambiguous optional-parameter constructors, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
+| `TXMAP009` | Info | An init-only target member, or one only a constructor sets, is set on creation but not updated by `MapTo(existing)` |
+| `TXMAP010` | Warning | The target cannot be created (no accessible constructor whose parameters can all be mapped, several that fit equally well, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
 | `TXMAP011` | Info | The reverse mapping is not generated because the source cannot be created |
 | `TXMAP012` | Warning | Two targets with the same simple name (different namespaces) would produce identical methods; the second is not generated |
 | `TXMAP013` | Warning | A non-public converter cannot be called (it is on a `[MapFrom]` source, or not accessible from the `[MapTo]` source) |

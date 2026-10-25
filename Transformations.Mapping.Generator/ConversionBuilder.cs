@@ -644,12 +644,13 @@ namespace Transformations.Mapping.Generator
             var nestedDiagnostics = new List<DiagnosticInfo>();
             var nested = new MappingContext(ctx.Compilation, sourceObject, targetObject, Fq(sourceObject), isMapTo: false, ctx.Wrappers,
                 nestedDiagnostics, ctx.Helpers, ctx.Cancellation, ctx.Depth + 1, computeReverse: false) { Quiet = ctx.Quiet };
-            var properties = MappingGenerator.BuildPropertyMappings(nested);
+            var built = MappingGenerator.BuildPropertyMappings(nested);
+            var properties = built.Properties;
 
             if (properties.Count == 0
                 || !MappingGenerator.IsAccessible(ctx.Compilation, sourceObject)
                 || !MappingGenerator.IsAccessible(ctx.Compilation, targetObject)
-                || MappingGenerator.ConstructionProblem(ctx.Compilation, targetObject, new HashSet<string>(properties.Select(p => p.TargetPropertyName), StringComparer.Ordinal)) != null)
+                || built.Plan.Problem != null)
             {
                 ctx.Helpers.Rollback(mark, key);
                 return null;
@@ -670,13 +671,18 @@ namespace Transformations.Mapping.Generator
             string? template = null;
             if (properties.All(p => p.ProjectionExpression != null))
             {
-                template = $"new {Fq(targetObject)}() {{ "
-                    + string.Join(", ", properties.Select(p => $"{MappingGenerator.Escape(p.TargetPropertyName)} = {p.ProjectionExpression}"))
-                    + " }";
+                string arguments = string.Join(", ", built.Plan.Arguments.Select(a => a.PropertyName == null
+                    ? a.Literal ?? "default"
+                    : properties.First(p => p.TargetPropertyName == a.PropertyName).ProjectionExpression));
+                var initialised = properties.Where(p => !built.Plan.BoundMembers.Contains(p.TargetPropertyName))
+                    .Select(p => $"{MappingGenerator.Escape(p.TargetPropertyName)} = {p.ProjectionExpression}").ToList();
+                template = initialised.Count == 0
+                    ? $"new {Fq(targetObject)}({arguments})"
+                    : $"new {Fq(targetObject)}({arguments}) {{ {string.Join(", ", initialised)} }}";
             }
 
             ctx.Helpers.Complete(key, new HelperModel(name, HelperKind.Object, parameterType, Fq(targetObject), nullGuard, sourceObject.Name, targetObject.Name,
-                properties: properties, unmappedTargetProperties: unmapped), template);
+                properties: properties, unmappedTargetProperties: unmapped, arguments: built.Plan.Arguments), template);
 
             return ObjectCall(expression, sourceType, sourceObject, targetType, targetObject, name, args, template);
         }

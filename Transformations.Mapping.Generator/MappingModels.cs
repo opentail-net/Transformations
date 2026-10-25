@@ -163,10 +163,17 @@ namespace Transformations.Mapping.Generator
         public bool HasFromFactoryConflict { get; }
         /// <summary><c>public</c>, or <c>internal</c> when the source or target type is not public.</summary>
         public string Access { get; }
+        /// <summary>The arguments of the constructor call that creates the target (empty for a parameterless constructor).</summary>
+        public List<ConstructorArgument> CreateArguments { get; }
+        /// <summary>The same for the source type, created by the reverse mapping.</summary>
+        public List<ConstructorArgument> ReverseArguments { get; }
 
         public TargetMapping(string targetFullName, string targetClassName, List<PropertyMapping> properties, List<string> unmappedTargetProperties,
-            bool canCreate, bool canReverse, bool hasFromFactoryConflict, string access)
+            bool canCreate, bool canReverse, bool hasFromFactoryConflict, string access,
+            List<ConstructorArgument>? createArguments = null, List<ConstructorArgument>? reverseArguments = null)
         {
+            CreateArguments = createArguments ?? new List<ConstructorArgument>();
+            ReverseArguments = reverseArguments ?? new List<ConstructorArgument>();
             TargetFullName = targetFullName;
             TargetClassName = targetClassName;
             Properties = properties;
@@ -185,6 +192,8 @@ namespace Transformations.Mapping.Generator
                 && CanReverse == other.CanReverse
                 && HasFromFactoryConflict == other.HasFromFactoryConflict
                 && Access == other.Access
+                && ModelEquality.SequenceEqual(CreateArguments, other.CreateArguments)
+                && ModelEquality.SequenceEqual(ReverseArguments, other.ReverseArguments)
                 && ModelEquality.SequenceEqual(UnmappedTargetProperties, other.UnmappedTargetProperties)
                 && ModelEquality.SequenceEqual(Properties, other.Properties);
 
@@ -321,12 +330,16 @@ namespace Transformations.Mapping.Generator
         public List<string> UnmappedTargetProperties { get; }
         public string SourceName { get; }
         public string TargetName { get; }
+        /// <summary>Object: the arguments of the constructor call that creates the target.</summary>
+        public List<ConstructorArgument> Arguments { get; }
 
         public HelperModel(string name, HelperKind kind, string parameterType, string returnType, bool nullGuard, string sourceName, string targetName,
             List<PropertyMapping>? properties = null, string? elementExpression = null, string? keyExpression = null,
             string elementType = "", string elementTargetType = "", string targetKind = "",
-            List<string>? enumSourceMembers = null, List<string>? enumTargetMembers = null, List<string>? unmappedTargetProperties = null)
+            List<string>? enumSourceMembers = null, List<string>? enumTargetMembers = null, List<string>? unmappedTargetProperties = null,
+            List<ConstructorArgument>? arguments = null)
         {
+            Arguments = arguments ?? new List<ConstructorArgument>();
             Name = name;
             Kind = kind;
             ParameterType = parameterType;
@@ -360,6 +373,7 @@ namespace Transformations.Mapping.Generator
                 && ElementTargetType == other.ElementTargetType
                 && TargetKind == other.TargetKind
                 && ModelEquality.SequenceEqual(Properties, other.Properties)
+                && ModelEquality.SequenceEqual(Arguments, other.Arguments)
                 && ModelEquality.SequenceEqual(EnumSourceMembers, other.EnumSourceMembers)
                 && ModelEquality.SequenceEqual(EnumTargetMembers, other.EnumTargetMembers)
                 && ModelEquality.SequenceEqual(UnmappedTargetProperties, other.UnmappedTargetProperties);

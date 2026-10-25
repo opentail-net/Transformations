@@ -42,7 +42,7 @@ There is no runtime profile, startup registration, or reflection scan. If the so
 
 1. Source type must be `partial`. A `partial record` works too (records are classes); `record struct` and structs are not supported.
 2. Add one or more `[MapTo<TTarget>]` attributes.
-3. Target members must be public settable properties.
+3. Target members must be public settable properties, or be taken by a constructor (see below).
 4. Source members must be public readable properties.
 
 ## Attributes
@@ -156,6 +156,35 @@ translated; the SQL produced by EF Core for these is a single query with joins. 
 dictionaries, sets, by-name enum mappings with unmatched members, `string` to enum and recursive types are runtime-only:
 when a target has any of them, `ProjectTo` throws `NotSupportedException` naming the members, and `To{Target}()` still
 works.
+
+## Constructors
+
+A target with an accessible parameterless constructor is created with it and an object initialiser, as always. Any
+other target is created through a constructor, so positional records and immutable classes work:
+
+```csharp
+public record PersonDto(string Name, int Age);
+
+public class Money
+{
+    public Money(decimal amount, string currency = "EUR") { Amount = amount; Currency = currency; }
+    public decimal Amount { get; }
+    public string Currency { get; }
+}
+```
+
+- Each parameter takes the mapped member of the same name, ignoring case (`name` takes `Name`). The mapped members
+  include renames from `[MapProperty]` and converters.
+- The constructor taking the most mapped members wins. If none can be satisfied (a required parameter has no mapped
+  member), or several fit equally well, nothing is guessed: it is `TXMAP010` and only `MapTo(existing)` is generated.
+- A parameter nothing maps gets its default value if it is optional, passed explicitly in the call.
+- Members the constructor does not take are set in the object initialiser as usual (`new T(a, b) { Other = c }`).
+  A `required` member must be taken by the constructor or set in the initialiser.
+- A copy constructor (one taking its own type) and inaccessible constructors are never used.
+- The same rules create the *source* in the reverse `From{Target}()` factory, so a `partial record Person(string Name,
+  int Age)` can be a `[MapTo]` source. `ProjectTo` uses the constructor too, which EF Core translates.
+- `MapTo(existing)` cannot update a member only the constructor sets (a get-only property or a record's positional
+  property): it is left alone, with `TXMAP009`.
 
 ## Multiple Targets
 
@@ -294,8 +323,8 @@ The generator emits mapping diagnostics when it can identify a likely configurat
 | `TXMAP006` | Warning | A nullable source member maps to a non-nullable target member |
 | `TXMAP007` | Warning | A `SourcePath` does not resolve to public readable properties (a name inherited from two unrelated interfaces is ambiguous and does not resolve) |
 | `TXMAP008` | Warning | A `Converter` method is missing or has the wrong signature (it must take its argument by value; `ref` and `out` are not supported) |
-| `TXMAP009` | Info | An init-only target member is set on creation but not updated by `MapTo(existing)` |
-| `TXMAP010` | Warning | The target cannot be created (no accessible parameterless constructor, several ambiguous optional-parameter constructors, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
+| `TXMAP009` | Info | An init-only target member, or one only a constructor sets, is set on creation but not updated by `MapTo(existing)` |
+| `TXMAP010` | Warning | The target cannot be created (no accessible constructor whose parameters can all be mapped, several that fit equally well, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
 | `TXMAP011` | Info | The reverse mapping is not generated because the source cannot be created |
 | `TXMAP012` | Warning | Two targets with the same simple name (different namespaces) would produce identical methods; the second is not generated |
 | `TXMAP013` | Warning | A non-public converter cannot be called (it is on a `[MapFrom]` source, or not accessible from the `[MapTo]` source) |

@@ -344,6 +344,70 @@ namespace Transformations.Mapping.Tests.Features
             Assert.That(back.Children.Single().Name, Is.EqualTo("c"));
         }
 
+        // ── Constructors ─────────────────────────────────────────────────────
+
+        [Test]
+        public void PositionalRecord_IsCreatedThroughItsConstructor()
+        {
+            var record = new PersonSource { Name = "Ada", Age = 36 }.ToPersonRecord();
+
+            Assert.That(record, Is.EqualTo(new PersonRecord("Ada", 36)));
+        }
+
+        [Test]
+        public void ImmutableClass_IsCreatedThroughItsConstructor()
+        {
+            var person = new PersonSource { Name = "Bo", Age = 5 }.ToImmutablePerson();
+
+            Assert.That(person.Name, Is.EqualTo("Bo"));
+            Assert.That(person.Age, Is.EqualTo(5));
+        }
+
+        [Test]
+        public void ConstructorWithAnOptionalParameter_MixesArgumentsAndInitialisers()
+        {
+            var mixed = new PersonSource { Id = 9, Extra = "more" }.ToMixedTarget();
+
+            Assert.That(mixed.Id, Is.EqualTo(9));
+            Assert.That(mixed.Label, Is.EqualTo("none"), "nothing maps Label, so the constructor's default applies");
+            Assert.That(mixed.Extra, Is.EqualTo("more"));
+        }
+
+        [Test]
+        public void MapToExisting_LeavesConstructorSetMembersAlone_AndUpdatesTheRest()
+        {
+            var existing = new MixedTarget(1, "keep");
+
+            new PersonSource { Id = 99, Extra = "changed" }.MapTo(existing);
+
+            Assert.That(existing.Id, Is.EqualTo(1));
+            Assert.That(existing.Extra, Is.EqualTo("changed"));
+        }
+
+        [Test]
+        public void RecordsNestInsideRecords_WithCollectionsAndNulls()
+        {
+            var customer = new CustomerSource
+            {
+                Name = "Ada",
+                Address = new Address { City = "Paris" },
+                Previous = { new Address { City = "Rome" } },
+            }.ToCustomerRecord();
+
+            Assert.That(customer.Name, Is.EqualTo("Ada"));
+            Assert.That(customer.Address, Is.EqualTo(new AddressRecord("Paris")));
+            Assert.That(customer.Previous, Is.EqualTo(new[] { new AddressRecord("Rome") }));
+            Assert.That(new CustomerSource { Address = null }.ToCustomerRecord().Address, Is.Null);
+        }
+
+        [Test]
+        public void RecordSource_ReverseFactoryUsesThePositionalConstructor()
+        {
+            var record = PersonFromRecord.FromPersonDtoForRecord(new PersonDtoForRecord { Name = "Cy", Age = 7 });
+
+            Assert.That(record, Is.EqualTo(new PersonFromRecord("Cy", 7)));
+        }
+
         // ── Query projection ─────────────────────────────────────────────────
 
         private static IQueryable<ShopOrder> ShopOrders() => new[]
