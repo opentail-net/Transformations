@@ -168,7 +168,30 @@ namespace Transformations.Mapping.Generator
 
         private static string FqN(ITypeSymbol type) => type.ToDisplayString(MappingGenerator.FullyQualifiedWithNullability);
 
+        /// <summary>
+        /// The type as a helper cache key: the nullability of its type arguments is kept (<c>Box&lt;string&gt;</c> and
+        /// <c>Box&lt;string?&gt;</c> have differently typed members, so they need different helpers) and the annotation
+        /// of the type itself is not (<c>Address</c> and <c>Address?</c> share one).
+        /// </summary>
+        private static string KeyName(INamedTypeSymbol type)
+            => type.WithNullableAnnotation(NullableAnnotation.NotAnnotated).ToDisplayString(MappingGenerator.FullyQualifiedWithNullability);
+
         public static Conversion? Build(MappingContext ctx, string expression, ITypeSymbol sourceType, bool sourceIsNullable, ITypeSymbol targetType, bool targetIsNonNullable)
+        {
+            var conversion = BuildCore(ctx, expression, sourceType, sourceIsNullable, targetType, targetIsNonNullable);
+
+            // A source path through a nullable member reads "a?.b", which an expression tree cannot contain (CS8072), and
+            // a guard on the terminal member's own nullability would not cover it. Whatever is built on top of such an
+            // expression (a cast, a nested object, a Select over a collection) is runtime-only.
+            if (conversion?.Projection != null && conversion.Projection.Contains("?."))
+            {
+                return new Conversion(conversion.Expression, conversion.Kind, null);
+            }
+
+            return conversion;
+        }
+
+        private static Conversion? BuildCore(MappingContext ctx, string expression, ITypeSymbol sourceType, bool sourceIsNullable, ITypeSymbol targetType, bool targetIsNonNullable)
         {
             if (ctx.Depth > MaxDepth) return null;
 
@@ -608,7 +631,7 @@ namespace Transformations.Mapping.Generator
         private static Conversion? BuildObject(MappingContext ctx, string expression, ITypeSymbol sourceType, INamedTypeSymbol sourceObject,
             ITypeSymbol targetType, INamedTypeSymbol targetObject)
         {
-            string key = $"obj|{Fq(sourceObject)}|{Fq(targetObject)}";
+            string key = $"obj|{KeyName(sourceObject)}|{KeyName(targetObject)}";
             string args = ctx.Helpers.TypeArguments;
             if (ctx.Helpers.TryGet(key, out string name, out bool complete, out string? projectionTemplate))
             {

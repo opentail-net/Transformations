@@ -312,6 +312,21 @@ namespace Transformations.Mapping.Tests.Features
         }
 
         [Test]
+        public void CollectionThroughANullablePath_MapsToNull_WhenAnyStepIsNull()
+        {
+            Assert.That(new HolderOwner { Holder = null }.ToHolderDto().Lines, Is.Null);
+            Assert.That(new HolderOwner { Holder = new LineHolder { Lines = { new LineItem { Sku = "k" } } } }.ToHolderDto().Lines!.Single().Sku, Is.EqualTo("k"));
+        }
+
+        [Test]
+        public void CollectionThroughANullablePath_IsNotProjectable_NotAnExpressionTreeError()
+        {
+            var ex = Assert.Throws<NotSupportedException>(() => new[] { new HolderOwner() }.AsQueryable().ProjectToHolderDto());
+
+            Assert.That(ex!.Message, Does.Contain("Lines"));
+        }
+
+        [Test]
         public void SelfReferencingType_CannotBeProjected_AndSaysWhy()
         {
             var ex = Assert.Throws<NotSupportedException>(() => new[] { new Node() }.AsQueryable().ProjectToNodeDto());

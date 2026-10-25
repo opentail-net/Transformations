@@ -114,6 +114,16 @@ namespace Transformations.Mapping.Tests
         }
 
         [Test]
+        public void InsertingACommentAboveAMappedType_ReusesEveryStep()
+        {
+            var driver = CreateDriver().RunGenerators(Compile(Mappings));
+
+            driver = driver.RunGenerators(Compile("// a comment that moves everything below it\n\n" + Mappings));
+
+            AssertReused(driver);
+        }
+
+        [Test]
         public void ARebuiltIdenticalCompilation_ReusesEveryStep()
         {
             var driver = CreateDriver().RunGenerators(Compile(Mappings));

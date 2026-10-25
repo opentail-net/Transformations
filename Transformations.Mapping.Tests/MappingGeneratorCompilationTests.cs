@@ -1704,6 +1704,44 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.Generated, Does.Not.Contain("Projection to Dto is not available"));
         }
 
+        // ── Helper cache keys ────────────────────────────────────────────────
+
+        [Test]
+        public void GenericObjectsDifferingOnlyInTypeArgumentNullability_GetSeparateHelpers()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Box<T> { public T Value { get; set; } = default!; public int N { get; set; } }
+                public class BoxDto<T> { public T Value { get; set; } = default!; public int N { get; set; } }
+                public class Dto { public BoxDto<string?> A { get; set; } = new(); public BoxDto<string> B { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Box<string> A { get; set; } = new(); public Box<string?> B { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("__Map0(").And.Contain("__Map1("));
+            // Box<string?> into BoxDto<string> needs the null fallback; Box<string> into BoxDto<string?> does not.
+            Assert.That(Count(result.Generated, "source.@Value ?? string.Empty"), Is.GreaterThanOrEqualTo(1));
+            Assert.That(Count(result.Generated, "@Value = source.@Value,"), Is.GreaterThanOrEqualTo(1));
+        }
+
+        [Test]
+        public void ObjectsDifferingOnlyInTheirOwnNullableAnnotation_ShareOneHelper()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Inner { public int Id { get; set; } }
+                public class InnerDto { public int Id { get; set; } }
+                public class Dto { public InnerDto? A { get; set; } public InnerDto B { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Inner A { get; set; } = new(); public Inner? B { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(Count(result.Generated, "private static global::InnerDto __Map"), Is.EqualTo(1),
+                "one forward helper serves the nullable and the non-nullable use");
+        }
+
         private static int Count(string text, string value)
         {
             int count = 0;

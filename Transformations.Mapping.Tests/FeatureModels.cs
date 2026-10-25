@@ -184,6 +184,27 @@ namespace Transformations.Mapping.Tests.Features
         public Level AsNumber { get; set; }
     }
 
+    // ── A collection reached through a nullable path ─────────────────────────
+
+    public class LineHolder
+    {
+        public List<LineItem> Lines { get; set; } = new List<LineItem>();
+    }
+
+    public class HolderDto
+    {
+        public List<LineItemDto>? Lines { get; set; }
+    }
+
+    [MapTo<HolderDto>]
+    public partial class HolderOwner
+    {
+        public LineHolder? Holder { get; set; }
+
+        [MapProperty("Lines", SourcePath = "Holder.Lines")]
+        public int Ignored { get; set; }
+    }
+
     // ── A type that refers to itself ─────────────────────────────────────────
 
     [MapTo<NodeDto>]

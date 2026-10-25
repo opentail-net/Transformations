@@ -69,7 +69,7 @@ namespace Transformations.Mapping.Generator
                 && SourceKeyword == other.SourceKeyword
                 && TargetMetadataName == other.TargetMetadataName
                 && Namespace == other.Namespace
-                && Nullable.Equals(SourceLocation, other.SourceLocation)
+                && (!UsesLocation || Nullable.Equals(SourceLocation, other.SourceLocation))
                 && ModelEquality.SequenceEqual(ReservedTypeNames, other.ReservedTypeNames)
                 && ModelEquality.SequenceEqual(TypeParameters, other.TypeParameters)
                 && ModelEquality.SequenceEqual(ContainingTypes, other.ContainingTypes)
@@ -77,6 +77,15 @@ namespace Transformations.Mapping.Generator
                 && ModelEquality.SequenceEqual(Targets, other.Targets)
                 && ModelEquality.SequenceEqual(ConverterWrappers, other.ConverterWrappers)
                 && ModelEquality.SequenceEqual(Helpers, other.Helpers);
+
+        /// <summary>
+        /// Whether the output stage reports a diagnostic at <see cref="SourceLocation"/>. Only then does the position take
+        /// part in equality: otherwise inserting a comment above a mapped type shifts its text span and would invalidate
+        /// a model whose mapping has not changed. (A diagnostic that depends on other models, a duplicate or a name
+        /// collision, can keep a stale position until the type changes; the squiggle is on the right type either way.)
+        /// </summary>
+        private bool UsesLocation
+            => Diagnostics.Count > 0 || Targets.Any(t => t.UnmappedTargetProperties.Count > 0) || Helpers.Any(h => h.UnmappedTargetProperties.Count > 0);
 
         public override bool Equals(object? obj) => Equals(obj as MappingModel);
 
