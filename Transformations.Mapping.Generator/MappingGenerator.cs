@@ -111,7 +111,7 @@ namespace Transformations.Mapping.Generator
         private static readonly DiagnosticDescriptor InvalidConverterMethod = new DiagnosticDescriptor(
             id: "TXMAP008",
             title: "Invalid mapping converter method",
-            messageFormat: "Converter method '{0}' for target member '{1}.{2}' must be a static method on source type '{3}' with one parameter matching the source value type and return type matching the target member type",
+            messageFormat: "Converter method '{0}' for target member '{1}.{2}' must be a static method on source type '{3}' with one by-value parameter matching the source value type and return type matching the target member type",
             category: "Mapping",
             defaultSeverity: DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
@@ -188,6 +188,15 @@ namespace Transformations.Mapping.Generator
             defaultSeverity: DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
             description: "The mapping methods are generated in a class at namespace level, which cannot name a private or protected nested type. Make the type internal or public.");
+
+        private static readonly DiagnosticDescriptor UnknownTargetMember = new DiagnosticDescriptor(
+            id: "TXMAP020",
+            title: "Mapped target member not found",
+            messageFormat: "[MapProperty(\"{2}\")] on '{0}.{1}' names no public settable property of {3}; this mapping is ignored",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "The target property name of a [MapProperty] does not match a public property with a public setter or init accessor on the target type (or on any of the [MapTo] targets). Check the spelling.");
 
         private static readonly DiagnosticDescriptor AmbiguousReverseSource = new DiagnosticDescriptor(
             id: "TXMAP018",
@@ -312,6 +321,7 @@ namespace Transformations.Mapping.Generator
 
                 var wrappers = new List<ConverterWrapper>();
                 var targets = new List<TargetMapping>();
+                var mappedTargetTypes = new List<INamedTypeSymbol>();
                 var usedMethodNames = new Dictionary<string, string>(StringComparer.Ordinal);
                 foreach (AttributeData attr in decoratedType.GetAttributes())
                 {
@@ -340,7 +350,10 @@ namespace Transformations.Mapping.Generator
                     }
 
                     targets.Add(BuildTargetMapping(compilation, decoratedType, targetType, isMapTo: true, wrappers, diagnostics, location, ct));
+                    mappedTargetTypes.Add(targetType);
                 }
+
+                ReportUnknownMapPropertyTargets(compilation, decoratedType, mappedTargetTypes, diagnostics);
 
                 if (targets.Count == 0)
                 {
@@ -392,6 +405,7 @@ namespace Transformations.Mapping.Generator
                     }
 
                     var target = BuildTargetMapping(compilation, sourceType, decoratedType, isMapTo: false, new List<ConverterWrapper>(), diagnostics, location, ct);
+                    ReportUnknownMapPropertyTargets(compilation, sourceType, new[] { decoratedType }, diagnostics);
 
                     yield return new MappingModel(
                         isMapTo: false,
@@ -408,6 +422,30 @@ namespace Transformations.Mapping.Generator
                         targets: new List<TargetMapping> { target },
                         converterWrappers: new List<ConverterWrapper>(),
                         targetMetadataName: GetMetadataName(decoratedType));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reports each [MapProperty] whose target name is not a public settable property of any of the target types.
+        /// [MapProperty] has no target filter, so with several [MapTo] targets a name that exists on only one of them
+        /// is legitimate and is not reported.
+        /// </summary>
+        private static void ReportUnknownMapPropertyTargets(CSharpCompilation compilation, INamedTypeSymbol sourceType,
+            IReadOnlyList<INamedTypeSymbol> targetTypes, List<Diagnostic> diagnostics)
+        {
+            if (targetTypes.Count == 0) return;
+
+            var known = new HashSet<string>(targetTypes.SelectMany(t => GetSettableProperties(compilation, t)).Select(p => p.Name), StringComparer.Ordinal);
+            string targetNames = string.Join(", ", targetTypes.Select(t => t.Name));
+            foreach (var sourceProp in GetReadableProperties(compilation, sourceType))
+            {
+                if (HasAttribute(sourceProp, IgnoreMapAttributeFullName)) continue;
+
+                foreach (var attribute in GetMapPropertyAttributes(sourceProp).Where(a => !known.Contains(a.TargetPropertyName)))
+                {
+                    diagnostics.Add(Diagnostic.Create(UnknownTargetMember, sourceProp.Locations.FirstOrDefault() ?? Location.None,
+                        sourceType.Name, sourceProp.Name, attribute.TargetPropertyName, targetNames));
                 }
             }
         }
@@ -638,11 +676,19 @@ namespace Transformations.Mapping.Generator
             IMethodSymbol? constructor = null;
             if (!type.IsValueType)
             {
-                constructor = type.InstanceConstructors
+                var callable = type.InstanceConstructors
                     .Where(c => c.Parameters.All(p => p.IsOptional || p.IsParams) && IsAccessible(compilation, c))
-                    .OrderBy(c => c.Parameters.Length)
-                    .FirstOrDefault();
-                if (constructor == null) return "it has no accessible parameterless constructor";
+                    .ToList();
+
+                // new T() binds to a true parameterless constructor; with only optional-parameter ones, a single candidate
+                // is fine and several are ambiguous.
+                constructor = callable.FirstOrDefault(c => c.Parameters.Length == 0) ?? (callable.Count == 1 ? callable[0] : null);
+                if (constructor == null)
+                {
+                    return callable.Count > 1
+                        ? "calling its constructor without arguments is ambiguous between its optional-parameter constructors"
+                        : "it has no accessible parameterless constructor";
+                }
             }
 
             bool setsRequiredMembers = constructor?.GetAttributes()
@@ -883,6 +929,9 @@ namespace Transformations.Mapping.Generator
                     if (!method.IsStatic || method.MethodKind != MethodKind.Ordinary || method.IsGenericMethod || method.Parameters.Length != 1) continue;
                     if (!SymbolEqualityComparer.Default.Equals(method.ReturnType, targetValueType)) continue;
 
+                    // The call passes the value as is, so a ref or out parameter (which needs its own modifier) cannot be called.
+                    if (method.Parameters[0].RefKind is not (RefKind.None or RefKind.In)) continue;
+
                     var parameterType = method.Parameters[0].Type;
                     if (SymbolEqualityComparer.Default.Equals(parameterType, sourceValueType)) return (method, null);
                     if (underlying != null && SymbolEqualityComparer.Default.Equals(parameterType, underlying)) return (method, underlying);
@@ -1083,6 +1132,12 @@ namespace Transformations.Mapping.Generator
         private static bool HasAttribute(IPropertySymbol prop, string fullName)
             => OverrideChain(prop).Any(p => p.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == fullName));
 
+        /// <summary>
+        /// A name as Roslyn spells it. Attribute strings may be written either way for a keyword-named member
+        /// (<c>"class"</c> or <c>"@class"</c>), but symbols never carry the <c>@</c>.
+        /// </summary>
+        private static string Unescape(string name) => name.Length > 1 && name[0] == '@' ? name.Substring(1) : name;
+
         private static List<MapPropertyModel> GetMapPropertyAttributes(IPropertySymbol prop)
         {
             var mappings = new List<MapPropertyModel>();
@@ -1099,6 +1154,10 @@ namespace Transformations.Mapping.Generator
                     if (namedArgument.Key == "SourcePath" && namedArgument.Value.Value is string rawSourcePath) sourcePath = rawSourcePath;
                     if (namedArgument.Key == "Converter" && namedArgument.Value.Value is string rawConverter) converter = rawConverter;
                 }
+
+                name = Unescape(name);
+                if (sourcePath != null) sourcePath = string.Join(".", sourcePath.Split('.').Select(Unescape));
+                if (converter != null) converter = Unescape(converter);
 
                 // The same attribute repeated on an override is one mapping, not an ambiguous pair.
                 if (mappings.Any(m => m.TargetPropertyName == name && m.SourcePath == sourcePath && m.Converter == converter)) continue;

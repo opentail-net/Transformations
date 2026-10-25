@@ -21,3 +21,4 @@ TXMAP016 | Mapping  | Warning  | Type is not accessible to generated code
 TXMAP017 | Mapping  | Warning  | Reverse mapping would be ambiguous
 TXMAP018 | Mapping  | Warning  | Source member maps to several target members
 TXMAP019 | Mapping  | Warning  | Type parameter name is declared twice
+TXMAP020 | Mapping  | Warning  | Mapped target member not found

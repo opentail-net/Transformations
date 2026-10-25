@@ -100,9 +100,9 @@ The bundled Roslyn analyzer runs at build time and flags mapping problems before
 | `TXMAP005` | Warning | Several source members map to the same target member |
 | `TXMAP006` | Warning | A nullable source member maps to a non-nullable target member |
 | `TXMAP007` | Warning | A `SourcePath` does not resolve to public readable properties |
-| `TXMAP008` | Warning | A `Converter` method is missing or has the wrong signature |
+| `TXMAP008` | Warning | A `Converter` method is missing or has the wrong signature (it must take its argument by value; `ref` and `out` are not supported) |
 | `TXMAP009` | Info | An init-only target member is set on creation but not updated by `MapTo(existing)` |
-| `TXMAP010` | Warning | The target cannot be created (no accessible parameterless constructor, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
+| `TXMAP010` | Warning | The target cannot be created (no accessible parameterless constructor, several ambiguous optional-parameter constructors, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
 | `TXMAP011` | Info | The reverse mapping is not generated because the source cannot be created |
 | `TXMAP012` | Warning | Two targets with the same simple name (different namespaces) would produce identical methods; the second is not generated |
 | `TXMAP013` | Warning | A non-public converter cannot be called (it is on a `[MapFrom]` source, or not accessible from the `[MapTo]` source) |
@@ -112,6 +112,7 @@ The bundled Roslyn analyzer runs at build time and flags mapping problems before
 | `TXMAP017` | Warning | Two sources with the same simple name map to one target in the same namespace; only the first reverse method (`To{Source}(this Target)`) is generated, because calls to both would be ambiguous |
 | `TXMAP018` | Warning | One source property is mapped to several target members with repeated `[MapProperty]`; the forward mapping fills them all, but the reverse mapping does not set that property |
 | `TXMAP019` | Warning | A nested generic type reuses a type parameter name of a containing type; no mapping is generated for it |
+| `TXMAP020` | Warning | A `[MapProperty]` names a target member that is not a public settable property (of any of the `[MapTo]` targets); that mapping is ignored |
 
 Escalate `TXMAP001` from warning to build error via MSBuild:
 

@@ -450,6 +450,49 @@ namespace Transformations.Mapping.Tests
                 """);
 
             AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP007"), "the escaped source path resolves");
+            Assert.That(result.Generated, Does.Contain("@int = source.@params.@class"));
+            Assert.That(result.Generated, Does.Contain("@string = "));
+        }
+
+        [TestCase("class")]
+        [TestCase("@class")]
+        public void SourcePath_AcceptsRawAndEscapedIdentifiers(string segment)
+        {
+            var result = Compile($$"""
+                using Transformations.Mapping;
+                public class Inner { public int @class { get; set; } }
+                public class Dto { public int Value { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("Value", SourcePath = "Inner.{{segment}}")]
+                    public Inner Inner { get; set; } = new Inner();
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP007"));
+            Assert.That(result.Generated, Does.Contain("@Value = source.@Inner.@class"));
+        }
+
+        [Test]
+        public void EscapedTargetPropertyName_IsResolved()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public int @event { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("@event")]
+                    public int Value { get; set; }
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP020"));
+            Assert.That(result.Generated, Does.Contain("@event = source.@Value"));
         }
 
         // ── Partial declarations ─────────────────────────────────────────────
@@ -959,6 +1002,186 @@ namespace Transformations.Mapping.Tests
 
             AssertCompiles(result);
             Assert.That(result.DiagnosticIds, Does.Contain("TXMAP019"));
+        }
+
+        // ── Converter signatures ─────────────────────────────────────────────
+
+        [TestCase("ref int value")]
+        [TestCase("out int value")]
+        public void ConverterWithRefOrOutParameter_IsReported_NotCalled(string parameter)
+        {
+            var result = Compile($$"""
+                using Transformations.Mapping;
+                public class Dto { public string Label { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("Label", Converter = nameof(Format))]
+                    public int Value { get; set; }
+                    private static string Format({{parameter}}) { value = 0; return ""; }
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP008"));
+        }
+
+        [Test]
+        public void ConverterWithInParameter_IsCalled()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Label { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("Label", Converter = nameof(Format))]
+                    public int Value { get; set; }
+                    private static string Format(in int value) => value.ToString();
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP008"));
+        }
+
+        // ── Constructors with optional parameters ────────────────────────────
+
+        [Test]
+        public void TwoOptionalParameterConstructors_AreAmbiguous_AndReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto
+                {
+                    public Dto(int id = 0) { }
+                    public Dto(string name = "") { }
+                    public int Id { get; set; }
+                }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP010"));
+            Assert.That(result.Generated, Does.Not.Contain("new global::Dto()"));
+        }
+
+        [Test]
+        public void ParameterlessConstructor_WinsOverOptionalParameterOnes()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto
+                {
+                    public Dto() { }
+                    public Dto(int id = 0) { }
+                    public Dto(string name = "") { }
+                    public int Id { get; set; }
+                }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP010"));
+            Assert.That(result.Generated, Does.Contain("new global::Dto()"));
+        }
+
+        [Test]
+        public void SingleOptionalParameterConstructor_IsUsed()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public Dto(int id = 0) { } public int Id { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP010"));
+        }
+
+        // ── Unknown [MapProperty] targets ────────────────────────────────────
+
+        [Test]
+        public void MapPropertyNamingAnUnknownTarget_IsReported_OtherMappingsKept()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Name { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("Name")]
+                    [MapProperty("Nmae")]
+                    public string Name { get; set; } = "";
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Diagnostics.Where(d => d.Id == "TXMAP020").Select(d => d.GetMessage()).Single(), Does.Contain("Nmae"));
+            Assert.That(result.Generated, Does.Contain("@Name = source.@Name"));
+        }
+
+        [Test]
+        public void MapPropertyNamingAReadOnlyTarget_IsReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Name { get; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source { [MapProperty("Name")] public string Name { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP020"));
+        }
+
+        [Test]
+        public void MapPropertyForOneOfSeveralTargets_IsNotReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class A { public string Label { get; set; } = ""; }
+                public class B { public string Other { get; set; } = ""; }
+                [MapTo<A>]
+                [MapTo<B>]
+                public partial class Source { [MapProperty("Label")] public string Name { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP020"), "Label exists on target A");
+        }
+
+        [Test]
+        public void MapPropertyNamingNoTargetOfSeveral_IsReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class A { public string Label { get; set; } = ""; }
+                public class B { public string Other { get; set; } = ""; }
+                [MapTo<A>]
+                [MapTo<B>]
+                public partial class Source { [MapProperty("Nope")] public string Name { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP020"));
+        }
+
+        [Test]
+        public void MapPropertyOnAnIgnoredProperty_IsNotReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Name { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source { [IgnoreMap] [MapProperty("Nope")] public string Name { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP020"));
         }
 
         private static int Count(string text, string value)
