@@ -17,6 +17,15 @@
 
   <ItemGroup>
     <PackageReference Include="Transformations" Version="$(SmokeVersion)" />
+    <!-- The packages a user installs next to the meta package. The duplicate-type check runs over all of them. -->
+    <PackageReference Include="Transformations.Core" Version="$(SmokeVersion)" />
+    <PackageReference Include="Transformations.Data" Version="$(SmokeVersion)" />
+    <PackageReference Include="Transformations.Web" Version="$(SmokeVersion)" />
+    <PackageReference Include="Transformations.Dapper" Version="$(SmokeVersion)" />
+    <PackageReference Include="Transformations.EntityFramework" Version="$(SmokeVersion)" />
+    <PackageReference Include="Transformations.Mapping" Version="$(SmokeVersion)" />
+    <PackageReference Include="Transformations.Text" Version="$(SmokeVersion)" />
+    <PackageReference Include="Transformations.Audio" Version="$(SmokeVersion)" />
   </ItemGroup>
 
 </Project>
