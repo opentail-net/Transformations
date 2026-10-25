@@ -121,12 +121,12 @@ namespace Transformations.Mapping.Tests
         public DateTime CreatedOn { get; set; }
     }
 
-    // Enum-to-int mismatch: generator must skip the enum property rather than emit ConvertTo<T>
+    // Enum to int: the generator casts, since ConvertTo<int>() has no enum overload
     public enum RecordStatus { Active, Inactive, Pending }
 
     public class StatusDto
     {
-        public int Status { get; set; }   // same name, but int vs enum — no safe auto-conversion
+        public int Status { get; set; }   // same name, int vs enum: mapped with a cast
         public string Name { get; set; } = string.Empty;
     }
 

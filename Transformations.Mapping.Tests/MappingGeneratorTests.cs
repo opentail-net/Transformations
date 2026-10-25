@@ -198,22 +198,21 @@ namespace Transformations.Mapping.Tests
 
         #endregion Unmapped target-member diagnostic example behavior
 
-        #region Enum-to-int type mismatch — property skipped, not ConvertTo<T>
+        #region Enum-to-int — an explicit cast, not ConvertTo<T>
 
         [Test]
-        public void ToStatusDto_EnumToIntProperty_SkippedAndStringMapped()
+        public void ToStatusDto_EnumToIntProperty_IsCast()
         {
-            // If the generator emits ConvertTo<int>() for the enum Status property this won't compile.
-            // With the fix it skips that property; Name still maps.
+            // ConvertTo<int>() has no enum overload, so the generator casts: (int)Status.
             var record = new StatusRecord { Status = RecordStatus.Inactive, Name = "Test" };
 
             StatusDto dto = record.ToStatusDto();
 
             Assert.That(dto.Name, Is.EqualTo("Test"));
-            Assert.That(dto.Status, Is.EqualTo(0)); // skipped → default int value
+            Assert.That(dto.Status, Is.EqualTo((int)RecordStatus.Inactive));
         }
 
-        #endregion Enum-to-int type mismatch — property skipped, not ConvertTo<T>
+        #endregion Enum-to-int — an explicit cast, not ConvertTo<T>
 
         #region Inherited properties mapped from base class
 

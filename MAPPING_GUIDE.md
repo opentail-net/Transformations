@@ -93,14 +93,69 @@ When source and target types differ, in this order:
 1. **Implicit conversions** are plain assignments: `int` to `int?`, `int` to `long`, a derived type to its base.
 2. **A nullable value to a non-nullable value** (including a `SourcePath` through a nullable member, which makes
    `Customer?.Count` an `int?`) uses the value, or `default` when it is null; `TXMAP006` warns about it.
-3. **Anything to `string`** uses `ToString()` (`?.ToString() ?? string.Empty` for nullable sources).
-4. **`ConvertTo<T>()`** from `Transformations.Core`, only for the pairs it really converts: numeric and `bool` types
+3. **Enums** (see below): a cast, a member-name mapping, or a parse.
+4. **Anything to `string`** uses `ToString()` (`?.ToString() ?? string.Empty` for nullable sources).
+5. **Collections** (see below), element by element.
+6. **Nested objects** (see below), property by property.
+7. **`ConvertTo<T>()`** from `Transformations.Core`, only for the pairs it really converts: numeric and `bool` types
    among themselves, `char` and integral types among themselves, and `string` to any of those or to `Guid`. A nullable
    target converts to its underlying type; a null (or empty string) source stays null.
-5. Anything else (`Guid`, `DateTimeOffset` or `TimeSpan` to a non-string, `DateTime` to a number, `double` to `char`,
-   custom types) is `TXMAP002` and the member is left unmapped.
+8. Anything else (`Guid`, `DateTimeOffset` or `TimeSpan` to a non-string, `DateTime` to a number, `double` to `char`,
+   unrelated custom types) is `TXMAP002` and the member is left unmapped.
 
 A `Converter` taking `T` also accepts a `T?` source path; it receives the value or `default`.
+
+### Enums
+
+| From | To | Generated |
+|------|----|-----------|
+| enum | enum with the same member names and values | a cast |
+| enum | enum with different members | a `switch` by member name (case-insensitive fallback); a source value with no counterpart throws `ArgumentOutOfRangeException`, and `TXMAP022` warns at build time. If no member matches at all it is `TXMAP002`. |
+| enum | any numeric type | a cast, `(int)value` |
+| any numeric type | enum | a cast, `(Level)value` |
+| enum | `string` | `ToString()` |
+| `string` | enum | `Enum.Parse<T>(value, ignoreCase: true)`; `null` or empty gives `default` (or `null` for a nullable enum); an unknown name throws `ArgumentException` |
+
+Nullable enums keep their `null`. Because `enum`/`string` now converts both ways, the reverse mapping exists too.
+
+### Nested objects
+
+A property whose source and target types are different classes or structs (not framework types such as `DateTime`) is
+mapped property by property, using the same rules as a top-level mapping, including `[MapProperty]` and `[IgnoreMap]`
+on the nested source's properties. The nested target is created with `new T { ... }`, so it needs an accessible
+parameterless constructor and no unmapped `required` member. A `null` nested source stays `null`.
+
+- No attribute is needed on the nested types. If they share no member names, or the target cannot be created, it is
+  `TXMAP002`.
+- Members of the nested target that nothing maps are reported with `TXMAP001`, as for a top-level mapping.
+- Types that refer to themselves (a tree with `Children`, a linked list) are supported: the nested mapping is a helper
+  method that calls itself. Data that is itself cyclic will recurse until the stack runs out, as in hand-written code.
+- The nested objects are copied, not shared; if the source and target types are the same (or implicitly convertible)
+  the reference is assigned as it always was.
+
+### Collections
+
+Arrays and anything that implements `IEnumerable<T>` can be mapped to:
+
+| Target | Notes |
+|--------|-------|
+| `T[]` | |
+| `List<T>`, `IList<T>`, `ICollection<T>`, `IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>` | built as a `List<T>` |
+| `HashSet<T>`, `ISet<T>`, `IReadOnlySet<T>` | built as a `HashSet<T>` |
+| `Dictionary<K, V>`, `IDictionary<K, V>`, `IReadOnlyDictionary<K, V>` | from a dictionary; keys and values are converted |
+
+Each element goes through these same rules, so a list of nested objects, a list of lists, `IEnumerable<int>` to
+`List<long>`, or a set of enums all work. A `null` collection stays `null`; a `null` element stays `null`. Other target
+collection types (`ImmutableArray<T>`, `Collection<T>`, ...) are `TXMAP002`.
+
+### Projection (`ProjectTo`)
+
+`ProjectTo{Target}()` only contains what a query provider can translate. Member access, null checks, enum casts, nested
+objects (inlined as `new T { ... }`) and collections of them (`Select(...).ToList()` or `.ToArray()`) are
+translated; the SQL produced by EF Core for these is a single query with joins. `ToString()`, `ConvertTo`, converters,
+dictionaries, sets, by-name enum mappings with unmatched members, `string` to enum and recursive types are runtime-only:
+when a target has any of them, `ProjectTo` throws `NotSupportedException` naming the members, and `To{Target}()` still
+works.
 
 ## Multiple Targets
 
@@ -252,6 +307,7 @@ The generator emits mapping diagnostics when it can identify a likely configurat
 | `TXMAP019` | Warning | A nested generic type reuses a type parameter name of a containing type; no mapping is generated for it |
 | `TXMAP020` | Warning | A `[MapProperty]` names a target member that is not a public settable property (of any of the `[MapTo]` targets); that mapping is ignored |
 | `TXMAP021` | Warning | A `[MapTo]` source or `[MapFrom]` target is a `static` class, which cannot be a parameter or return type; no mapping is generated |
+| `TXMAP022` | Warning | A member of one enum has no member of that name in the other enum it is mapped to; converting that value throws `ArgumentOutOfRangeException` |
 
 Whatever the generator accepts compiles: a mapping it cannot generate correctly is left out and reported, never
 emitted as broken C#.

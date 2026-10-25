@@ -87,6 +87,13 @@ class (that, and the `From<Target>()` factory, is why the source must be `partia
 
 ---
 
+## 🔁 What it converts
+
+Beyond identical and implicitly convertible types, the generator maps: **enums** (cast, by member name, to and from numbers
+and strings), **nested objects** (property by property, including self-referencing types), and **collections** (arrays,
+lists, sets and dictionaries, element by element). `ProjectTo` inlines nested objects and collections so EF Core
+translates them to SQL. See [MAPPING_GUIDE.md](../MAPPING_GUIDE.md) for the full rules.
+
 ## 🛠 Diagnostics
 
 The bundled Roslyn analyzer runs at build time and flags mapping problems before they reach production:
@@ -114,6 +121,7 @@ The bundled Roslyn analyzer runs at build time and flags mapping problems before
 | `TXMAP019` | Warning | A nested generic type reuses a type parameter name of a containing type; no mapping is generated for it |
 | `TXMAP020` | Warning | A `[MapProperty]` names a target member that is not a public settable property (of any of the `[MapTo]` targets); that mapping is ignored |
 | `TXMAP021` | Warning | A `[MapTo]` source or `[MapFrom]` target is a `static` class, which cannot be a parameter or return type; no mapping is generated |
+| `TXMAP022` | Warning | A member of one enum has no member of that name in the other enum it is mapped to; converting that value throws `ArgumentOutOfRangeException` |
 
 Escalate `TXMAP001` from warning to build error via MSBuild:
 

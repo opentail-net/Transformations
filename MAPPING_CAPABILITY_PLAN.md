@@ -76,7 +76,7 @@
 - [x] Support `db.Users.ProjectToUserDto()`
 - [x] Limit first version to simple property access and safe conversions
 - [x] Avoid runtime reflection
-- [ ] Verify EF Core compatibility
+- [x] Verify EF Core compatibility
 - [x] Add tests with in-memory query providers
 - [x] Document projection limitations clearly
 
@@ -113,3 +113,17 @@
 - [x] 5. Custom conversion hooks
 - [x] 6. IQueryable projection
 - [x] 7. Benchmarks and documentation polish
+
+## Phase 10: Conversions Beyond Primitives
+
+- [x] Enum conversions: cast, by member name, to and from numbers, to and from strings
+- [x] Nested object mapping, property by property, without attributes on the nested types
+- [x] Self-referencing types (trees, linked lists)
+- [x] Collection mapping: arrays, lists, sets, dictionaries, element by element
+- [x] Projection of nested objects and collections for `IQueryable`
+- [x] Verify EF Core compatibility (EF Core + SQLite: the projection is one SQL query with joins)
+- [x] Value-equatable pipeline models, with tests that drive Roslyn's step tracking
+- [x] Verify a packed NuGet package in a separate project (implicit usings off, warnings as errors)
+- [ ] Produce and run a NativeAOT binary (the IL compiler passes without warnings; the native link needs the Visual C++ build tools)
+- [ ] Convention-based flattening (`CustomerName` from `Customer.Name`)
+- [ ] `ImmutableArray<T>` and other custom collection targets

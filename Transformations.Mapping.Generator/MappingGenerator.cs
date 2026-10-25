@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -21,6 +20,16 @@ namespace Transformations.Mapping.Generator
     /// inaccessible accessor, an unsupported conversion, a type it cannot construct, a name collision) is left out and
     /// reported as a diagnostic instead of producing broken C#.
     /// </remarks>
+    /// <summary>Names of the pipeline steps, so tests can check which of them the incremental engine reused.</summary>
+    internal static class TrackingNames
+    {
+        public const string MapToModels = nameof(MapToModels);
+        public const string MapFromModels = nameof(MapFromModels);
+        public const string Config = nameof(Config);
+        public const string AllModels = nameof(AllModels);
+        public const string Output = nameof(Output);
+    }
+
     [Generator(LanguageNames.CSharp)]
     public sealed class MappingGenerator : IIncrementalGenerator
     {
@@ -30,7 +39,7 @@ namespace Transformations.Mapping.Generator
         private const string MapPropertyAttributeFullName = "Transformations.Mapping.MapPropertyAttribute";
         private const string SetsRequiredMembersAttributeFullName = "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute";
 
-        private static readonly SymbolDisplayFormat FullyQualifiedWithNullability =
+        internal static readonly SymbolDisplayFormat FullyQualifiedWithNullability =
             SymbolDisplayFormat.FullyQualifiedFormat.AddMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
 
         private static readonly DiagnosticDescriptor UnmappedMemberWarning = new DiagnosticDescriptor(
@@ -190,6 +199,15 @@ namespace Transformations.Mapping.Generator
             isEnabledByDefault: true,
             description: "The mapping methods are generated in a class at namespace level, which cannot name a private or protected nested type. Make the type internal or public.");
 
+        internal static readonly DiagnosticDescriptor UnmatchedEnumMember = new DiagnosticDescriptor(
+            id: "TXMAP022",
+            title: "Enum member has no counterpart",
+            messageFormat: "Member '{1}' of enum '{0}' has no member of that name in '{2}'; mapping that value throws ArgumentOutOfRangeException at run time",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Enums with different members are mapped by member name. A source member the target enum does not have cannot be mapped, so converting that value throws.");
+
         private static readonly DiagnosticDescriptor StaticType = new DiagnosticDescriptor(
             id: "TXMAP021",
             title: "Static type cannot be mapped",
@@ -246,23 +264,27 @@ namespace Transformations.Mapping.Generator
                     MapToAttributeFullName,
                     predicate: static (node, _) => IsClassLikeDeclaration(node),
                     transform: static (ctx, ct) => GetMappingModels(ctx, ct, false))
-                .SelectMany(static (models, _) => models);
+                .SelectMany(static (models, _) => models)
+                .WithTrackingName(TrackingNames.MapToModels);
 
             var mapFromDeclarations = context.SyntaxProvider
                 .ForAttributeWithMetadataName(
                     MapFromAttributeFullName,
                     predicate: static (node, _) => IsClassLikeDeclaration(node),
                     transform: static (ctx, ct) => GetMappingModels(ctx, ct, true))
-                .SelectMany(static (models, _) => models);
+                .SelectMany(static (models, _) => models)
+                .WithTrackingName(TrackingNames.MapFromModels);
 
             var config = context.AnalyzerConfigOptionsProvider
-                .Select(static (provider, _) => MappingGeneratorConfig.From(provider.GlobalOptions));
+                .Select(static (provider, _) => MappingGeneratorConfig.From(provider.GlobalOptions))
+                .WithTrackingName(TrackingNames.Config);
 
             var allDeclarations = mapToDeclarations.Collect()
                 .Combine(mapFromDeclarations.Collect())
-                .Select(static (pair, _) => pair.Left.AddRange(pair.Right));
+                .Select(static (pair, _) => pair.Left.AddRange(pair.Right))
+                .WithTrackingName(TrackingNames.AllModels);
 
-            context.RegisterSourceOutput(allDeclarations.Combine(config),
+            context.RegisterSourceOutput(allDeclarations.Combine(config).WithTrackingName(TrackingNames.Output),
                 static (spc, input) => GenerateCode(spc, input.Left, input.Right));
         }
 
@@ -286,7 +308,7 @@ namespace Transformations.Mapping.Generator
             if (!isMapFrom)
             {
                 // MapTo: one source (decoratedType), several targets.
-                var diagnostics = new List<Diagnostic>();
+                var diagnostics = new List<DiagnosticInfo>();
                 var location = decoratedType.Locations.FirstOrDefault() ?? Location.None;
 
                 if (!HasMapToTargets(decoratedType))
@@ -303,28 +325,28 @@ namespace Transformations.Mapping.Generator
 
                 if (!IsReferenceable(compilation, decoratedType))
                 {
-                    diagnostics.Add(Diagnostic.Create(InaccessibleType, location, decoratedType.Name, decoratedType.Name, decoratedType.Name));
+                    diagnostics.Add(DiagnosticInfo.Create(InaccessibleType, location, decoratedType.Name, decoratedType.Name, decoratedType.Name));
                     yield return MappingModel.Invalid(diagnostics);
                     yield break;
                 }
 
                 if (decoratedType.IsStatic)
                 {
-                    diagnostics.Add(Diagnostic.Create(StaticType, location, decoratedType.Name, decoratedType.Name, decoratedType.Name));
+                    diagnostics.Add(DiagnosticInfo.Create(StaticType, location, decoratedType.Name, decoratedType.Name, decoratedType.Name));
                     yield return MappingModel.Invalid(diagnostics);
                     yield break;
                 }
 
                 if (HasDuplicateTypeParameterNames(decoratedType))
                 {
-                    diagnostics.Add(Diagnostic.Create(DuplicateTypeParameterName, location, decoratedType.Name));
+                    diagnostics.Add(DiagnosticInfo.Create(DuplicateTypeParameterName, location, decoratedType.Name));
                     yield return MappingModel.Invalid(diagnostics);
                     yield break;
                 }
 
                 if (!IsPartialClass(decoratedType))
                 {
-                    diagnostics.Add(Diagnostic.Create(MissingPartialSourceType, location, decoratedType.Name));
+                    diagnostics.Add(DiagnosticInfo.Create(MissingPartialSourceType, location, decoratedType.Name));
                     yield return MappingModel.Invalid(diagnostics);
                     yield break;
                 }
@@ -337,6 +359,7 @@ namespace Transformations.Mapping.Generator
                 }
 
                 var wrappers = new List<ConverterWrapper>();
+                var helpers = new HelperRegistry(TypeArgumentList(GetTypeParameters(decoratedType)));
                 var targets = new List<TargetMapping>();
                 var mappedTargetTypes = new List<INamedTypeSymbol>();
                 var usedMethodNames = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -353,7 +376,7 @@ namespace Transformations.Mapping.Generator
                     {
                         if (firstTarget != targetDisplay)
                         {
-                            diagnostics.Add(Diagnostic.Create(MethodNameCollision, location, targetDisplay, firstTarget, decoratedType.Name));
+                            diagnostics.Add(DiagnosticInfo.Create(MethodNameCollision, location, targetDisplay, firstTarget, decoratedType.Name));
                         }
 
                         continue;
@@ -362,11 +385,11 @@ namespace Transformations.Mapping.Generator
                     usedMethodNames[targetType.Name] = targetDisplay;
                     if (!IsReferenceable(compilation, targetType))
                     {
-                        diagnostics.Add(Diagnostic.Create(InaccessibleType, location, decoratedType.Name, targetType.Name, targetType.Name));
+                        diagnostics.Add(DiagnosticInfo.Create(InaccessibleType, location, decoratedType.Name, targetType.Name, targetType.Name));
                         continue;
                     }
 
-                    targets.Add(BuildTargetMapping(compilation, decoratedType, targetType, isMapTo: true, wrappers, diagnostics, location, ct));
+                    targets.Add(BuildTargetMapping(compilation, decoratedType, targetType, isMapTo: true, wrappers, helpers, diagnostics, location, ct));
                     mappedTargetTypes.Add(targetType);
                 }
 
@@ -388,10 +411,11 @@ namespace Transformations.Mapping.Generator
                     typeParameters: GetTypeParameters(decoratedType),
                     containingTypes: containingTypes,
                     @namespace: decoratedNamespace,
-                    sourceLocation: location,
+                    sourceLocation: LocationInfo.From(location),
                     diagnostics: diagnostics,
                     targets: targets,
                     converterWrappers: wrappers,
+                    helpers: helpers.Models,
                     reservedTypeNames: GetReservedTypeNames(compilation, decoratedType));
             }
             else
@@ -405,12 +429,12 @@ namespace Transformations.Mapping.Generator
                     if (attr.AttributeClass is not INamedTypeSymbol attrType || !IsMapFromAttribute(attrType) || attrType.TypeArguments.Length != 1) continue;
                     if (attrType.TypeArguments[0] is not INamedTypeSymbol sourceType) continue;
 
-                    var diagnostics = new List<Diagnostic>();
+                    var diagnostics = new List<DiagnosticInfo>();
                     var location = decoratedType.Locations.FirstOrDefault() ?? Location.None;
                     if (!IsReferenceable(compilation, sourceType) || !IsReferenceable(compilation, decoratedType))
                     {
                         var hidden = IsReferenceable(compilation, sourceType) ? decoratedType : sourceType;
-                        diagnostics.Add(Diagnostic.Create(InaccessibleType, location, sourceType.Name, decoratedType.Name, hidden.Name));
+                        diagnostics.Add(DiagnosticInfo.Create(InaccessibleType, location, sourceType.Name, decoratedType.Name, hidden.Name));
                         yield return MappingModel.Invalid(diagnostics);
                         continue;
                     }
@@ -418,19 +442,20 @@ namespace Transformations.Mapping.Generator
                     // Only the decorated class can be static: C# rejects a static class as an attribute type argument.
                     if (decoratedType.IsStatic)
                     {
-                        diagnostics.Add(Diagnostic.Create(StaticType, location, sourceType.Name, decoratedType.Name, decoratedType.Name));
+                        diagnostics.Add(DiagnosticInfo.Create(StaticType, location, sourceType.Name, decoratedType.Name, decoratedType.Name));
                         yield return MappingModel.Invalid(diagnostics);
                         continue;
                     }
 
                     if (HasDuplicateTypeParameterNames(decoratedType))
                     {
-                        diagnostics.Add(Diagnostic.Create(DuplicateTypeParameterName, location, decoratedType.Name));
+                        diagnostics.Add(DiagnosticInfo.Create(DuplicateTypeParameterName, location, decoratedType.Name));
                         yield return MappingModel.Invalid(diagnostics);
                         continue;
                     }
 
-                    var target = BuildTargetMapping(compilation, sourceType, decoratedType, isMapTo: false, new List<ConverterWrapper>(), diagnostics, location, ct);
+                    var helpers = new HelperRegistry(TypeArgumentList(GetTypeParameters(decoratedType)));
+                    var target = BuildTargetMapping(compilation, sourceType, decoratedType, isMapTo: false, new List<ConverterWrapper>(), helpers, diagnostics, location, ct);
                     ReportUnknownMapPropertyTargets(compilation, sourceType, new[] { decoratedType }, diagnostics);
 
                     yield return new MappingModel(
@@ -443,10 +468,11 @@ namespace Transformations.Mapping.Generator
                         typeParameters: GetTypeParameters(decoratedType),
                         containingTypes: new List<TypeDeclarationModel>(),
                         @namespace: decoratedNamespace,
-                        sourceLocation: location,
+                        sourceLocation: LocationInfo.From(location),
                         diagnostics: diagnostics,
                         targets: new List<TargetMapping> { target },
                         converterWrappers: new List<ConverterWrapper>(),
+                        helpers: helpers.Models,
                         targetMetadataName: GetMetadataName(decoratedType),
                         reservedTypeNames: GetReservedTypeNames(compilation, decoratedType));
                 }
@@ -459,7 +485,7 @@ namespace Transformations.Mapping.Generator
         /// is legitimate and is not reported.
         /// </summary>
         private static void ReportUnknownMapPropertyTargets(CSharpCompilation compilation, INamedTypeSymbol sourceType,
-            IReadOnlyList<INamedTypeSymbol> targetTypes, List<Diagnostic> diagnostics)
+            IReadOnlyList<INamedTypeSymbol> targetTypes, List<DiagnosticInfo> diagnostics)
         {
             if (targetTypes.Count == 0) return;
 
@@ -471,7 +497,7 @@ namespace Transformations.Mapping.Generator
 
                 foreach (var attribute in GetMapPropertyAttributes(sourceProp).Where(a => !known.Contains(a.TargetPropertyName)))
                 {
-                    diagnostics.Add(Diagnostic.Create(UnknownTargetMember, sourceProp.Locations.FirstOrDefault() ?? Location.None,
+                    diagnostics.Add(DiagnosticInfo.Create(UnknownTargetMember, sourceProp.Locations.FirstOrDefault() ?? Location.None,
                         sourceType.Name, sourceProp.Name, attribute.TargetPropertyName, targetNames));
                 }
             }
@@ -567,12 +593,14 @@ namespace Transformations.Mapping.Generator
             INamedTypeSymbol targetType,
             bool isMapTo,
             List<ConverterWrapper> wrappers,
-            List<Diagnostic> diagnostics,
+            HelperRegistry helpers,
+            List<DiagnosticInfo> diagnostics,
             Location location,
             CancellationToken ct)
         {
             string sourceFullName = sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var propertyMappings = BuildPropertyMappings(compilation, sourceType, targetType, sourceFullName, isMapTo, wrappers, diagnostics, ct);
+            var propertyMappings = BuildPropertyMappings(new MappingContext(compilation, sourceType, targetType, sourceFullName, isMapTo, wrappers,
+                diagnostics, helpers, ct));
 
             var mappedTargetNames = new HashSet<string>(propertyMappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal);
             var unmapped = GetSettableProperties(compilation, targetType)
@@ -584,19 +612,19 @@ namespace Transformations.Mapping.Generator
             string? createProblem = ConstructionProblem(compilation, targetType, mappedTargetNames);
             if (createProblem != null)
             {
-                diagnostics.Add(Diagnostic.Create(CannotCreateTarget, location, targetType.Name, createProblem));
+                diagnostics.Add(DiagnosticInfo.Create(CannotCreateTarget, location, targetType.Name, createProblem));
             }
 
             foreach (var prop in propertyMappings.Where(p => !p.CanUpdate))
             {
-                diagnostics.Add(Diagnostic.Create(InitOnlyNotUpdated, location, targetType.Name, prop.TargetPropertyName));
+                diagnostics.Add(DiagnosticInfo.Create(InitOnlyNotUpdated, location, targetType.Name, prop.TargetPropertyName));
             }
 
             var reverseNames = new HashSet<string>(propertyMappings.Where(p => p.CanReverse).Select(p => p.SourceReversePropertyName!), StringComparer.Ordinal);
             string? reverseProblem = ConstructionProblem(compilation, sourceType, reverseNames);
             if (reverseProblem != null)
             {
-                diagnostics.Add(Diagnostic.Create(ReverseNotGenerated, location, targetType.Name, sourceType.Name, reverseProblem));
+                diagnostics.Add(DiagnosticInfo.Create(ReverseNotGenerated, location, targetType.Name, sourceType.Name, reverseProblem));
             }
 
             return new TargetMapping(
@@ -610,7 +638,7 @@ namespace Transformations.Mapping.Generator
                 access: AccessFor(sourceType, targetType));
         }
 
-        private static List<TypeDeclarationModel>? GetContainingTypes(INamedTypeSymbol sourceType, List<Diagnostic> diagnostics)
+        private static List<TypeDeclarationModel>? GetContainingTypes(INamedTypeSymbol sourceType, List<DiagnosticInfo> diagnostics)
         {
             var containingTypes = new List<TypeDeclarationModel>();
             INamedTypeSymbol? current = sourceType.ContainingType;
@@ -618,7 +646,7 @@ namespace Transformations.Mapping.Generator
             {
                 if (!IsPartialClass(current))
                 {
-                    diagnostics.Add(Diagnostic.Create(
+                    diagnostics.Add(DiagnosticInfo.Create(
                         MissingPartialContainingType,
                         current.Locations.FirstOrDefault() ?? Location.None,
                         current.Name,
@@ -713,7 +741,7 @@ namespace Transformations.Mapping.Generator
         /// <summary>
         /// Why generated code cannot write <c>new T() { ... }</c> assigning <paramref name="assigned"/>, or <c>null</c>.
         /// </summary>
-        private static string? ConstructionProblem(CSharpCompilation compilation, INamedTypeSymbol type, ISet<string> assigned)
+        internal static string? ConstructionProblem(CSharpCompilation compilation, INamedTypeSymbol type, ISet<string> assigned)
         {
             if (type.TypeKind == TypeKind.Interface) return "it is an interface";
             if (type.IsAbstract) return "it is abstract";
@@ -761,24 +789,20 @@ namespace Transformations.Mapping.Generator
             }
         }
 
-        private static bool IsAccessible(CSharpCompilation compilation, ISymbol symbol)
+        internal static bool IsAccessible(CSharpCompilation compilation, ISymbol symbol)
             => compilation.IsSymbolAccessibleWithin(symbol, compilation.Assembly);
 
         // ── Property mappings ───────────────────────────────────────────────
 
-        private static List<PropertyMapping> BuildPropertyMappings(
-            CSharpCompilation compilation,
-            INamedTypeSymbol sourceType,
-            INamedTypeSymbol targetType,
-            string sourceFullName,
-            bool isMapTo,
-            List<ConverterWrapper> wrappers,
-            List<Diagnostic> diagnostics,
-            CancellationToken ct)
+        internal static List<PropertyMapping> BuildPropertyMappings(MappingContext context)
         {
+            var compilation = context.Compilation;
+            var sourceType = context.SourceType;
+            var targetType = context.TargetType;
+            var diagnostics = context.Diagnostics;
+            var ct = context.Cancellation;
             var targetProps = GetSettableProperties(compilation, targetType).ToDictionary(p => p.Name, StringComparer.Ordinal);
             var mappingsByTarget = new Dictionary<string, PropertyMapping>(StringComparer.Ordinal);
-            var context = new MappingContext(compilation, sourceType, targetType, sourceFullName, isMapTo, wrappers, diagnostics);
 
             foreach (var sourceProp in GetReadableProperties(compilation, sourceType))
             {
@@ -804,7 +828,7 @@ namespace Transformations.Mapping.Generator
             // A source property mapped to several targets cannot be initialised from all of them in the reverse mapping.
             foreach (var group in mappings.Where(m => m.CanReverse).GroupBy(m => m.SourceReversePropertyName!, StringComparer.Ordinal).Where(g => g.Count() > 1))
             {
-                diagnostics.Add(Diagnostic.Create(AmbiguousReverseSource, sourceType.Locations.FirstOrDefault() ?? Location.None,
+                diagnostics.Add(DiagnosticInfo.Create(AmbiguousReverseSource, sourceType.Locations.FirstOrDefault() ?? Location.None,
                     sourceType.Name, group.Key, targetType.Name, string.Join(", ", group.Select(m => m.TargetPropertyName))));
                 foreach (var ambiguous in group.ToList())
                 {
@@ -833,7 +857,7 @@ namespace Transformations.Mapping.Generator
 
             if (mappingsByTarget.TryGetValue(targetPropName, out var existingMapping))
             {
-                diagnostics.Add(Diagnostic.Create(AmbiguousTargetMapping, sourceLocation, context.TargetType.Name, targetProp.Name,
+                diagnostics.Add(DiagnosticInfo.Create(AmbiguousTargetMapping, sourceLocation, context.TargetType.Name, targetProp.Name,
                     $"{existingMapping.SourceDisplayName}, {GetSourceDisplayName(sourceProp, sourcePath)}"));
                 return;
             }
@@ -841,28 +865,29 @@ namespace Transformations.Mapping.Generator
             var source = ResolveSource(context.Compilation, context.SourceType, sourceProp, sourcePath);
             if (source == null)
             {
-                diagnostics.Add(Diagnostic.Create(InvalidSourcePath, sourceLocation, sourcePath ?? sourceProp.Name,
+                diagnostics.Add(DiagnosticInfo.Create(InvalidSourcePath, sourceLocation, sourcePath ?? sourceProp.Name,
                     context.TargetType.Name, targetProp.Name, context.SourceType.Name));
                 return;
             }
 
             bool targetIsNonNullable = IsNonNullableReferenceOrValueType(targetProp.Type);
             string? forward;
-            bool projectable;
+            string? projection;
             bool hasConverter = !string.IsNullOrWhiteSpace(converterMethodName);
 
             if (hasConverter)
             {
                 forward = BuildConverterCall(context, sourceProp, converterMethodName!, source, targetProp);
                 if (forward == null) return; // diagnostic reported
-                projectable = false;
+                projection = null;
             }
             else
             {
-                var conversion = BuildConversion(context.Compilation, source.Expression, source.Type, source.IsNullable, targetProp.Type, targetIsNonNullable);
+                context.Location = sourceLocation;
+                var conversion = ConversionBuilder.Build(context, source.Expression, source.Type, source.IsNullable, targetProp.Type, targetIsNonNullable);
                 if (conversion == null)
                 {
-                    diagnostics.Add(Diagnostic.Create(UnsupportedConversion, sourceLocation, context.TargetType.Name, targetProp.Name,
+                    diagnostics.Add(DiagnosticInfo.Create(UnsupportedConversion, sourceLocation, context.TargetType.Name, targetProp.Name,
                         context.SourceType.Name, source.DisplayName,
                         source.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                         targetProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
@@ -870,33 +895,38 @@ namespace Transformations.Mapping.Generator
                 }
 
                 forward = conversion.Expression;
-                // Query providers translate member access and coalescing; conversions and null-conditional access are runtime-only.
-                projectable = conversion.Kind == ConversionKind.Direct && !forward.Contains("?.");
+                // Query providers translate member access, casts, conditionals, member initialisers and Select/ToList; the rest is runtime-only.
+                projection = conversion.Projection;
             }
 
             if (source.IsNullable && targetIsNonNullable)
             {
-                diagnostics.Add(Diagnostic.Create(NullableToNonNullableRisk, sourceLocation, context.SourceType.Name,
+                diagnostics.Add(DiagnosticInfo.Create(NullableToNonNullableRisk, sourceLocation, context.SourceType.Name,
                     source.DisplayName, context.TargetType.Name, targetProp.Name));
             }
 
             // Reverse: a plain property (no path, no converter) whose source setter and target getter generated code can use.
             string? reverse = null;
-            if (source.IsPlainProperty && !hasConverter
+            if (context.ComputeReverse && source.IsPlainProperty && !hasConverter
                 && sourceProp.SetMethod is { DeclaredAccessibility: Accessibility.Public }
                 && targetProp.GetMethod is { DeclaredAccessibility: Accessibility.Public })
             {
                 bool reverseSourceIsNullable = IsNullableReferenceOrValueType(targetProp.Type);
                 bool reverseTargetIsNonNullable = IsNonNullableReferenceOrValueType(sourceProp.Type);
-                var reverseConversion = BuildConversion(context.Compilation, $"source.{Escape(targetProp.Name)}", targetProp.Type,
+
+                // The forward direction already reported any problem with the nested objects both ways share.
+                bool wasQuiet = context.Quiet;
+                context.Quiet = true;
+                var reverseConversion = ConversionBuilder.Build(context, $"{Receiver.Token}.{Escape(targetProp.Name)}", targetProp.Type,
                     reverseSourceIsNullable, sourceProp.Type, reverseTargetIsNonNullable);
+                context.Quiet = wasQuiet;
                 reverse = reverseConversion?.Expression;
 
                 // A plain assignment (no "?? default" / "?? string.Empty" fallback) lets the target's null reach the source.
                 if (reverseConversion is { Kind: ConversionKind.Direct } && !reverse!.Contains("??")
                     && reverseSourceIsNullable && reverseTargetIsNonNullable)
                 {
-                    diagnostics.Add(Diagnostic.Create(ReverseNullableToNonNullableRisk, sourceLocation, context.TargetType.Name,
+                    diagnostics.Add(DiagnosticInfo.Create(ReverseNullableToNonNullableRisk, sourceLocation, context.TargetType.Name,
                         targetProp.Name, context.SourceType.Name, sourceProp.Name));
                 }
             }
@@ -905,7 +935,7 @@ namespace Transformations.Mapping.Generator
                 sourceDisplayName: source.DisplayName,
                 targetPropertyName: targetPropName,
                 forwardExpression: forward,
-                projectionExpression: projectable ? ToProjectionExpression(forward) : null,
+                projectionExpression: projection,
                 sourceReversePropertyName: reverse == null ? null : sourceProp.Name,
                 reverseExpression: reverse,
                 canUpdate: targetProp.SetMethod?.IsInitOnly != true);
@@ -923,7 +953,7 @@ namespace Transformations.Mapping.Generator
             var match = ResolveConverterMethod(context.SourceType, converterMethodName, source.Type, targetProp.Type);
             if (match == null)
             {
-                context.Diagnostics.Add(Diagnostic.Create(InvalidConverterMethod, location, converterMethodName,
+                context.Diagnostics.Add(DiagnosticInfo.Create(InvalidConverterMethod, location, converterMethodName,
                     context.TargetType.Name, targetProp.Name, context.SourceType.Name));
                 return null;
             }
@@ -935,7 +965,9 @@ namespace Transformations.Mapping.Generator
 
             if (IsAccessible(context.Compilation, method))
             {
-                return $"{context.SourceFullName}.{Escape(method.Name)}({argument})";
+                // Through the type that declares the selected method: a method of the same name on the derived source
+                // type would hide it, and a call by the source type's name would bind to that one instead.
+                return $"{method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.{Escape(method.Name)}({argument})";
             }
 
             if (!context.IsMapTo || !context.Compilation.IsSymbolAccessibleWithin(method, context.SourceType))
@@ -943,14 +975,15 @@ namespace Transformations.Mapping.Generator
                 string reason = context.IsMapTo
                     ? $"it is not accessible from '{context.SourceType.Name}'"
                     : $"it is not public, and an accessor can only be added to a [MapTo] source type, not to '{context.SourceType.Name}'";
-                context.Diagnostics.Add(Diagnostic.Create(InaccessibleConverterMethod, location, converterMethodName,
+                context.Diagnostics.Add(DiagnosticInfo.Create(InaccessibleConverterMethod, location, converterMethodName,
                     context.TargetType.Name, targetProp.Name, reason));
                 return null;
             }
 
             string parameterType = method.Parameters[0].Type.ToDisplayString(FullyQualifiedWithNullability);
             string returnType = method.ReturnType.ToDisplayString(FullyQualifiedWithNullability);
-            var wrapper = context.Wrappers.FirstOrDefault(w => w.MethodName == method.Name && w.ParameterType == parameterType);
+            string declaringType = method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var wrapper = context.Wrappers.FirstOrDefault(w => w.DeclaringType == declaringType && w.MethodName == method.Name && w.ParameterType == parameterType);
             if (wrapper == null)
             {
                 // Not the name of any member the partial source type (or a base type) already has, or of another wrapper.
@@ -960,7 +993,7 @@ namespace Transformations.Mapping.Generator
                 {
                 }
 
-                wrapper = new ConverterWrapper(wrapperName, method.Name, parameterType, returnType);
+                wrapper = new ConverterWrapper(wrapperName, declaringType, method.Name, parameterType, returnType);
                 context.Wrappers.Add(wrapper);
             }
 
@@ -1005,71 +1038,6 @@ namespace Transformations.Mapping.Generator
         }
 
         /// <summary>
-        /// The expression that turns <paramref name="expression"/> (of <paramref name="sourceType"/>) into a value
-        /// assignable to <paramref name="targetType"/>, or <c>null</c> when no supported conversion exists. In order:
-        /// a nullable value is coalesced to its default for a non-nullable value target; an implicit conversion is a
-        /// plain assignment; a string target uses ToString(); otherwise ConvertTo&lt;T&gt;() for the pairs it supports
-        /// (see <see cref="IsConvertToSupported"/>), converting to the underlying type of a nullable target.
-        /// </summary>
-        private static Conversion? BuildConversion(CSharpCompilation compilation, string expression, ITypeSymbol sourceType,
-            bool sourceIsNullable, ITypeSymbol targetType, bool targetIsNonNullable)
-        {
-            string operand = expression.Contains("?.") ? $"({expression})" : expression;
-
-            if (UnwrapNullable(sourceType) is { } underlyingSource && targetType.IsValueType && UnwrapNullable(targetType) == null)
-            {
-                operand = $"({expression} ?? default({underlyingSource.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}))";
-                expression = operand;
-                sourceType = underlyingSource;
-                sourceIsNullable = false;
-            }
-
-            var classified = compilation.ClassifyConversion(sourceType, targetType);
-            if (classified.Exists && classified.IsImplicit)
-            {
-                if (sourceIsNullable && targetIsNonNullable && targetType.SpecialType == SpecialType.System_String)
-                {
-                    return new Conversion($"{expression} ?? string.Empty", ConversionKind.Direct);
-                }
-
-                return new Conversion(expression, ConversionKind.Direct);
-            }
-
-            if (targetType.SpecialType == SpecialType.System_String)
-            {
-                return new Conversion(sourceIsNullable ? $"{operand}?.ToString() ?? string.Empty" : $"{operand}.ToString()", ConversionKind.ToString);
-            }
-
-            ITypeSymbol sourceCore = UnwrapNullable(sourceType) ?? sourceType;
-            ITypeSymbol? nullableTargetCore = UnwrapNullable(targetType);
-            ITypeSymbol targetCore = nullableTargetCore ?? targetType;
-            if (!IsConvertToSupported(sourceCore, targetCore))
-            {
-                return null;
-            }
-
-            string core = targetCore.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            if (nullableTargetCore == null)
-            {
-                return new Conversion($"{operand}.ConvertTo<{core}>()", ConversionKind.ConvertTo);
-            }
-
-            // Nullable target: null (or an empty string) stays null; anything else converts to the underlying type.
-            string converted = $"({core}?){operand}.ConvertTo<{core}>()";
-            if (sourceType.SpecialType == SpecialType.System_String)
-            {
-                return new Conversion($"(string.IsNullOrEmpty({expression}) ? null : {converted})", ConversionKind.ConvertTo);
-            }
-
-            if (UnwrapNullable(sourceType) != null || !sourceType.IsValueType)
-            {
-                return new Conversion($"({expression} == null ? null : {converted})", ConversionKind.ConvertTo);
-            }
-
-            return new Conversion(converted, ConversionKind.ConvertTo);
-        }
-
-        /// <summary>
         /// Whether Transformations' <c>ConvertTo&lt;T&gt;()</c> really converts <paramref name="source"/> to
         /// <paramref name="target"/>. It needs an overload for the source type (numeric, bool, char, DateTime, string)
         /// and a struct target that the conversion can produce: numeric and bool among themselves, char and integral
@@ -1077,7 +1045,7 @@ namespace Transformations.Mapping.Generator
         /// working overload (Guid's always throws), and DateTime converts only from string; other pairs would compile
         /// but return default at run time, so they are not offered.
         /// </summary>
-        private static bool IsConvertToSupported(ITypeSymbol source, ITypeSymbol target)
+        internal static bool IsConvertToSupported(ITypeSymbol source, ITypeSymbol target)
         {
             if (source.SpecialType == SpecialType.System_String)
             {
@@ -1099,14 +1067,14 @@ namespace Transformations.Mapping.Generator
             return false;
         }
 
-        private static bool IsNumeric(ITypeSymbol type)
+        internal static bool IsNumeric(ITypeSymbol type)
             => IsIntegral(type) || type.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal;
 
         private static bool IsIntegral(ITypeSymbol type)
             => type.SpecialType is SpecialType.System_Byte or SpecialType.System_SByte or SpecialType.System_Int16 or SpecialType.System_UInt16
                 or SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Int64 or SpecialType.System_UInt64;
 
-        private static ITypeSymbol? UnwrapNullable(ITypeSymbol type)
+        internal static ITypeSymbol? UnwrapNullable(ITypeSymbol type)
             => type is INamedTypeSymbol { IsGenericType: true } named && named.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T
                 ? named.TypeArguments[0]
                 : null;
@@ -1116,7 +1084,7 @@ namespace Transformations.Mapping.Generator
             => GetMappableProperties(compilation, type, p => p.GetMethod is { DeclaredAccessibility: Accessibility.Public });
 
         /// <summary>Public properties with a public set or init accessor, so a new instance can be initialised with them.</summary>
-        private static IEnumerable<IPropertySymbol> GetSettableProperties(CSharpCompilation compilation, INamedTypeSymbol type)
+        internal static IEnumerable<IPropertySymbol> GetSettableProperties(CSharpCompilation compilation, INamedTypeSymbol type)
             => GetMappableProperties(compilation, type, p => p.SetMethod is { DeclaredAccessibility: Accessibility.Public });
 
         /// <summary>
@@ -1278,7 +1246,7 @@ namespace Transformations.Mapping.Generator
         {
             if (string.IsNullOrWhiteSpace(sourcePath))
             {
-                return new SourceResolution(sourceProp.Name, $"source.{Escape(sourceProp.Name)}", sourceProp.Type,
+                return new SourceResolution(sourceProp.Name, $"{Receiver.Token}.{Escape(sourceProp.Name)}", sourceProp.Type,
                     IsNullableReferenceOrValueType(sourceProp.Type), isPlainProperty: true);
             }
 
@@ -1300,7 +1268,7 @@ namespace Transformations.Mapping.Generator
                 currentType = pathProperty.Type;
             }
 
-            var expression = new StringBuilder("source");
+            var expression = new StringBuilder(Receiver.Token);
             bool nullPropagates = false;
             for (int i = 0; i < pathProperties.Count; i++)
             {
@@ -1322,25 +1290,18 @@ namespace Transformations.Mapping.Generator
         private static string GetSourceDisplayName(IPropertySymbol sourceProp, string? sourcePath)
             => string.IsNullOrWhiteSpace(sourcePath) ? sourceProp.Name : sourcePath!;
 
-        private static bool IsNullableReferenceOrValueType(ITypeSymbol type)
+        internal static bool IsNullableReferenceOrValueType(ITypeSymbol type)
             => type.NullableAnnotation == NullableAnnotation.Annotated || UnwrapNullable(type) != null;
 
-        private static bool IsNonNullableReferenceOrValueType(ITypeSymbol type)
+        internal static bool IsNonNullableReferenceOrValueType(ITypeSymbol type)
         {
             if (UnwrapNullable(type) != null) return false;
             if (type.IsValueType) return true;
             return type.NullableAnnotation == NullableAnnotation.NotAnnotated;
         }
 
-        // The receiver is "source" where it starts an operand. A member of that name is written "@source" and a member
-        // such as "Resource" contains "source", so a plain string replacement would rewrite those too.
-        private static readonly Regex ReceiverPattern = new Regex(@"(?<![\w@.])source\.", RegexOptions.CultureInvariant);
-
-        private static string ToProjectionExpression(string expression)
-            => ReceiverPattern.Replace(expression, "item.");
-
         /// <summary>A verbatim identifier, valid whether or not the name is a C# keyword (<c>@event</c>).</summary>
-        private static string Escape(string identifier) => "@" + identifier;
+        internal static string Escape(string identifier) => "@" + identifier;
 
         // ── Emission ────────────────────────────────────────────────────────
 
@@ -1382,7 +1343,7 @@ namespace Transformations.Mapping.Generator
                     && (mappedPairs.Contains($"{model.SourceFullName}|{model.Targets[0].TargetFullName}")
                         || !mappedFromPairs.Add($"{model.SourceFullName}|{model.Targets[0].TargetFullName}")))
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(DuplicateMapping, model.SourceLocation ?? Location.None,
+                    context.ReportDiagnostic(Diagnostic.Create(DuplicateMapping, model.SourceLocation?.ToLocation() ?? Location.None,
                         model.SourceClassName, model.Targets[0].TargetClassName));
                     continue;
                 }
@@ -1398,13 +1359,13 @@ namespace Transformations.Mapping.Generator
                     if (reverseMethods.Add(key)) continue;
 
                     noReverse.Add(target);
-                    context.ReportDiagnostic(Diagnostic.Create(ReverseMethodCollision, model.SourceLocation ?? Location.None,
+                    context.ReportDiagnostic(Diagnostic.Create(ReverseMethodCollision, model.SourceLocation?.ToLocation() ?? Location.None,
                         target.TargetClassName, model.SourceFullName, $"To{model.SourceClassName}(this {target.TargetClassName})"));
                 }
 
                 foreach (var diagnostic in model.Diagnostics)
                 {
-                    context.ReportDiagnostic(diagnostic);
+                    context.ReportDiagnostic(diagnostic.ToDiagnostic());
                 }
 
                 if (model.Targets.Count == 0)
@@ -1418,10 +1379,24 @@ namespace Transformations.Mapping.Generator
                     {
                         context.ReportDiagnostic(Diagnostic.Create(
                             config.UnmappedMembersAsErrors ? UnmappedMemberError : UnmappedMemberWarning,
-                            model.SourceLocation ?? Location.None,
+                            model.SourceLocation?.ToLocation() ?? Location.None,
                             target.TargetClassName,
                             unmappedMember,
                             model.SourceClassName));
+                    }
+                }
+
+                // Nested objects are mapped by helpers, whose unmapped members only show up here.
+                foreach (var helper in model.Helpers)
+                {
+                    foreach (string unmappedMember in helper.UnmappedTargetProperties)
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            config.UnmappedMembersAsErrors ? UnmappedMemberError : UnmappedMemberWarning,
+                            model.SourceLocation?.ToLocation() ?? Location.None,
+                            helper.TargetName,
+                            unmappedMember,
+                            helper.SourceName));
                     }
                 }
 
@@ -1490,6 +1465,7 @@ namespace Transformations.Mapping.Generator
             }
 
             EmitCollectionExtensions(sb, model, indent + "    ");
+            EmitHelpers(sb, model, indent + "    ");
 
             sb.AppendLine($"{indent}}}");
 
@@ -1539,7 +1515,7 @@ namespace Transformations.Mapping.Generator
             foreach (var wrapper in model.ConverterWrappers)
             {
                 sb.AppendLine($"{memberIndent}[global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]");
-                sb.AppendLine($"{memberIndent}internal static {wrapper.ReturnType} {wrapper.WrapperName}({wrapper.ParameterType} value) => {Escape(wrapper.MethodName)}(value);");
+                sb.AppendLine($"{memberIndent}internal static {wrapper.ReturnType} {wrapper.WrapperName}({wrapper.ParameterType} value) => {wrapper.DeclaringType}.{Escape(wrapper.MethodName)}(value);");
             }
 
             sb.AppendLine($"{currentIndent}}}");
@@ -1809,7 +1785,7 @@ namespace Transformations.Mapping.Generator
                 sb.AppendLine($"{indent}{{");
                 foreach (var prop in target.Properties)
                 {
-                    sb.AppendLine($"{indent}    {Escape(prop.TargetPropertyName)} = {prop.ProjectionExpression},");
+                    sb.AppendLine($"{indent}    {Escape(prop.TargetPropertyName)} = {Receiver.Render(prop.ProjectionExpression!, "item")},");
                 }
                 sb.AppendLine($"{indent}}};");
                 sb.AppendLine();
@@ -1847,13 +1823,16 @@ namespace Transformations.Mapping.Generator
                 sb.AppendLine($"{indent}    {{");
                 foreach (var prop in target.Properties)
                 {
-                    sb.AppendLine($"{indent}        {Escape(prop.TargetPropertyName)} = {prop.ProjectionExpression},");
+                    sb.AppendLine($"{indent}        {Escape(prop.TargetPropertyName)} = {Receiver.Render(prop.ProjectionExpression!, "item")},");
                 }
                 sb.AppendLine($"{indent}    }});");
             }
 
             sb.AppendLine($"{indent}}}");
         }
+
+        private static string TypeArgumentList(List<TypeParameterModel> typeParameters)
+            => typeParameters.Count == 0 ? string.Empty : "<" + string.Join(", ", typeParameters.Select(p => p.Name)) + ">";
 
         private static string GetTypeParameterList(MappingModel model)
             => model.TypeParameters.Count == 0 ? string.Empty : "<" + string.Join(", ", model.TypeParameters.Select(p => p.Name)) + ">";
@@ -1878,7 +1857,7 @@ namespace Transformations.Mapping.Generator
 
             foreach (var prop in target.Properties)
             {
-                sb.AppendLine($"{indent}        {Escape(prop.TargetPropertyName)} = {prop.ForwardExpression},");
+                sb.AppendLine($"{indent}        {Escape(prop.TargetPropertyName)} = {Receiver.Render(prop.ForwardExpression, "source")},");
             }
 
             sb.AppendLine($"{indent}    }};");
@@ -1908,7 +1887,7 @@ namespace Transformations.Mapping.Generator
 
             foreach (var prop in target.Properties.Where(p => p.CanUpdate))
             {
-                sb.AppendLine($"{indent}    target.{Escape(prop.TargetPropertyName)} = {prop.ForwardExpression};");
+                sb.AppendLine($"{indent}    target.{Escape(prop.TargetPropertyName)} = {Receiver.Render(prop.ForwardExpression, "source")};");
             }
 
             sb.AppendLine();
@@ -1933,11 +1912,118 @@ namespace Transformations.Mapping.Generator
 
             foreach (var prop in target.Properties.Where(p => p.CanReverse))
             {
-                sb.AppendLine($"{indent}        {Escape(prop.SourceReversePropertyName!)} = {prop.ReverseExpression},");
+                sb.AppendLine($"{indent}        {Escape(prop.SourceReversePropertyName!)} = {Receiver.Render(prop.ReverseExpression!, "source")},");
             }
 
             sb.AppendLine($"{indent}    }};");
             sb.AppendLine($"{indent}}}");
+        }
+
+        private static void EmitHelpers(StringBuilder sb, MappingModel model, string indent)
+        {
+            foreach (var helper in model.Helpers)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"{indent}private static {helper.ReturnType} {helper.Name}{GetTypeParameterList(model)}({helper.ParameterType} source){GetConstraints(model)}");
+                sb.AppendLine($"{indent}{{");
+                string body = indent + "    ";
+
+                switch (helper.Kind)
+                {
+                    case HelperKind.Object:
+                        if (helper.NullGuard) sb.AppendLine($"{body}if (source == null) return null!;");
+                        sb.AppendLine($"{body}return new {helper.ReturnType}()");
+                        sb.AppendLine($"{body}{{");
+                        foreach (var property in helper.Properties)
+                        {
+                            sb.AppendLine($"{body}    {Escape(property.TargetPropertyName)} = {Receiver.Render(property.ForwardExpression, "source")},");
+                        }
+
+                        sb.AppendLine($"{body}}};");
+                        break;
+
+                    case HelperKind.Collection:
+                        EmitCollectionHelperBody(sb, helper, body);
+                        break;
+
+                    case HelperKind.Dictionary:
+                        sb.AppendLine($"{body}if (source == null) return null!;");
+                        sb.AppendLine($"{body}var result = new {helper.ReturnType}();");
+                        sb.AppendLine($"{body}foreach (var item in source)");
+                        sb.AppendLine($"{body}{{");
+                        sb.AppendLine($"{body}    result[{Receiver.Render(helper.KeyExpression!, "item.Key")}] = {Receiver.Render(helper.ElementExpression!, "item.Value")};");
+                        sb.AppendLine($"{body}}}");
+                        sb.AppendLine($"{body}return result;");
+                        break;
+
+                    case HelperKind.EnumByName:
+                        sb.AppendLine($"{body}return source switch");
+                        sb.AppendLine($"{body}{{");
+                        for (int i = 0; i < helper.EnumSourceMembers.Count; i++)
+                        {
+                            sb.AppendLine($"{body}    {helper.ParameterType}.{Escape(helper.EnumSourceMembers[i])} => {helper.ReturnType}.{Escape(helper.EnumTargetMembers[i])},");
+                        }
+
+                        sb.AppendLine($"{body}    _ => throw new global::System.ArgumentOutOfRangeException(nameof(source), source, \"No {helper.TargetName} member corresponds to this {helper.SourceName} value.\"),");
+                        sb.AppendLine($"{body}}};");
+                        break;
+
+                    case HelperKind.EnumParse:
+                        sb.AppendLine($"{body}if (string.IsNullOrEmpty(source)) return default;");
+                        sb.AppendLine($"{body}return global::System.Enum.Parse<{helper.ReturnType}>(source, true);");
+                        break;
+                }
+
+                sb.AppendLine($"{indent}}}");
+            }
+        }
+
+        private static void EmitCollectionHelperBody(StringBuilder sb, HelperModel helper, string body)
+        {
+            string element = Receiver.Render(helper.ElementExpression!, "item");
+            string list = $"global::System.Collections.Generic.List<{helper.ElementTargetType}>";
+            sb.AppendLine($"{body}if (source == null) return null!;");
+
+            switch (helper.TargetKind)
+            {
+                case "Array":
+                    sb.AppendLine($"{body}if (source is global::System.Collections.Generic.ICollection<{helper.ElementType}> collection)");
+                    sb.AppendLine($"{body}{{");
+                    sb.AppendLine($"{body}    var array = new {helper.ElementTargetType}[collection.Count];");
+                    sb.AppendLine($"{body}    int index = 0;");
+                    sb.AppendLine($"{body}    foreach (var item in source)");
+                    sb.AppendLine($"{body}    {{");
+                    sb.AppendLine($"{body}        array[index++] = {element};");
+                    sb.AppendLine($"{body}    }}");
+                    sb.AppendLine($"{body}    return array;");
+                    sb.AppendLine($"{body}}}");
+                    sb.AppendLine();
+                    sb.AppendLine($"{body}var list = new {list}();");
+                    sb.AppendLine($"{body}foreach (var item in source)");
+                    sb.AppendLine($"{body}{{");
+                    sb.AppendLine($"{body}    list.Add({element});");
+                    sb.AppendLine($"{body}}}");
+                    sb.AppendLine($"{body}return list.ToArray();");
+                    break;
+
+                case "HashSet":
+                    sb.AppendLine($"{body}var set = new {helper.ReturnType}();");
+                    sb.AppendLine($"{body}foreach (var item in source)");
+                    sb.AppendLine($"{body}{{");
+                    sb.AppendLine($"{body}    set.Add({element});");
+                    sb.AppendLine($"{body}}}");
+                    sb.AppendLine($"{body}return set;");
+                    break;
+
+                default:
+                    sb.AppendLine($"{body}var result = new {list}(source is global::System.Collections.Generic.ICollection<{helper.ElementType}> collection ? collection.Count : 0);");
+                    sb.AppendLine($"{body}foreach (var item in source)");
+                    sb.AppendLine($"{body}{{");
+                    sb.AppendLine($"{body}    result.Add({element});");
+                    sb.AppendLine($"{body}}}");
+                    sb.AppendLine($"{body}return result;");
+                    break;
+            }
         }
 
         private static string SanitizeIdentifier(string value)
@@ -1954,178 +2040,6 @@ namespace Transformations.Mapping.Generator
             }
 
             return sb.ToString();
-        }
-    }
-
-    // Immutable model types for the pipeline
-
-    internal sealed class MappingModel
-    {
-        public bool IsMapTo { get; }
-        public string SourceClassName { get; }
-        public string SourceFullName { get; }
-        public string SourceMetadataName { get; }
-        public string SourceDeclarationName { get; }
-        /// <summary><c>class</c> or <c>record</c>, as a partial declaration of the source type must write it.</summary>
-        public string SourceKeyword { get; }
-        public string? TargetMetadataName { get; }
-        /// <summary>Names in the namespace that could clash with a generated extension class (declared by the user or a reference).</summary>
-        public ISet<string> ReservedTypeNames { get; }
-        public List<TypeParameterModel> TypeParameters { get; }
-        public List<TypeDeclarationModel> ContainingTypes { get; }
-        public string Namespace { get; }
-        public Location? SourceLocation { get; }
-        public List<Diagnostic> Diagnostics { get; }
-        public List<TargetMapping> Targets { get; }
-        public List<ConverterWrapper> ConverterWrappers { get; }
-
-        public MappingModel(bool isMapTo, string sourceClassName, string sourceFullName, string sourceMetadataName, string sourceDeclarationName, string sourceKeyword,
-            List<TypeParameterModel> typeParameters, List<TypeDeclarationModel> containingTypes, string @namespace, Location? sourceLocation,
-            List<Diagnostic> diagnostics, List<TargetMapping> targets, List<ConverterWrapper> converterWrappers,
-            string? targetMetadataName = null, ISet<string>? reservedTypeNames = null)
-        {
-            IsMapTo = isMapTo;
-            SourceClassName = sourceClassName;
-            SourceFullName = sourceFullName;
-            SourceMetadataName = sourceMetadataName;
-            SourceDeclarationName = sourceDeclarationName;
-            SourceKeyword = sourceKeyword;
-            TargetMetadataName = targetMetadataName;
-            ReservedTypeNames = reservedTypeNames ?? new HashSet<string>(StringComparer.Ordinal);
-            TypeParameters = typeParameters;
-            ContainingTypes = containingTypes;
-            Namespace = @namespace;
-            SourceLocation = sourceLocation;
-            Diagnostics = diagnostics;
-            Targets = targets;
-            ConverterWrappers = converterWrappers;
-        }
-
-        /// <summary>A model that only carries diagnostics; nothing is generated for it.</summary>
-        public static MappingModel Invalid(List<Diagnostic> diagnostics)
-            => new MappingModel(true, string.Empty, string.Empty, string.Empty, string.Empty, "class", new List<TypeParameterModel>(),
-                new List<TypeDeclarationModel>(), string.Empty, null, diagnostics, new List<TargetMapping>(), new List<ConverterWrapper>());
-    }
-
-    internal sealed class TypeParameterModel
-    {
-        public string Name { get; }
-        public string ConstraintClause { get; }
-
-        public TypeParameterModel(string name, string constraintClause)
-        {
-            Name = name;
-            ConstraintClause = constraintClause;
-        }
-    }
-
-    internal sealed class TypeDeclarationModel
-    {
-        public string DeclarationName { get; }
-        public string Keyword { get; }
-
-        public TypeDeclarationModel(string declarationName, string keyword)
-        {
-            DeclarationName = declarationName;
-            Keyword = keyword;
-        }
-    }
-
-    internal sealed class ConverterWrapper
-    {
-        public string WrapperName { get; }
-        public string MethodName { get; }
-        public string ParameterType { get; }
-        public string ReturnType { get; }
-
-        public ConverterWrapper(string wrapperName, string methodName, string parameterType, string returnType)
-        {
-            WrapperName = wrapperName;
-            MethodName = methodName;
-            ParameterType = parameterType;
-            ReturnType = returnType;
-        }
-    }
-
-    internal sealed class TargetMapping
-    {
-        public string TargetFullName { get; }
-        public string TargetClassName { get; }
-        public List<PropertyMapping> Properties { get; }
-        public List<string> UnmappedTargetProperties { get; }
-        public bool CanCreate { get; }
-        public bool CanReverse { get; }
-        public bool HasFromFactoryConflict { get; }
-        /// <summary><c>public</c>, or <c>internal</c> when the source or target type is not public.</summary>
-        public string Access { get; }
-
-        public TargetMapping(string targetFullName, string targetClassName, List<PropertyMapping> properties, List<string> unmappedTargetProperties,
-            bool canCreate, bool canReverse, bool hasFromFactoryConflict, string access)
-        {
-            TargetFullName = targetFullName;
-            TargetClassName = targetClassName;
-            Properties = properties;
-            UnmappedTargetProperties = unmappedTargetProperties;
-            CanCreate = canCreate;
-            CanReverse = canReverse;
-            HasFromFactoryConflict = hasFromFactoryConflict;
-            Access = access;
-        }
-    }
-
-    internal sealed class MappingGeneratorConfig
-    {
-        private const string UnmappedMembersAsErrorsProperty = "build_property.TransformationsMappingUnmappedMembersAsErrors";
-
-        public bool UnmappedMembersAsErrors { get; }
-
-        private MappingGeneratorConfig(bool unmappedMembersAsErrors)
-        {
-            UnmappedMembersAsErrors = unmappedMembersAsErrors;
-        }
-
-        public static MappingGeneratorConfig From(AnalyzerConfigOptions options)
-        {
-            bool asErrors = false;
-            if (options.TryGetValue(UnmappedMembersAsErrorsProperty, out string? raw) &&
-                bool.TryParse(raw, out bool parsed))
-            {
-                asErrors = parsed;
-            }
-
-            return new MappingGeneratorConfig(asErrors);
-        }
-    }
-
-    internal sealed class PropertyMapping
-    {
-        public string SourceDisplayName { get; }
-        public string TargetPropertyName { get; }
-        /// <summary>The expression assigned to the target member, reading from <c>source</c>.</summary>
-        public string ForwardExpression { get; }
-        /// <summary>The same for a query projection (reading from <c>item</c>), or <c>null</c> when it is runtime-only.</summary>
-        public string? ProjectionExpression { get; }
-        public string? SourceReversePropertyName { get; }
-        /// <summary>The expression assigned back to the source member, reading from the target as <c>source</c>.</summary>
-        public string? ReverseExpression { get; }
-        /// <summary>False for an init-only target member, which MapTo(existing) cannot assign.</summary>
-        public bool CanUpdate { get; }
-        public bool CanReverse => SourceReversePropertyName != null;
-
-        /// <summary>The same forward mapping with no reverse assignment.</summary>
-        public PropertyMapping WithoutReverse()
-            => new PropertyMapping(SourceDisplayName, TargetPropertyName, ForwardExpression, ProjectionExpression, null, null, CanUpdate);
-
-        public PropertyMapping(string sourceDisplayName, string targetPropertyName, string forwardExpression, string? projectionExpression,
-            string? sourceReversePropertyName, string? reverseExpression, bool canUpdate)
-        {
-            SourceDisplayName = sourceDisplayName;
-            TargetPropertyName = targetPropertyName;
-            ForwardExpression = forwardExpression;
-            ProjectionExpression = projectionExpression;
-            SourceReversePropertyName = sourceReversePropertyName;
-            ReverseExpression = reverseExpression;
-            CanUpdate = canUpdate;
         }
     }
 
@@ -2160,49 +2074,6 @@ namespace Transformations.Mapping.Generator
             Type = type;
             IsNullable = isNullable;
             IsPlainProperty = isPlainProperty;
-        }
-    }
-
-    internal enum ConversionKind
-    {
-        Direct,
-        ToString,
-        ConvertTo,
-    }
-
-    internal sealed class Conversion
-    {
-        public string Expression { get; }
-        public ConversionKind Kind { get; }
-
-        public Conversion(string expression, ConversionKind kind)
-        {
-            Expression = expression;
-            Kind = kind;
-        }
-    }
-
-    /// <summary>What property mapping needs about the pair being mapped.</summary>
-    internal sealed class MappingContext
-    {
-        public CSharpCompilation Compilation { get; }
-        public INamedTypeSymbol SourceType { get; }
-        public INamedTypeSymbol TargetType { get; }
-        public string SourceFullName { get; }
-        public bool IsMapTo { get; }
-        public List<ConverterWrapper> Wrappers { get; }
-        public List<Diagnostic> Diagnostics { get; }
-
-        public MappingContext(CSharpCompilation compilation, INamedTypeSymbol sourceType, INamedTypeSymbol targetType, string sourceFullName,
-            bool isMapTo, List<ConverterWrapper> wrappers, List<Diagnostic> diagnostics)
-        {
-            Compilation = compilation;
-            SourceType = sourceType;
-            TargetType = targetType;
-            SourceFullName = sourceFullName;
-            IsMapTo = isMapTo;
-            Wrappers = wrappers;
-            Diagnostics = diagnostics;
         }
     }
 }

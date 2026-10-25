@@ -378,7 +378,6 @@ namespace Transformations.Mapping.Tests
 
         // ── Reverse mapping ──────────────────────────────────────────────────
 
-        [TestCase("Mode")]
         [TestCase("Tag")]
         [TestCase("System.DateTimeOffset")]
         [TestCase("System.TimeSpan")]
@@ -396,6 +395,22 @@ namespace Transformations.Mapping.Tests
             AssertCompiles(result);
             Assert.That(result.Generated, Does.Contain("ToString()"), "the forward mapping is kept");
             Assert.That(result.Generated, Does.Not.Contain("ConvertTo<"), "no reverse conversion is emitted");
+        }
+
+        [Test]
+        public void EnumToString_ReversesByParsing()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public enum Mode { A, B }
+                public class Dto { public string Value { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source { public Mode Value { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("global::System.Enum.Parse<global::Mode>("));
+            Assert.That(result.Generated, Does.Not.Contain("ConvertTo<"));
         }
 
         [Test]
@@ -1403,6 +1418,290 @@ namespace Transformations.Mapping.Tests
             AssertCompiles(result);
             Assert.That(result.Generated, Does.Contain($"item.@Customer.@{member}.@Name"));
             Assert.That(result.Generated, Does.Contain($"source.@Customer.@{member}.@Name"));
+        }
+
+        // ── Converters hidden by a derived method ────────────────────────────
+
+        [TestCase("public")]
+        [TestCase("protected")]
+        [TestCase("internal")]
+        public void ConverterHiddenByAMethodOfTheDerivedSource_StillCallsTheSelectedOne(string access)
+        {
+            var result = Compile($$"""
+                using Transformations.Mapping;
+                public class Dto { public string Label { get; set; } = ""; }
+                public class Base { {{access}} static string Format(int value) => "base" + value; }
+                [MapTo<Dto>]
+                public partial class Source : Base
+                {
+                    [MapProperty("Label", Converter = nameof(Base.Format))]
+                    public int Value { get; set; }
+                    public new static object Format(int value) => value;
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP008"));
+            Assert.That(result.Generated, Does.Contain("global::Base.@Format("));
+        }
+
+        [Test]
+        public void TwoConvertersWithTheSameNameAndParameter_InTheDerivedAndBaseType_GetOneWrapperEach()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string A { get; set; } = ""; public string B { get; set; } = ""; }
+                public class Base { protected static string Format(int value) => "base" + value; }
+                [MapTo<Dto>]
+                public partial class Source : Base
+                {
+                    [MapProperty("A", Converter = "Format")]
+                    public int First { get; set; }
+                    public new static string Format(int value) => "derived" + value;
+                }
+                """);
+
+            AssertCompiles(result);
+        }
+
+        // ── Nested objects, collections and enums ────────────────────────────
+
+        private const string NestedTypes = """
+            using Transformations.Mapping;
+            public class Item { public int Id { get; set; } public string Name { get; set; } = ""; }
+            public class ItemDto { public int Id { get; set; } public string Name { get; set; } = ""; }
+            """;
+
+        [Test]
+        public void NestedObjectsAndCollections_CompileWithoutImplicitUsings()
+        {
+            var result = Compile(NestedTypes + """
+                public enum Kind { A, B }
+                public enum KindDto { A, B }
+                public class Dto
+                {
+                    public ItemDto? One { get; set; }
+                    public System.Collections.Generic.List<ItemDto> Many { get; set; } = new();
+                    public ItemDto[] Array { get; set; } = System.Array.Empty<ItemDto>();
+                    public System.Collections.Generic.HashSet<KindDto> Kinds { get; set; } = new();
+                    public System.Collections.Generic.Dictionary<string, ItemDto> Map { get; set; } = new();
+                    public System.Collections.Generic.IReadOnlyList<ItemDto> ReadOnly { get; set; } = new System.Collections.Generic.List<ItemDto>();
+                    public System.Collections.Generic.IEnumerable<ItemDto> Lazy { get; set; } = new System.Collections.Generic.List<ItemDto>();
+                }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    public Item? One { get; set; }
+                    public System.Collections.Generic.List<Item> Many { get; set; } = new();
+                    public System.Collections.Generic.List<Item> Array { get; set; } = new();
+                    public System.Collections.Generic.HashSet<Kind> Kinds { get; set; } = new();
+                    public System.Collections.Generic.Dictionary<string, Item> Map { get; set; } = new();
+                    public Item[] ReadOnly { get; set; } = System.Array.Empty<Item>();
+                    public System.Collections.Generic.IEnumerable<Item> Lazy { get; set; } = new System.Collections.Generic.List<Item>();
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP002"));
+            Assert.That(result.Generated, Does.Contain("__Map"));
+        }
+
+        [Test]
+        public void GenericSource_WithNestedObjectsAndCollections_GetsGenericHelpers()
+        {
+            var result = Compile(NestedTypes + """
+                public class Dto { public System.Collections.Generic.List<ItemDto> Items { get; set; } = new(); public ItemDto? One { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source<T> where T : class
+                {
+                    public System.Collections.Generic.List<Item> Items { get; set; } = new();
+                    public Item? One { get; set; }
+                    public T? Extra { get; set; }
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("__Map0<@T>("));
+        }
+
+        [Test]
+        public void NestedObjectsWithNothingInCommon_AreReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Left { public int A { get; set; } }
+                public class Right { public int B { get; set; } }
+                public class Dto { public Right Value { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Left Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP002"));
+        }
+
+        [Test]
+        public void NestedTargetThatCannotBeConstructed_IsReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Inner { public int Id { get; set; } }
+                public class InnerDto { public InnerDto(int seed) { } public int Id { get; set; } }
+                public class Dto { public InnerDto Value { get; set; } = new(0); }
+                [MapTo<Dto>]
+                public partial class Source { public Inner Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP002"));
+        }
+
+        [Test]
+        public void NestedTargetWithAMemberNothingMaps_IsReportedLikeATopLevelOne()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Inner { public int Id { get; set; } }
+                public class InnerDto { public int Id { get; set; } public string Extra { get; set; } = ""; }
+                public class Dto { public InnerDto Value { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Inner Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            var unmapped = result.Diagnostics.Where(d => d.Id == "TXMAP001").Select(d => d.GetMessage()).ToList();
+            Assert.That(unmapped, Has.Some.Contain("Extra"));
+        }
+
+        [Test]
+        public void ListOfUnrelatedElements_IsReported_AndLeavesNoHelperBehind()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Left { public int A { get; set; } }
+                public class Right { public int B { get; set; } }
+                public class Dto { public System.Collections.Generic.List<Right> Values { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public System.Collections.Generic.List<Left> Values { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP002"));
+            Assert.That(result.Generated, Does.Not.Contain("__Map"));
+        }
+
+        [Test]
+        public void SourceInterfaceAndRecords_AreMappedAsNestedObjects()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public interface IInner { int Id { get; } }
+                public record InnerRecord { public int Id { get; init; } }
+                public record InnerRecordDto { public int Id { get; init; } }
+                public class FromInterface { public int Id { get; set; } }
+                public class Dto { public FromInterface A { get; set; } = new(); public InnerRecordDto B { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public IInner A { get; set; } = default!; public InnerRecord B { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP002"));
+        }
+
+        [Test]
+        public void FrameworkTypes_AreNotMappedAsNestedObjects()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public System.DateTimeOffset When { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public System.TimeSpan When { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP002"));
+        }
+
+        [Test]
+        public void EnumMembersWithNoCounterpart_AreReportedOncePerPair()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public enum Source1 { A, B, C }
+                public enum Target1 { A, B }
+                public class Dto { public Target1 First { get; set; } public Target1 Second { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public Source1 First { get; set; } public Source1 Second { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            var forward = result.Diagnostics.Where(d => d.Id == "TXMAP022" && d.GetMessage().Contains("'C'")).ToList();
+            Assert.That(forward, Has.Count.EqualTo(1), "one warning for the pair, not one per property");
+        }
+
+        [Test]
+        public void EnumsWithNoMemberInCommon_AreReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public enum Left { A, B }
+                public enum Right { X, Y }
+                public class Dto { public Right Value { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public Left Value { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP002"));
+        }
+
+        [Test]
+        public void EnumAliases_DoNotProduceDuplicateSwitchArms()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public enum Left { A = 1, Alias = 1, B = 2 }
+                public enum Right { A = 5, B = 6, C = 7 }
+                public class Dto { public Right Value { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public Left Value { get; set; } }
+                """);
+
+            AssertCompiles(result);
+        }
+
+        [Test]
+        public void EnumsOfDifferentUnderlyingTypesWithTheSameMembers_AreCast()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public enum Left : byte { A = 1, B = 2 }
+                public enum Right : long { A = 1, B = 2 }
+                public class Dto { public Right Value { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public Left Value { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Not.Contain("__Map"));
+        }
+
+        [Test]
+        public void ProjectTo_InlinesNestedObjects_AndRefusesRecursiveOnes()
+        {
+            var result = Compile(NestedTypes + """
+                public class Dto { public ItemDto? One { get; set; } public System.Collections.Generic.List<ItemDto> Many { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Item? One { get; set; } public System.Collections.Generic.List<Item> Many { get; set; } = new(); }
+                public class NodeDto { public NodeDto? Next { get; set; } }
+                [MapTo<NodeDto>]
+                public partial class Node { public Node? Next { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("global::System.Linq.Enumerable.ToList").And.Contain("item.@One == null"));
+            Assert.That(result.Generated, Does.Contain("Projection to NodeDto is not available"));
+            Assert.That(result.Generated, Does.Not.Contain("Projection to Dto is not available"));
         }
 
         private static int Count(string text, string value)
