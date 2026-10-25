@@ -180,6 +180,24 @@ namespace Transformations.Mapping.Generator
             isEnabledByDefault: true,
             description: "The reverse mapping assigns a nullable target member to a non-nullable source member without a fallback. Make the source member nullable or make sure the target is never null when mapped back.");
 
+        private static readonly DiagnosticDescriptor InaccessibleType = new DiagnosticDescriptor(
+            id: "TXMAP016",
+            title: "Type is not accessible to generated code",
+            messageFormat: "The mapping between '{0}' and '{1}' is not generated because '{2}' cannot be referenced from the generated extension class",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "The mapping methods are generated in a class at namespace level, which cannot name a private or protected nested type. Make the type internal or public.");
+
+        private static readonly DiagnosticDescriptor ReverseMethodCollision = new DiagnosticDescriptor(
+            id: "TXMAP017",
+            title: "Reverse mapping would be ambiguous",
+            messageFormat: "The reverse mapping from '{0}' to '{1}' is not generated because '{2}' is already generated for it in the same namespace; calls would be ambiguous",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Two sources with the same simple name map to the same target in one namespace, so their reverse extension methods differ only by return type. Only the first is generated.");
+
         /// <summary>
         /// Initializes the source generator, registering syntax nodes and generating mappings.
         /// </summary>
@@ -189,14 +207,14 @@ namespace Transformations.Mapping.Generator
             var mapToDeclarations = context.SyntaxProvider
                 .ForAttributeWithMetadataName(
                     MapToAttributeFullName,
-                    predicate: static (node, _) => node is ClassDeclarationSyntax,
+                    predicate: static (node, _) => IsClassLikeDeclaration(node),
                     transform: static (ctx, ct) => GetMappingModels(ctx, ct, false))
                 .SelectMany(static (models, _) => models);
 
             var mapFromDeclarations = context.SyntaxProvider
                 .ForAttributeWithMetadataName(
                     MapFromAttributeFullName,
-                    predicate: static (node, _) => node is ClassDeclarationSyntax,
+                    predicate: static (node, _) => IsClassLikeDeclaration(node),
                     transform: static (ctx, ct) => GetMappingModels(ctx, ct, true))
                 .SelectMany(static (models, _) => models);
 
@@ -218,7 +236,7 @@ namespace Transformations.Mapping.Generator
             CancellationToken ct,
             bool isMapFrom)
         {
-            if (context.TargetSymbol is not INamedTypeSymbol decoratedType || context.TargetNode is not ClassDeclarationSyntax)
+            if (context.TargetSymbol is not INamedTypeSymbol decoratedType || !IsClassLikeDeclaration(context.TargetNode))
             {
                 yield break;
             }
@@ -236,6 +254,20 @@ namespace Transformations.Mapping.Generator
 
                 if (!HasMapToTargets(decoratedType))
                 {
+                    yield break;
+                }
+
+                // Every partial declaration carrying [MapTo] runs this transform, and each run sees all of the type's
+                // attributes: only the first such declaration builds the model, or the mappings would be emitted twice.
+                if (!IsFirstMappingDeclaration(decoratedType, context.TargetNode, IsMapToAttribute))
+                {
+                    yield break;
+                }
+
+                if (!IsReferenceable(compilation, decoratedType))
+                {
+                    diagnostics.Add(Diagnostic.Create(InaccessibleType, location, decoratedType.Name, decoratedType.Name, decoratedType.Name));
+                    yield return MappingModel.Invalid(diagnostics);
                     yield break;
                 }
 
@@ -276,6 +308,12 @@ namespace Transformations.Mapping.Generator
                     }
 
                     usedMethodNames[targetType.Name] = targetDisplay;
+                    if (!IsReferenceable(compilation, targetType))
+                    {
+                        diagnostics.Add(Diagnostic.Create(InaccessibleType, location, decoratedType.Name, targetType.Name, targetType.Name));
+                        continue;
+                    }
+
                     targets.Add(BuildTargetMapping(compilation, decoratedType, targetType, isMapTo: true, wrappers, diagnostics, location, ct));
                 }
 
@@ -291,6 +329,7 @@ namespace Transformations.Mapping.Generator
                     sourceFullName: decoratedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     sourceMetadataName: GetMetadataName(decoratedType),
                     sourceDeclarationName: GetDeclarationName(decoratedType),
+                    sourceKeyword: GetDeclarationKeyword(decoratedType),
                     typeParameters: GetTypeParameters(decoratedType),
                     containingTypes: containingTypes,
                     @namespace: decoratedNamespace,
@@ -304,7 +343,7 @@ namespace Transformations.Mapping.Generator
                 // MapFrom: one model per source, with the decorated type as the single target. The source is a closed
                 // type (attribute type arguments cannot use type parameters); a generic target contributes its own type
                 // parameters to the generated methods.
-                foreach (AttributeData attr in decoratedType.GetAttributes())
+                foreach (AttributeData attr in context.Attributes)
                 {
                     ct.ThrowIfCancellationRequested();
                     if (attr.AttributeClass is not INamedTypeSymbol attrType || !IsMapFromAttribute(attrType) || attrType.TypeArguments.Length != 1) continue;
@@ -312,6 +351,14 @@ namespace Transformations.Mapping.Generator
 
                     var diagnostics = new List<Diagnostic>();
                     var location = decoratedType.Locations.FirstOrDefault() ?? Location.None;
+                    if (!IsReferenceable(compilation, sourceType) || !IsReferenceable(compilation, decoratedType))
+                    {
+                        var hidden = IsReferenceable(compilation, sourceType) ? decoratedType : sourceType;
+                        diagnostics.Add(Diagnostic.Create(InaccessibleType, location, sourceType.Name, decoratedType.Name, hidden.Name));
+                        yield return MappingModel.Invalid(diagnostics);
+                        continue;
+                    }
+
                     var target = BuildTargetMapping(compilation, sourceType, decoratedType, isMapTo: false, new List<ConverterWrapper>(), diagnostics, location, ct);
 
                     yield return new MappingModel(
@@ -320,6 +367,7 @@ namespace Transformations.Mapping.Generator
                         sourceFullName: sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                         sourceMetadataName: GetMetadataName(sourceType),
                         sourceDeclarationName: GetDeclarationName(sourceType),
+                        sourceKeyword: GetDeclarationKeyword(sourceType),
                         typeParameters: GetTypeParameters(decoratedType),
                         containingTypes: new List<TypeDeclarationModel>(),
                         @namespace: decoratedNamespace,
@@ -334,6 +382,61 @@ namespace Transformations.Mapping.Generator
 
         private static bool HasMapToTargets(INamedTypeSymbol type)
             => type.GetAttributes().Any(a => a.AttributeClass is INamedTypeSymbol t && IsMapToAttribute(t) && t.TypeArguments.Length == 1);
+
+        /// <summary>A class or record class declaration. Record structs and other kinds are not mapped.</summary>
+        private static bool IsClassLikeDeclaration(SyntaxNode node)
+            => node is ClassDeclarationSyntax
+                || node is RecordDeclarationSyntax record && !record.ClassOrStructKeyword.IsKind(SyntaxKind.StructKeyword);
+
+        /// <summary>
+        /// Whether <paramref name="node"/> is the declaration of the type's first attribute accepted by
+        /// <paramref name="isAttribute"/>, which is the one declaration that builds the model for a partial type.
+        /// </summary>
+        private static bool IsFirstMappingDeclaration(INamedTypeSymbol type, SyntaxNode node, Func<INamedTypeSymbol, bool> isAttribute)
+        {
+            foreach (AttributeData attr in type.GetAttributes())
+            {
+                if (attr.AttributeClass is not INamedTypeSymbol attrType || !isAttribute(attrType)) continue;
+
+                var declaration = attr.ApplicationSyntaxReference?.GetSyntax().Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
+                return declaration == null || declaration == node;
+            }
+
+            return true;
+        }
+
+        /// <summary>The keyword a partial declaration of the type must use: <c>record</c> for a record class, else <c>class</c>.</summary>
+        private static string GetDeclarationKeyword(INamedTypeSymbol type) => type.IsRecord ? "record" : "class";
+
+        /// <summary>Public in every enclosing type and type argument, so a public generated member may expose it.</summary>
+        private static bool IsEffectivelyPublic(ITypeSymbol type)
+            => type switch
+            {
+                IArrayTypeSymbol array => IsEffectivelyPublic(array.ElementType),
+                INamedTypeSymbol named => named.DeclaredAccessibility == Accessibility.Public
+                    && (named.ContainingType == null || IsEffectivelyPublic(named.ContainingType))
+                    && named.TypeArguments.All(IsEffectivelyPublic),
+                _ => true,
+            };
+
+        /// <summary>Whether a class generated at namespace level in this assembly can name the type (not private or protected nested).</summary>
+        private static bool IsReferenceable(CSharpCompilation compilation, ITypeSymbol type)
+            => type switch
+            {
+                IArrayTypeSymbol array => IsReferenceable(compilation, array.ElementType),
+                INamedTypeSymbol named => IsAccessible(compilation, named) && named.TypeArguments.All(a => IsReferenceable(compilation, a)),
+                _ => true,
+            };
+
+        /// <summary>The access keyword for generated members that expose both types.</summary>
+        private static string AccessFor(ITypeSymbol sourceType, ITypeSymbol targetType)
+            => IsEffectivelyPublic(sourceType) && IsEffectivelyPublic(targetType) ? "public" : "internal";
+
+        /// <summary>Whether the source already declares a member that would clash with a generated <c>From&lt;Target&gt;(target)</c>.</summary>
+        private static bool HasFromFactoryConflict(INamedTypeSymbol sourceType, INamedTypeSymbol targetType)
+            => sourceType.GetMembers("From" + targetType.Name).Any(member => member is not IMethodSymbol method
+                || (method.TypeParameters.Length == 0 && method.Parameters.Length == 1
+                    && SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, targetType)));
 
         private static TargetMapping BuildTargetMapping(
             CSharpCompilation compilation,
@@ -380,7 +483,8 @@ namespace Transformations.Mapping.Generator
                 unmapped,
                 canCreate: createProblem == null,
                 canReverse: reverseProblem == null,
-                hasFromFactoryConflict: isMapTo && sourceType.GetMembers("From" + targetType.Name).Any());
+                hasFromFactoryConflict: isMapTo && HasFromFactoryConflict(sourceType, targetType),
+                access: AccessFor(sourceType, targetType));
         }
 
         private static List<TypeDeclarationModel>? GetContainingTypes(INamedTypeSymbol sourceType, List<Diagnostic> diagnostics)
@@ -400,7 +504,7 @@ namespace Transformations.Mapping.Generator
                     return null;
                 }
 
-                containingTypes.Add(new TypeDeclarationModel(GetDeclarationName(current)));
+                containingTypes.Add(new TypeDeclarationModel(GetDeclarationName(current), GetDeclarationKeyword(current)));
                 current = current.ContainingType;
             }
 
@@ -412,8 +516,8 @@ namespace Transformations.Mapping.Generator
         {
             foreach (var syntaxReference in type.DeclaringSyntaxReferences)
             {
-                if (syntaxReference.GetSyntax() is ClassDeclarationSyntax classDecl &&
-                    classDecl.Modifiers.Any(SyntaxKind.PartialKeyword))
+                if (syntaxReference.GetSyntax() is TypeDeclarationSyntax typeDecl && IsClassLikeDeclaration(typeDecl) &&
+                    typeDecl.Modifiers.Any(SyntaxKind.PartialKeyword))
                 {
                     return true;
                 }
@@ -845,31 +949,66 @@ namespace Transformations.Mapping.Generator
 
         /// <summary>Public properties whose getter is public too, so generated code can read them.</summary>
         private static IEnumerable<IPropertySymbol> GetReadableProperties(INamedTypeSymbol type)
-        {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            for (INamedTypeSymbol? current = type; current != null; current = current.BaseType)
-            {
-                foreach (var prop in current.GetMembers().OfType<IPropertySymbol>()
-                    .Where(p => p.DeclaredAccessibility == Accessibility.Public && !p.IsStatic && !p.IsIndexer
-                        && p.GetMethod is { DeclaredAccessibility: Accessibility.Public }))
-                {
-                    if (seen.Add(prop.Name)) yield return prop;
-                }
-            }
-        }
+            => GetMappableProperties(type, p => p.GetMethod is { DeclaredAccessibility: Accessibility.Public });
 
         /// <summary>Public properties with a public set or init accessor, so a new instance can be initialised with them.</summary>
         private static IEnumerable<IPropertySymbol> GetSettableProperties(INamedTypeSymbol type)
+            => GetMappableProperties(type, p => p.SetMethod is { DeclaredAccessibility: Accessibility.Public });
+
+        /// <summary>
+        /// The type's usable public instance properties, most derived first, including those inherited from base classes
+        /// and, for an interface, from its base interfaces. C# member hiding applies: a public member of a derived type
+        /// occupies its name for every type below it, even when it is not itself usable (a property whose getter is
+        /// private, a static property, a method), because <c>source.Name</c> then binds to that member and never to the
+        /// base property. An override that lacks the accessor does not hide: the base accessor is still callable.
+        /// </summary>
+        private static IEnumerable<IPropertySymbol> GetMappableProperties(INamedTypeSymbol type, Func<IPropertySymbol, bool> hasAccessor)
         {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var hidden = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var current in TypeAndBases(type))
+            {
+                var declared = new List<string>();
+                foreach (var member in current.GetMembers())
+                {
+                    if (member.DeclaredAccessibility != Accessibility.Public) continue;
+
+                    if (member is IPropertySymbol property)
+                    {
+                        if (property.IsIndexer) continue;
+
+                        bool usable = !property.IsStatic && hasAccessor(property);
+                        if (usable && !hidden.Contains(property.Name))
+                        {
+                            declared.Add(property.Name);
+                            yield return property;
+                        }
+                        else if (!property.IsOverride)
+                        {
+                            declared.Add(property.Name);
+                        }
+                    }
+                    else if (member is IFieldSymbol or IEventSymbol or INamedTypeSymbol or IMethodSymbol { MethodKind: MethodKind.Ordinary })
+                    {
+                        declared.Add(member.Name);
+                    }
+                }
+
+                hidden.UnionWith(declared);
+            }
+        }
+
+        private static IEnumerable<INamedTypeSymbol> TypeAndBases(INamedTypeSymbol type)
+        {
+            if (type.TypeKind == TypeKind.Interface)
+            {
+                yield return type;
+                foreach (var inherited in type.AllInterfaces) yield return inherited;
+                yield break;
+            }
+
             for (INamedTypeSymbol? current = type; current != null; current = current.BaseType)
             {
-                foreach (var prop in current.GetMembers().OfType<IPropertySymbol>()
-                    .Where(p => p.DeclaredAccessibility == Accessibility.Public && !p.IsStatic && !p.IsIndexer
-                        && p.SetMethod is { DeclaredAccessibility: Accessibility.Public }))
-                {
-                    if (seen.Add(prop.Name)) yield return prop;
-                }
+                yield return current;
             }
         }
 
@@ -974,6 +1113,16 @@ namespace Transformations.Mapping.Generator
             MappingGeneratorConfig config)
         {
             var usedClassNames = new HashSet<string>(StringComparer.Ordinal);
+            // [MapTo] models first, then by name: which of two clashing mappings is kept must not depend on the order the
+            // compiler happened to deliver the declarations in.
+            models = models
+                .OrderBy(m => m.IsMapTo ? 0 : 1)
+                .ThenBy(m => m.SourceFullName, StringComparer.Ordinal)
+                .ThenBy(m => m.Targets.Count == 0 ? string.Empty : m.Targets[0].TargetFullName, StringComparer.Ordinal)
+                .ToImmutableArray();
+            // The models are cached between compilations, so suppression is tracked here and never stored on them.
+            var reverseMethods = new HashSet<string>(StringComparer.Ordinal);
+            var noReverse = new HashSet<TargetMapping>();
             // [MapTo] models come first (see Initialize), so a [MapFrom] repeating one of their pairs is the one dropped.
             var mappedPairs = new HashSet<string>(models.Where(m => m.IsMapTo)
                 .SelectMany(m => m.Targets.Select(t => $"{m.SourceFullName}|{t.TargetFullName}")), StringComparer.Ordinal);
@@ -987,6 +1136,18 @@ namespace Transformations.Mapping.Generator
                 }
 
                 context.CancellationToken.ThrowIfCancellationRequested();
+
+                // The reverse method is To<Source>(this <Target>): two sources with the same simple name that map to one
+                // target in one namespace would differ only by return type, so a call would be ambiguous.
+                foreach (var target in model.Targets.Where(t => t.CanReverse))
+                {
+                    string key = $"{model.Namespace}|To{model.SourceClassName}|{target.TargetFullName}|{model.TypeParameters.Count}";
+                    if (reverseMethods.Add(key)) continue;
+
+                    noReverse.Add(target);
+                    context.ReportDiagnostic(Diagnostic.Create(ReverseMethodCollision, model.SourceLocation ?? Location.None,
+                        target.TargetClassName, model.SourceFullName, $"To{model.SourceClassName}(this {target.TargetClassName})"));
+                }
 
                 foreach (var diagnostic in model.Diagnostics)
                 {
@@ -1025,11 +1186,11 @@ namespace Transformations.Mapping.Generator
                 string hintName = string.IsNullOrEmpty(model.Namespace)
                     ? $"{className}.g.cs"
                     : $"{model.Namespace}.{className}.g.cs";
-                context.AddSource(hintName, EmitSource(model, className));
+                context.AddSource(hintName, EmitSource(model, className, noReverse));
             }
         }
 
-        private static string EmitSource(MappingModel model, string extensionClassName)
+        private static string EmitSource(MappingModel model, string extensionClassName, ISet<TargetMapping> noReverse)
         {
             var sb = new StringBuilder();
             sb.AppendLine("// <auto-generated />");
@@ -1048,7 +1209,7 @@ namespace Transformations.Mapping.Generator
             if (model.IsMapTo)
             {
                 string qualifiedClassName = hasNamespace ? $"global::{model.Namespace}.{extensionClassName}" : $"global::{extensionClassName}";
-                EmitSourceTypeMembers(sb, model, qualifiedClassName, indent);
+                EmitSourceTypeMembers(sb, model, qualifiedClassName, indent, noReverse);
             }
 
             sb.AppendLine($"{indent}/// <summary>");
@@ -1068,7 +1229,7 @@ namespace Transformations.Mapping.Generator
                 EmitMapToExistingTargetMethod(sb, model, target, indent + "    ");
                 sb.AppendLine();
 
-                if (target.CanReverse)
+                if (target.CanReverse && !noReverse.Contains(target))
                 {
                     EmitReverseMethod(sb, model, target, indent + "    ");
                     sb.AppendLine();
@@ -1091,9 +1252,9 @@ namespace Transformations.Mapping.Generator
         /// Members added to the partial source type: the From&lt;Target&gt; factories and accessors for converters the
         /// extension class cannot call directly. Nested sources are reopened through their (partial) containing types.
         /// </summary>
-        private static void EmitSourceTypeMembers(StringBuilder sb, MappingModel model, string extensionClass, string indent)
+        private static void EmitSourceTypeMembers(StringBuilder sb, MappingModel model, string extensionClass, string indent, ISet<TargetMapping> noReverse)
         {
-            var factories = model.Targets.Where(t => t.CanReverse && !t.HasFromFactoryConflict).ToList();
+            var factories = model.Targets.Where(t => t.CanReverse && !noReverse.Contains(t) && !t.HasFromFactoryConflict).ToList();
             if (factories.Count == 0 && model.ConverterWrappers.Count == 0)
             {
                 return;
@@ -1102,12 +1263,12 @@ namespace Transformations.Mapping.Generator
             string currentIndent = indent;
             foreach (var containing in model.ContainingTypes)
             {
-                sb.AppendLine($"{currentIndent}partial class {containing.DeclarationName}");
+                sb.AppendLine($"{currentIndent}partial {containing.Keyword} {containing.DeclarationName}");
                 sb.AppendLine($"{currentIndent}{{");
                 currentIndent += "    ";
             }
 
-            sb.AppendLine($"{currentIndent}partial class {model.SourceDeclarationName}");
+            sb.AppendLine($"{currentIndent}partial {model.SourceKeyword} {model.SourceDeclarationName}");
             sb.AppendLine($"{currentIndent}{{");
             string memberIndent = currentIndent + "    ";
             string typeArguments = GetTypeArguments(model);
@@ -1117,7 +1278,7 @@ namespace Transformations.Mapping.Generator
                 sb.AppendLine($"{memberIndent}/// <summary>Maps a {target.TargetClassName} to a new {model.SourceClassName}.</summary>");
                 sb.AppendLine($"{memberIndent}/// <param name=\"source\">The {target.TargetClassName} to map from.</param>");
                 sb.AppendLine($"{memberIndent}/// <returns>A new {model.SourceClassName} with mapped property values.</returns>");
-                sb.AppendLine($"{memberIndent}public static {model.SourceFullName} From{target.TargetClassName}({target.TargetFullName} source)");
+                sb.AppendLine($"{memberIndent}{target.Access} static {model.SourceFullName} From{target.TargetClassName}({target.TargetFullName} source)");
                 // Called through the class, not as an extension: a [MapFrom] elsewhere may add a same-named extension.
                 sb.AppendLine($"{memberIndent}    => {extensionClass}.To{model.SourceClassName}{typeArguments}(source);");
             }
@@ -1182,7 +1343,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"source\">The source sequence to map.</param>");
             sb.AppendLine($"{indent}/// <returns>A sequence of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
-            sb.AppendLine($"{indent}public static global::System.Collections.Generic.IEnumerable<{target.TargetFullName}> To{target.TargetClassName}Enumerable{GetTypeParameterList(model)}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static global::System.Collections.Generic.IEnumerable<{target.TargetFullName}> To{target.TargetClassName}Enumerable{GetTypeParameterList(model)}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1210,7 +1371,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"ct\">Optional cancellation token for async iteration.</param>");
             sb.AppendLine($"{indent}/// <returns>An async sequence of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
-            sb.AppendLine($"{indent}public static async global::System.Collections.Generic.IAsyncEnumerable<{target.TargetFullName}> To{target.TargetClassName}AsyncEnumerable{GetTypeParameterList(model)}(this global::System.Collections.Generic.IAsyncEnumerable<{model.SourceFullName}> source, [global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken ct = default){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static async global::System.Collections.Generic.IAsyncEnumerable<{target.TargetFullName}> To{target.TargetClassName}AsyncEnumerable{GetTypeParameterList(model)}(this global::System.Collections.Generic.IAsyncEnumerable<{model.SourceFullName}> source, [global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken ct = default){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1232,7 +1393,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The source sequence to map.</param>");
             sb.AppendLine($"{indent}/// <returns>A list of mapped {target.TargetClassName} instances.</returns>");
-            sb.AppendLine($"{indent}public static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{GetTypeParameterList(model)}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{GetTypeParameterList(model)}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1262,7 +1423,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"source\">The source list to map.</param>");
             sb.AppendLine($"{indent}/// <returns>A list of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
-            sb.AppendLine($"{indent}public static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{GetTypeParameterList(model)}(this global::System.Collections.Generic.List<{model.SourceFullName}> source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static global::System.Collections.Generic.List<{target.TargetFullName}> To{target.TargetClassName}List{GetTypeParameterList(model)}(this global::System.Collections.Generic.List<{model.SourceFullName}> source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1290,7 +1451,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The source sequence to map.</param>");
             sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
-            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this global::System.Collections.Generic.IEnumerable<{model.SourceFullName}> source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1321,7 +1482,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"source\">The source array to map.</param>");
             sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
-            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this {model.SourceFullName}[] source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this {model.SourceFullName}[] source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1347,7 +1508,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"source\">The source memory region to map.</param>");
             sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
-            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this global::System.Memory<{model.SourceFullName}> source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this global::System.Memory<{model.SourceFullName}> source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    var span = source.Span;");
             sb.AppendLine($"{indent}    var array = new {target.TargetFullName}[span.Length];");
@@ -1369,7 +1530,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"source\">The source read-only memory region to map.</param>");
             sb.AppendLine($"{indent}/// <returns>An array of mapped {target.TargetClassName} instances.</returns>");
             sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
-            sb.AppendLine($"{indent}public static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this global::System.ReadOnlyMemory<{model.SourceFullName}> source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static {target.TargetFullName}[] To{target.TargetClassName}Array{GetTypeParameterList(model)}(this global::System.ReadOnlyMemory<{model.SourceFullName}> source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    var span = source.Span;");
             sb.AppendLine($"{indent}    var array = new {target.TargetFullName}[span.Length];");
@@ -1407,7 +1568,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"source\">The queryable source sequence to project.</param>");
             sb.AppendLine($"{indent}/// <returns>A queryable sequence projected to {target.TargetClassName}.</returns>");
             sb.AppendLine($"{indent}[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
-            sb.AppendLine($"{indent}public static global::System.Linq.IQueryable<{target.TargetFullName}> ProjectTo{target.TargetClassName}{GetTypeParameterList(model)}(this global::System.Linq.IQueryable<{model.SourceFullName}> source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static global::System.Linq.IQueryable<{target.TargetFullName}> ProjectTo{target.TargetClassName}{GetTypeParameterList(model)}(this global::System.Linq.IQueryable<{model.SourceFullName}> source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1456,7 +1617,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// Maps this instance to a new {target.TargetClassName}.");
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <returns>A new {target.TargetClassName} with mapped property values.</returns>");
-            sb.AppendLine($"{indent}public static {target.TargetFullName} To{target.TargetClassName}{GetTypeParameterList(model)}(this {model.SourceFullName} source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static {target.TargetFullName} To{target.TargetClassName}{GetTypeParameterList(model)}(this {model.SourceFullName} source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             AppendNullGuard(sb, indent);
             sb.AppendLine($"{indent}    return new {target.TargetFullName}()");
@@ -1479,7 +1640,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// <param name=\"source\">The source instance to map from.</param>");
             sb.AppendLine($"{indent}/// <param name=\"target\">The target instance to update.</param>");
             sb.AppendLine($"{indent}/// <returns>The updated {target.TargetClassName} instance.</returns>");
-            sb.AppendLine($"{indent}public static {target.TargetFullName} MapTo{GetTypeParameterList(model)}(this {model.SourceFullName} source, {target.TargetFullName} target){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static {target.TargetFullName} MapTo{GetTypeParameterList(model)}(this {model.SourceFullName} source, {target.TargetFullName} target){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null)");
             sb.AppendLine($"{indent}    {{");
@@ -1509,7 +1670,7 @@ namespace Transformations.Mapping.Generator
             sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}/// <param name=\"source\">The source {target.TargetClassName} to map from.</param>");
             sb.AppendLine($"{indent}/// <returns>A new {model.SourceClassName} with mapped property values.</returns>");
-            sb.AppendLine($"{indent}public static {model.SourceFullName} To{model.SourceClassName}{GetTypeParameterList(model)}(this {target.TargetFullName} source){GetConstraints(model)}");
+            sb.AppendLine($"{indent}{target.Access} static {model.SourceFullName} To{model.SourceClassName}{GetTypeParameterList(model)}(this {target.TargetFullName} source){GetConstraints(model)}");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}    if (source == null) return null!;");
             sb.AppendLine();
@@ -1552,6 +1713,8 @@ namespace Transformations.Mapping.Generator
         public string SourceFullName { get; }
         public string SourceMetadataName { get; }
         public string SourceDeclarationName { get; }
+        /// <summary><c>class</c> or <c>record</c>, as a partial declaration of the source type must write it.</summary>
+        public string SourceKeyword { get; }
         public string? TargetMetadataName { get; }
         public List<TypeParameterModel> TypeParameters { get; }
         public List<TypeDeclarationModel> ContainingTypes { get; }
@@ -1561,7 +1724,7 @@ namespace Transformations.Mapping.Generator
         public List<TargetMapping> Targets { get; }
         public List<ConverterWrapper> ConverterWrappers { get; }
 
-        public MappingModel(bool isMapTo, string sourceClassName, string sourceFullName, string sourceMetadataName, string sourceDeclarationName,
+        public MappingModel(bool isMapTo, string sourceClassName, string sourceFullName, string sourceMetadataName, string sourceDeclarationName, string sourceKeyword,
             List<TypeParameterModel> typeParameters, List<TypeDeclarationModel> containingTypes, string @namespace, Location? sourceLocation,
             List<Diagnostic> diagnostics, List<TargetMapping> targets, List<ConverterWrapper> converterWrappers,
             string? targetMetadataName = null)
@@ -1571,6 +1734,7 @@ namespace Transformations.Mapping.Generator
             SourceFullName = sourceFullName;
             SourceMetadataName = sourceMetadataName;
             SourceDeclarationName = sourceDeclarationName;
+            SourceKeyword = sourceKeyword;
             TargetMetadataName = targetMetadataName;
             TypeParameters = typeParameters;
             ContainingTypes = containingTypes;
@@ -1583,7 +1747,7 @@ namespace Transformations.Mapping.Generator
 
         /// <summary>A model that only carries diagnostics; nothing is generated for it.</summary>
         public static MappingModel Invalid(List<Diagnostic> diagnostics)
-            => new MappingModel(true, string.Empty, string.Empty, string.Empty, string.Empty, new List<TypeParameterModel>(),
+            => new MappingModel(true, string.Empty, string.Empty, string.Empty, string.Empty, "class", new List<TypeParameterModel>(),
                 new List<TypeDeclarationModel>(), string.Empty, null, diagnostics, new List<TargetMapping>(), new List<ConverterWrapper>());
     }
 
@@ -1602,10 +1766,12 @@ namespace Transformations.Mapping.Generator
     internal sealed class TypeDeclarationModel
     {
         public string DeclarationName { get; }
+        public string Keyword { get; }
 
-        public TypeDeclarationModel(string declarationName)
+        public TypeDeclarationModel(string declarationName, string keyword)
         {
             DeclarationName = declarationName;
+            Keyword = keyword;
         }
     }
 
@@ -1634,9 +1800,11 @@ namespace Transformations.Mapping.Generator
         public bool CanCreate { get; }
         public bool CanReverse { get; }
         public bool HasFromFactoryConflict { get; }
+        /// <summary><c>public</c>, or <c>internal</c> when the source or target type is not public.</summary>
+        public string Access { get; }
 
         public TargetMapping(string targetFullName, string targetClassName, List<PropertyMapping> properties, List<string> unmappedTargetProperties,
-            bool canCreate, bool canReverse, bool hasFromFactoryConflict)
+            bool canCreate, bool canReverse, bool hasFromFactoryConflict, string access)
         {
             TargetFullName = targetFullName;
             TargetClassName = targetClassName;
@@ -1645,6 +1813,7 @@ namespace Transformations.Mapping.Generator
             CanCreate = canCreate;
             CanReverse = canReverse;
             HasFromFactoryConflict = hasFromFactoryConflict;
+            Access = access;
         }
     }
 

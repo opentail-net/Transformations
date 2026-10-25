@@ -40,7 +40,7 @@ There is no runtime profile, startup registration, or reflection scan. If the so
 
 ## Requirements
 
-1. Source type must be `partial`.
+1. Source type must be `partial`. A `partial record` works too (records are classes); `record struct` and structs are not supported.
 2. Add one or more `[MapTo<TTarget>]` attributes.
 3. Target members must be public settable properties.
 4. Source members must be public readable properties.
@@ -246,6 +246,8 @@ The generator emits mapping diagnostics when it can identify a likely configurat
 | `TXMAP013` | Warning | A non-public converter cannot be called (it is on a `[MapFrom]` source, or not accessible from the `[MapTo]` source) |
 | `TXMAP014` | Warning | The same mapping is declared by `[MapTo]` on the source and `[MapFrom]` on the target; the `[MapFrom]` is ignored |
 | `TXMAP015` | Warning | The reverse mapping assigns a nullable target member to a non-nullable source member without a fallback (strings and value types get one; other reference types do not) |
+| `TXMAP016` | Warning | A source or target is a private or protected nested type, which the generated namespace-level class cannot name; that mapping is not generated. Internal types are supported: their mapping methods are `internal` |
+| `TXMAP017` | Warning | Two sources with the same simple name map to one target in the same namespace; only the first reverse method (`To{Source}(this Target)`) is generated, because calls to both would be ambiguous |
 
 Whatever the generator accepts compiles: a mapping it cannot generate correctly is left out and reported, never
 emitted as broken C#.

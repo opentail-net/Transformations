@@ -17,3 +17,5 @@ TXMAP012 | Mapping  | Warning  | Mapping methods would collide
 TXMAP013 | Mapping  | Warning  | Converter method is not accessible to generated code
 TXMAP014 | Mapping  | Warning  | Mapping declared twice
 TXMAP015 | Mapping  | Warning  | Reverse mapping may assign null to a non-nullable member
+TXMAP016 | Mapping  | Warning  | Type is not accessible to generated code
+TXMAP017 | Mapping  | Warning  | Reverse mapping would be ambiguous
