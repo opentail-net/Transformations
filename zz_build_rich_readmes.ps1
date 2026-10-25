@@ -381,7 +381,7 @@ Set-Content -Path "Transformations.Web/README.md" -Value $web -Encoding UTF8
 $monolith = @'
 # **Transformations**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: PolyForm Strict 1.0.0](https://img.shields.io/badge/License-PolyForm%20Strict%201.0.0-blue.svg)](https://polyformproject.org/licenses/strict/1.0.0)
 [![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
 [![NUnit](https://img.shields.io/badge/Tests-NUnit-green)]()
 
@@ -918,7 +918,7 @@ GitHub Actions workflow: `.github/workflows/ci-quality-gates.yml`
 
 ## License
 
-[MIT](https://opensource.org/licenses/MIT) — Copyright © 2026 [opentail.net](https://opentail.net)
+[PolyForm Strict 1.0.0](https://github.com/opentail-net/Transformations/blob/main/LICENSE.md) — Copyright © 2026 [opentail.net](https://opentail.net)
 
 ---
 

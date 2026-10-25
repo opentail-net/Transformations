@@ -980,4 +980,4 @@ package reference.
 
 ## License
 
-MIT — see repository for details.
+PolyForm Strict 1.0.0 — see [LICENSE.md](https://github.com/opentail-net/Transformations/blob/main/LICENSE.md).

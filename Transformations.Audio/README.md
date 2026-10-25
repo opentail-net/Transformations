@@ -254,3 +254,7 @@ This is intentionally small PCM16 WAV IO, not a general-purpose decoder/encoder 
 ## 🧪 Evidence, not vibes
 
 Every algorithm swap in this package's history was decided by a repeatable fidelity suite, not by ear. If you want to see the actual numbers, reproduce them, or understand why a given default was chosen, [`DEVELOPMENT.md`](DEVELOPMENT.md) has the full build/test instructions and the evidence trail.
+
+## License
+
+[PolyForm Strict 1.0.0](https://github.com/opentail-net/Transformations/blob/main/LICENSE.md) — Copyright © 2026 [opentail.net](https://opentail.net)

@@ -102,4 +102,4 @@ IReadOnlyList<SqlParameter> sqlParams = SqlParameterBridge.ToSqlParameters<MyPar
 
 ## License
 
-[MIT](https://opensource.org/licenses/MIT) — Copyright © 2026 [opentail.net](https://opentail.net)
+[PolyForm Strict 1.0.0](https://github.com/opentail-net/Transformations/blob/main/LICENSE.md) — Copyright © 2026 [opentail.net](https://opentail.net)

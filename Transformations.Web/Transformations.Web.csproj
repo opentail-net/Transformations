@@ -11,7 +11,6 @@
 	<PackageId>Transformations.Web</PackageId>
 	<Description>Web-focused transformation helpers for HTTP, session, cookies, query string, and configuration.</Description>
 	<PackageTags>transformations;extensions;web;http;cookies;session;querystring;configuration</PackageTags>
-	<PackageLicenseExpression>MIT</PackageLicenseExpression>
 	<RepositoryUrl>https://github.com/opentail-net/Transformations</RepositoryUrl>
 	<RepositoryType>git</RepositoryType>
 	<PackageProjectUrl>https://github.com/opentail-net/Transformations</PackageProjectUrl>

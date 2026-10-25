@@ -47,6 +47,10 @@ $propsText = Get-Content -Raw (Join-Path $repoRoot 'Directory.Build.props')
 $version = [regex]::Match($propsText, '<Version>([^<]+)</Version>').Groups[1].Value
 if (-not $version) { throw 'Could not read <Version> from Directory.Build.props.' }
 
+# NuGet drops a zero revision from file names, nuspec versions and cache folders (3.0.0.0 is stored as 3.0.0).
+$parsedVersion = [version]$version
+$packageVersion = if ($parsedVersion.Revision -eq 0) { "$($parsedVersion.Major).$($parsedVersion.Minor).$($parsedVersion.Build)" } else { $version }
+
 $commit = (git -C $repoRoot rev-parse HEAD).Trim()
 $shortCommit = (git -C $repoRoot rev-parse --short HEAD).Trim()
 $dirtyFiles = @(git -C $repoRoot status --porcelain --untracked-files=no)
@@ -72,8 +76,8 @@ foreach ($project in 'Transformations.Core\Transformations.Core.csproj', 'Transf
     if ($LASTEXITCODE -ne 0) { throw "dotnet pack failed for $name. See $logDir." }
 }
 
-$mappingPackage = Join-Path $feedDir "Transformations.Mapping.$version.nupkg"
-$corePackage = Join-Path $feedDir "Transformations.Core.$version.nupkg"
+$mappingPackage = Join-Path $feedDir "Transformations.Mapping.$packageVersion.nupkg"
+$corePackage = Join-Path $feedDir "Transformations.Core.$packageVersion.nupkg"
 
 # ---------------------------------------------------------------------------------------------------------------------
 # 2. Package contents
@@ -100,8 +104,10 @@ foreach ($tfm in 'net8.0', 'net9.0', 'net10.0') {
 $packageChecks += New-Check 'package contains the source generator under analyzers/' ($entryNames -contains 'analyzers/dotnet/cs/Transformations.Mapping.Generator.dll')
 $packageChecks += New-Check 'package contains build/Transformations.Mapping.props (MSBuild switch)' ($entryNames -contains 'build/Transformations.Mapping.props')
 $packageChecks += New-Check 'package contains README.md' ($entryNames -contains 'README.md')
-$packageChecks += New-Check "nuspec version is $version" ($nuspec -match "<version>$([regex]::Escape($version))</version>")
-$packageChecks += New-Check 'nuspec depends on Transformations.Core at the same version' ($nuspec -match "dependency id=""Transformations.Core"" version=""$([regex]::Escape($version))""")
+$packageChecks += New-Check 'package contains LICENSE.md at its root' ($entryNames -contains 'LICENSE.md')
+$packageChecks += New-Check 'nuspec declares the licence file' ($nuspec -match '<license type="file">LICENSE.md</license>')
+$packageChecks += New-Check "nuspec version is $packageVersion" ($nuspec -match "<version>$([regex]::Escape($packageVersion))</version>")
+$packageChecks += New-Check 'nuspec depends on Transformations.Core at the same version' ($nuspec -match "dependency id=""Transformations.Core"" version=""$([regex]::Escape($packageVersion))""")
 
 $mappingSha256 = (Get-FileHash $mappingPackage -Algorithm SHA256).Hash
 $mappingSha512 = [Convert]::ToBase64String([Security.Cryptography.SHA512]::HashData([IO.File]::ReadAllBytes($mappingPackage)))
@@ -114,7 +120,7 @@ $coreSha512 = [Convert]::ToBase64String([Security.Cryptography.SHA512]::HashData
 $globalPackages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
 $clearedCache = @()
 foreach ($id in 'transformations.mapping', 'transformations.core') {
-    $cacheDir = Join-Path $globalPackages "$id\$version"
+    $cacheDir = Join-Path $globalPackages "$id\$packageVersion"
     if (Test-Path $cacheDir) {
         Remove-Item -Recurse -Force $cacheDir
         $clearedCache += $cacheDir
@@ -167,8 +173,8 @@ foreach ($tfm in $TargetFrameworks) {
     $resolvedDetail = 'restore failed'
     if ($restoreCode -eq 0) {
         $assets = Get-Content -Raw (Join-Path $consumerDir 'obj\project.assets.json') | ConvertFrom-Json
-        $mappingLib = $assets.libraries.PSObject.Properties["Transformations.Mapping/$version"].Value
-        $coreLib = $assets.libraries.PSObject.Properties["Transformations.Core/$version"].Value
+        $mappingLib = $assets.libraries.PSObject.Properties["Transformations.Mapping/$packageVersion"].Value
+        $coreLib = $assets.libraries.PSObject.Properties["Transformations.Core/$packageVersion"].Value
         $resolvedCorrectly = ($mappingLib.sha512 -eq $mappingSha512) -and ($coreLib.sha512 -eq $coreSha512)
         $resolvedDetail = if ($resolvedCorrectly) { 'restored packages match the packed .nupkg files (SHA-512)' } else { 'restored package hash differs from the packed .nupkg' }
     }

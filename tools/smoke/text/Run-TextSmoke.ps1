@@ -50,6 +50,10 @@ $propsText = Get-Content -Raw (Join-Path $repoRoot 'Directory.Build.props')
 $version = [regex]::Match($propsText, '<Version>([^<]+)</Version>').Groups[1].Value
 if (-not $version) { throw 'Could not read <Version> from Directory.Build.props.' }
 
+# NuGet drops a zero revision from file names, nuspec versions and cache folders (3.0.0.0 is stored as 3.0.0).
+$parsedVersion = [version]$version
+$packageVersion = if ($parsedVersion.Revision -eq 0) { "$($parsedVersion.Major).$($parsedVersion.Minor).$($parsedVersion.Build)" } else { $version }
+
 $commit = (git -C $repoRoot rev-parse HEAD).Trim()
 $shortCommit = (git -C $repoRoot rev-parse --short HEAD).Trim()
 $dirtyFiles = @(git -C $repoRoot status --porcelain --untracked-files=no)
@@ -72,7 +76,7 @@ Write-Step 'Packing Transformations.Text (Release)'
 & dotnet pack (Join-Path $repoRoot 'Transformations.TextExtractor\Transformations.Text.csproj') -c Release -o $feedDir *> (Join-Path $logDir 'pack-text.log')
 if ($LASTEXITCODE -ne 0) { throw "dotnet pack failed. See $logDir." }
 
-$textPackage = Join-Path $feedDir "Transformations.Text.$version.nupkg"
+$textPackage = Join-Path $feedDir "Transformations.Text.$packageVersion.nupkg"
 
 # ---------------------------------------------------------------------------------------------------------------------
 # 2. Package contents and dependencies
@@ -97,7 +101,9 @@ foreach ($tfm in 'net8.0', 'net9.0', 'net10.0') {
     $packageChecks += New-Check "package contains $entry" ($entryNames -contains $entry)
 }
 $packageChecks += New-Check 'package contains README.md' ($entryNames -contains 'README.md')
-$packageChecks += New-Check "nuspec version is $version" ($nuspec -match "<version>$([regex]::Escape($version))</version>")
+$packageChecks += New-Check 'package contains LICENSE.md at its root' ($entryNames -contains 'LICENSE.md')
+$packageChecks += New-Check 'nuspec declares the licence file' ($nuspec -match '<license type="file">LICENSE.md</license>')
+$packageChecks += New-Check "nuspec version is $packageVersion" ($nuspec -match "<version>$([regex]::Escape($packageVersion))</version>")
 $packageChecks += New-Check 'nuspec depends on TesseractOCR (native OCR binaries come through it)' ($nuspec -match 'dependency id="TesseractOCR"')
 $packageChecks += New-Check 'nuspec depends on Microsoft.Extensions.DependencyInjection.Abstractions' ($nuspec -match 'dependency id="Microsoft.Extensions.DependencyInjection.Abstractions"')
 
@@ -123,7 +129,7 @@ $packageChecks += New-Check 'every corpus label is known' ($badLabels.Count -eq 
 
 $globalPackages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
 $clearedCache = @()
-$cacheDir = Join-Path $globalPackages "transformations.text\$version"
+$cacheDir = Join-Path $globalPackages "transformations.text\$packageVersion"
 if (Test-Path $cacheDir) {
     Remove-Item -Recurse -Force $cacheDir
     $clearedCache += $cacheDir
@@ -174,7 +180,7 @@ foreach ($tfm in $TargetFrameworks) {
     $resolvedNote = 'restore failed'
     if ($restoreCode -eq 0) {
         $assets = Get-Content -Raw (Join-Path $consumerDir 'obj\project.assets.json') | ConvertFrom-Json
-        $textLib = $assets.libraries.PSObject.Properties["Transformations.Text/$version"].Value
+        $textLib = $assets.libraries.PSObject.Properties["Transformations.Text/$packageVersion"].Value
         $resolvedOk = $textLib.sha512 -eq $textSha512
         $resolvedNote = if ($resolvedOk) { 'restored package matches the packed .nupkg (SHA-512)' } else { 'restored package hash differs from the packed .nupkg' }
     }

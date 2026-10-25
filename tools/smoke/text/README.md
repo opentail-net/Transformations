@@ -92,6 +92,7 @@ from disk.
 |---|---|
 | Dependency injection | `AddTextExtractor()` resolves `IDocumentTextExtractor` to `TextExtractor`. |
 | Batch | `GetTextBatchAsync` returns one successful result per ordinary document. |
+| AI ingestion | `GetModelInput` on `IDocumentTextExtractor` returns an untrusted, indexable input for an ordinary document. |
 | Discovery | `GetSupportedExtensions` covers the built-in formats; `IsSupported` ignores case; `DetectFormat` identifies a PDF by content. |
 | Corpus | One check per sample, as described under Labels. |
 
@@ -115,11 +116,13 @@ These are real gaps in this harness, not in the product. They are listed so that
 - **Hidden-text modes.** Only the default AI-ingestion profile is run. `Mark` and `Keep` are not exercised.
 - **Resource limits and cancellation.** Limits set deliberately low, and cancellation, are not exercised.
 - **Provenance forgery.** Documents that imitate page, slide or chapter markers are not in the corpus.
-- **Interface gap.** `GetModelInput` is not on `IDocumentTextExtractor`; it exists only on the concrete `TextExtractor`.
-  The consumer therefore calls it on `TextExtractor`. Whether the interface should expose it is a design decision.
+- **Interface surface.** `GetModelInput` is on `IDocumentTextExtractor` (added in this change), so the consumer calls it
+  through the interface. Before this change it existed only on the concrete `TextExtractor`.
 
 ## Verification history
 
+- `reports/20261025-180729-2.0.5.2-12e320d.md`: all three frameworks pass, 92 of 92 checks each, 0 warnings. This run
+  includes `GetModelInput` on the interface.
 - `reports/20261025-174126-2.0.5.2-e9d1749.md`: all three frameworks pass, 91 of 91 checks each, 0 warnings.
 - Mutation test: `HiddenText = HiddenTextMode.Drop` was changed to `Keep` for the AI-ingestion profile in a scratch
   copy. The run failed on exactly the check that should catch it: `[Ordinary] html visible and hidden`, which reports
