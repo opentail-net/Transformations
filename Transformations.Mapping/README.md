@@ -122,6 +122,7 @@ The bundled Roslyn analyzer runs at build time and flags mapping problems before
 | `TXMAP020` | Warning | A `[MapProperty]` names a target member that is not a public settable property (of any of the `[MapTo]` targets); that mapping is ignored |
 | `TXMAP021` | Warning | A `[MapTo]` source or `[MapFrom]` target is a `static` class, which cannot be a parameter or return type; no mapping is generated |
 | `TXMAP022` | Warning | A member of one enum has no member of that name in the other enum it is mapped to; converting that value throws `ArgumentOutOfRangeException` |
+| `TXMAP023` | Warning | A nested mapping was inferred (not declared with `[MapTo]`/`[MapFrom]`) and fewer than half of the target's members get a value, which usually means two unrelated types share a member name |
 
 Escalate `TXMAP001` from warning to build error via MSBuild:
 

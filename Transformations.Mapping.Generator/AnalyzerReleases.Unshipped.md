@@ -24,3 +24,4 @@ TXMAP019 | Mapping  | Warning  | Type parameter name is declared twice
 TXMAP020 | Mapping  | Warning  | Mapped target member not found
 TXMAP021 | Mapping  | Warning  | Static type cannot be mapped
 TXMAP022 | Mapping  | Warning  | Enum member has no counterpart
+TXMAP023 | Mapping  | Warning  | Nested mapping inferred from few matching members

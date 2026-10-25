@@ -2019,6 +2019,32 @@ namespace Transformations.Mapping.Generator
             string list = $"global::System.Collections.Generic.List<{helper.ElementTargetType}>";
             sb.AppendLine($"{body}if (source == null) return null!;");
 
+            // A list, an array or an indexable collection is walked by index: no enumerator is allocated, and the size is
+            // known up front for the result's capacity.
+            if (helper.SourceKind != "Enumerable")
+            {
+                string items = helper.SourceKind == "List" ? "items" : "source";
+                string count = helper.SourceKind == "Array" ? "source.Length" : helper.SourceKind == "List" ? "items.Length" : "source.Count";
+                if (helper.SourceKind == "List")
+                {
+                    sb.AppendLine($"{body}var items = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(source);");
+                }
+
+                string result = helper.TargetKind == "Array" ? $"new {helper.ElementTargetType}[{count}]"
+                    : helper.TargetKind == "HashSet" ? $"new {helper.ReturnType}({count})"
+                    : $"new {list}({count})";
+                sb.AppendLine($"{body}var result = {result};");
+                sb.AppendLine($"{body}for (int i = 0; i < {count}; i++)");
+                sb.AppendLine($"{body}{{");
+                sb.AppendLine($"{body}    var item = {items}[i];");
+                sb.AppendLine(helper.TargetKind == "Array" ? $"{body}    result[i] = {element};"
+                    : helper.TargetKind == "HashSet" ? $"{body}    result.Add({element});"
+                    : $"{body}    result.Add({element});");
+                sb.AppendLine($"{body}}}");
+                sb.AppendLine($"{body}return result;");
+                return;
+            }
+
             switch (helper.TargetKind)
             {
                 case "Array":

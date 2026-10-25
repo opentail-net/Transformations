@@ -127,6 +127,10 @@ parameterless constructor and no unmapped `required` member. A `null` nested sou
 
 - No attribute is needed on the nested types. If they share no member names, or the target cannot be created, it is
   `TXMAP002`.
+- Because nothing asks for it, a nested mapping can be a coincidence of names. When it is inferred and fewer than half of
+  the target's members get a value, `TXMAP023` says so. Declaring the pair (`[MapTo<InnerDto>]` on the source or
+  `[MapFrom<Inner>]` on the target) tells the generator it is deliberate, and `[IgnoreMap]` on the property leaves it
+  out.
 - Members of the nested target that nothing maps are reported with `TXMAP001`, as for a top-level mapping.
 - Types that refer to themselves (a tree with `Children`, a linked list) are supported: the nested mapping is a helper
   method that calls itself. Data that is itself cyclic will recurse until the stack runs out, as in hand-written code.
@@ -337,6 +341,7 @@ The generator emits mapping diagnostics when it can identify a likely configurat
 | `TXMAP020` | Warning | A `[MapProperty]` names a target member that is not a public settable property (of any of the `[MapTo]` targets); that mapping is ignored |
 | `TXMAP021` | Warning | A `[MapTo]` source or `[MapFrom]` target is a `static` class, which cannot be a parameter or return type; no mapping is generated |
 | `TXMAP022` | Warning | A member of one enum has no member of that name in the other enum it is mapped to; converting that value throws `ArgumentOutOfRangeException` |
+| `TXMAP023` | Warning | A nested mapping was inferred (not declared with `[MapTo]`/`[MapFrom]`) and fewer than half of the target's members get a value, which usually means two unrelated types share a member name |
 
 Whatever the generator accepts compiles: a mapping it cannot generate correctly is left out and reported, never
 emitted as broken C#.

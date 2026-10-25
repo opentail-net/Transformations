@@ -184,6 +184,31 @@ namespace Transformations.Mapping.Tests.Features
         public Level AsNumber { get; set; }
     }
 
+    // ── Sources walked without an enumerator ─────────────────────────────────
+
+    public class ShapesTarget
+    {
+        public List<LineItemDto> FromReadOnlyList { get; set; } = new List<LineItemDto>();
+        public LineItemDto[] FromIList { get; set; } = Array.Empty<LineItemDto>();
+        public HashSet<string> FromArrayToSet { get; set; } = new HashSet<string>();
+        public Dictionary<string, LineItemDto> FromDictionary { get; set; } = new Dictionary<string, LineItemDto>();
+        public List<LineItemDto> FromEnumerable { get; set; } = new List<LineItemDto>();
+        public List<LineItemDto> FromEmptyList { get; set; } = new List<LineItemDto>();
+        public LineItemDto[] FromListToArray { get; set; } = Array.Empty<LineItemDto>();
+    }
+
+    [MapTo<ShapesTarget>]
+    public partial class ShapesSource
+    {
+        public IReadOnlyList<LineItem> FromReadOnlyList { get; set; } = Array.Empty<LineItem>();
+        public IList<LineItem> FromIList { get; set; } = new List<LineItem>();
+        public string[] FromArrayToSet { get; set; } = Array.Empty<string>();
+        public Dictionary<string, LineItem> FromDictionary { get; set; } = new Dictionary<string, LineItem>();
+        public IEnumerable<LineItem> FromEnumerable { get; set; } = Array.Empty<LineItem>();
+        public List<LineItem> FromEmptyList { get; set; } = new List<LineItem>();
+        public List<LineItem> FromListToArray { get; set; } = new List<LineItem>();
+    }
+
     // ── Constructors ─────────────────────────────────────────────────────────
 
     public record PersonRecord(string Name, int Age);

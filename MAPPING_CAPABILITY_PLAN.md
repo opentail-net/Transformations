@@ -125,5 +125,8 @@
 - [x] Value-equatable pipeline models, with tests that drive Roslyn's step tracking
 - [x] Verify a packed NuGet package in a separate project (implicit usings off, warnings as errors)
 - [ ] Produce and run a NativeAOT binary (the IL compiler passes without warnings; the native link needs the Visual C++ build tools)
+- [x] Constructor mapping: positional records and immutable classes, forward, reverse, nested and `ProjectTo`
+- [x] A warning for nested mappings inferred from few matching members (`TXMAP023`)
+- [x] A matrix test that maps every pair of ~70 property types and requires warning-free generated code
 - [ ] Convention-based flattening (`CustomerName` from `Customer.Name`)
 - [ ] `ImmutableArray<T>` and other custom collection targets

@@ -323,6 +323,11 @@ namespace Transformations.Mapping.Generator
         public string ElementType { get; }
         public string ElementTargetType { get; }
         public string TargetKind { get; }
+        /// <summary>
+        /// Collection: how the source is walked, so that no enumerator is allocated: "List" (a span over the list), "Array",
+        /// "Indexed" (an indexer over IReadOnlyList or IList) or "Enumerable" (foreach). Dictionary: "Dictionary" or "Enumerable".
+        /// </summary>
+        public string SourceKind { get; }
         /// <summary>Enum by name: <c>sourceMember => targetMember</c> pairs. Enum parse: unused.</summary>
         public List<string> EnumSourceMembers { get; }
         public List<string> EnumTargetMembers { get; }
@@ -335,7 +340,7 @@ namespace Transformations.Mapping.Generator
 
         public HelperModel(string name, HelperKind kind, string parameterType, string returnType, bool nullGuard, string sourceName, string targetName,
             List<PropertyMapping>? properties = null, string? elementExpression = null, string? keyExpression = null,
-            string elementType = "", string elementTargetType = "", string targetKind = "",
+            string elementType = "", string elementTargetType = "", string targetKind = "", string sourceKind = "Enumerable",
             List<string>? enumSourceMembers = null, List<string>? enumTargetMembers = null, List<string>? unmappedTargetProperties = null,
             List<ConstructorArgument>? arguments = null)
         {
@@ -353,6 +358,7 @@ namespace Transformations.Mapping.Generator
             ElementType = elementType;
             ElementTargetType = elementTargetType;
             TargetKind = targetKind;
+            SourceKind = sourceKind;
             EnumSourceMembers = enumSourceMembers ?? new List<string>();
             EnumTargetMembers = enumTargetMembers ?? new List<string>();
             UnmappedTargetProperties = unmappedTargetProperties ?? new List<string>();
@@ -372,6 +378,7 @@ namespace Transformations.Mapping.Generator
                 && ElementType == other.ElementType
                 && ElementTargetType == other.ElementTargetType
                 && TargetKind == other.TargetKind
+                && SourceKind == other.SourceKind
                 && ModelEquality.SequenceEqual(Properties, other.Properties)
                 && ModelEquality.SequenceEqual(Arguments, other.Arguments)
                 && ModelEquality.SequenceEqual(EnumSourceMembers, other.EnumSourceMembers)

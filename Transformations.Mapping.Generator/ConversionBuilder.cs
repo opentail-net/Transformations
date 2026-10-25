@@ -535,12 +535,12 @@ namespace Transformations.Mapping.Generator
                     return true;
                 }
 
-                conversion = BuildDictionary(ctx, expression, sourceElement, sourceKey, sourceValue, targetDictionary);
+                conversion = BuildDictionary(ctx, expression, sourceCore, sourceElement, sourceKey, sourceValue, targetDictionary);
                 return true;
             }
 
             ITypeSymbol targetElement = targetCore is IArrayTypeSymbol array ? array.ElementType : ((INamedTypeSymbol)targetCore).TypeArguments[0];
-            conversion = BuildList(ctx, expression, sourceType, sourceElement, targetType, targetCore, targetElement, kind);
+            conversion = BuildList(ctx, expression, sourceType, sourceCore, sourceElement, targetType, targetCore, targetElement, kind);
             return true;
         }
 
@@ -555,10 +555,44 @@ namespace Transformations.Mapping.Generator
             }
         }
 
-        private static Conversion? BuildList(MappingContext ctx, string expression, ITypeSymbol sourceType, ITypeSymbol sourceElement,
+        /// <summary>
+        /// How a helper walks a collection without allocating an enumerator: a <c>List&lt;T&gt;</c> through a span, an array
+        /// and an <c>IReadOnlyList&lt;T&gt;</c>/<c>IList&lt;T&gt;</c> through an indexer, anything else with <c>foreach</c>.
+        /// </summary>
+        private static (string Kind, string ParameterType) SourceShape(ITypeSymbol sourceCore, ITypeSymbol sourceElement)
+        {
+            string element = FqN(sourceElement);
+            if (sourceCore is IArrayTypeSymbol) return ("Array", element + "[]?");
+
+            if (sourceCore is INamedTypeSymbol named)
+            {
+                if (named.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.List<T>")
+                {
+                    return ("List", $"global::System.Collections.Generic.List<{element}>?");
+                }
+
+                bool Is(INamedTypeSymbol type, string definition)
+                    => type.OriginalDefinition.ToDisplayString() == definition && SymbolEqualityComparer.Default.Equals(type.TypeArguments[0], sourceElement);
+
+                if (Is(named, "System.Collections.Generic.IReadOnlyList<T>") || named.AllInterfaces.Any(i => Is(i, "System.Collections.Generic.IReadOnlyList<T>")))
+                {
+                    return ("Indexed", $"global::System.Collections.Generic.IReadOnlyList<{element}>?");
+                }
+
+                if (Is(named, "System.Collections.Generic.IList<T>") || named.AllInterfaces.Any(i => Is(i, "System.Collections.Generic.IList<T>")))
+                {
+                    return ("Indexed", $"global::System.Collections.Generic.IList<{element}>?");
+                }
+            }
+
+            return ("Enumerable", $"global::System.Collections.Generic.IEnumerable<{element}>?");
+        }
+
+        private static Conversion? BuildList(MappingContext ctx, string expression, ITypeSymbol sourceType, ITypeSymbol sourceCore, ITypeSymbol sourceElement,
             ITypeSymbol targetType, ITypeSymbol targetCore, ITypeSymbol targetElement, string kind)
         {
-            string key = $"col|{Fq(sourceElement)}|{FqN(sourceElement)}|{kind}|{FqN(targetElement)}";
+            var (sourceKind, parameterType) = SourceShape(sourceCore, sourceElement);
+            string key = $"col|{parameterType}|{kind}|{FqN(targetElement)}";
             string args = ctx.Helpers.TypeArguments;
             if (ctx.Helpers.TryGet(key, out string name, out bool complete, out string? elementProjection))
             {
@@ -575,9 +609,10 @@ namespace Transformations.Mapping.Generator
                 return null;
             }
 
-            ctx.Helpers.Complete(key, new HelperModel(name, HelperKind.Collection, $"global::System.Collections.Generic.IEnumerable<{FqN(sourceElement)}>?",
+            ctx.Helpers.Complete(key, new HelperModel(name, HelperKind.Collection, parameterType,
                 ContainerType(kind, targetElement), true, sourceElement.Name, targetElement.Name,
-                elementExpression: element.Expression, elementType: FqN(sourceElement), elementTargetType: FqN(targetElement), targetKind: kind), element.Projection);
+                elementExpression: element.Expression, elementType: FqN(sourceElement), elementTargetType: FqN(targetElement), targetKind: kind,
+                sourceKind: sourceKind), element.Projection);
 
             return CollectionCall(ctx, expression, sourceType, targetType, name, args, kind, element.Projection, true);
         }
@@ -606,12 +641,18 @@ namespace Transformations.Mapping.Generator
             return new Conversion(runtime, ConversionKind.Helper, projection);
         }
 
-        private static Conversion? BuildDictionary(MappingContext ctx, string expression, ITypeSymbol sourceElement, ITypeSymbol sourceKey,
-            ITypeSymbol sourceValue, INamedTypeSymbol targetDictionary)
+        private static Conversion? BuildDictionary(MappingContext ctx, string expression, ITypeSymbol sourceCore, ITypeSymbol sourceElement,
+            ITypeSymbol sourceKey, ITypeSymbol sourceValue, INamedTypeSymbol targetDictionary)
         {
             var targetKey = targetDictionary.TypeArguments[0];
             var targetValue = targetDictionary.TypeArguments[1];
-            string key = $"dict|{FqN(sourceKey)}|{FqN(sourceValue)}|{FqN(targetKey)}|{FqN(targetValue)}";
+
+            // A Dictionary<K, V> is walked with its own struct enumerator; any other source through IEnumerable.
+            bool plainDictionary = sourceCore is INamedTypeSymbol named && named.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.Dictionary<TKey, TValue>";
+            string parameterType = plainDictionary
+                ? $"global::System.Collections.Generic.Dictionary<{FqN(sourceKey)}, {FqN(sourceValue)}>?"
+                : $"global::System.Collections.Generic.IEnumerable<{FqN(sourceElement)}>?";
+            string key = $"dict|{parameterType}|{FqN(targetKey)}|{FqN(targetValue)}";
             string args = ctx.Helpers.TypeArguments;
             if (!ctx.Helpers.TryGet(key, out string name, out _, out _))
             {
@@ -628,7 +669,7 @@ namespace Transformations.Mapping.Generator
                     return null;
                 }
 
-                ctx.Helpers.Complete(key, new HelperModel(name, HelperKind.Dictionary, $"global::System.Collections.Generic.IEnumerable<{FqN(sourceElement)}>?",
+                ctx.Helpers.Complete(key, new HelperModel(name, HelperKind.Dictionary, parameterType,
                     $"global::System.Collections.Generic.Dictionary<{FqN(targetKey)}, {FqN(targetValue)}>", true, "dictionary", "dictionary",
                     elementExpression: valueConversion.Expression, keyExpression: keyConversion.Expression, elementType: FqN(sourceElement),
                     elementTargetType: FqN(targetValue), targetKind: "Dictionary"), null);

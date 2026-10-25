@@ -344,6 +344,33 @@ namespace Transformations.Mapping.Tests.Features
             Assert.That(back.Children.Single().Name, Is.EqualTo("c"));
         }
 
+        // ── Sources walked without an enumerator ─────────────────────────────
+
+        [Test]
+        public void EverySourceShape_IsMappedElementByElement()
+        {
+            var source = new ShapesSource
+            {
+                FromReadOnlyList = new[] { new LineItem { Sku = "r1" }, new LineItem { Sku = "r2" } },
+                FromIList = new List<LineItem> { new LineItem { Sku = "i1" } },
+                FromArrayToSet = new[] { "a", "b", "a" },
+                FromDictionary = new Dictionary<string, LineItem> { ["k"] = new LineItem { Sku = "d" } },
+                FromEnumerable = Enumerable.Range(1, 3).Select(i => new LineItem { Sku = "e" + i }),
+                FromListToArray = new List<LineItem> { new LineItem { Sku = "x" }, null! },
+            };
+
+            var target = source.ToShapesTarget();
+
+            Assert.That(target.FromReadOnlyList.Select(l => l.Sku), Is.EqualTo(new[] { "r1", "r2" }));
+            Assert.That(target.FromIList.Select(l => l.Sku), Is.EqualTo(new[] { "i1" }));
+            Assert.That(target.FromArrayToSet, Is.EquivalentTo(new[] { "a", "b" }));
+            Assert.That(target.FromDictionary["k"].Sku, Is.EqualTo("d"));
+            Assert.That(target.FromEnumerable.Select(l => l.Sku), Is.EqualTo(new[] { "e1", "e2", "e3" }));
+            Assert.That(target.FromEmptyList, Is.Empty);
+            Assert.That(target.FromListToArray, Has.Length.EqualTo(2));
+            Assert.That(target.FromListToArray[1], Is.Null);
+        }
+
         // ── Constructors ─────────────────────────────────────────────────────
 
         [Test]
