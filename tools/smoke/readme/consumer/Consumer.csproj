@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Consumer for the README smoke test. It references only the Transformations meta package, the way a user does, and
+    runs the Quick Start examples from the root README. Pass -p:SmokeTfm=<tfm> and -p:SmokeVersion=<version>.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework Condition="'$(SmokeTfm)' != ''">$(SmokeTfm)</TargetFramework>
+    <TargetFramework Condition="'$(SmokeTfm)' == ''">net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>Smoke.Readme</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Transformations" Version="$(SmokeVersion)" />
+  </ItemGroup>
+
+</Project>
