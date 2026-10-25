@@ -18,10 +18,6 @@ public static class MarkdownStructureExtractor
         return !string.Equals(left, right, StringComparison.Ordinal);
     }
 
-    /// <inheritdoc cref="HasChanged"/>
-    [Obsolete("Use HasChanged instead — CompareMarkdown returns true when content differs, which is unintuitive.")]
-    public static bool CompareMarkdown(string leftMarkdown, string rightMarkdown) =>
-        HasChanged(leftMarkdown, rightMarkdown);
 
     /// <summary>
     /// Normalizes Markdown content by unifying line endings and collapsing excessive blank lines.

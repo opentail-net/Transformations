@@ -70,52 +70,6 @@ namespace Transformations
         }
 
         /// <summary>
-        /// Gets the <see cref="DescriptionAttribute"/> text for the specified enum value
-        /// using <see cref="Attribute.GetCustomAttribute(System.Reflection.MemberInfo, Type)"/>.
-        /// </summary>
-        /// <typeparam name="T">The enum type.</typeparam>
-        /// <param name="currentEnum">The current enum value.</param>
-        /// <returns>The description text, the enum member name if no attribute is present, or <c>null</c> if the type is not an enum.</returns>
-        [Obsolete("Use GetEnumDescription<TEnum>(...) or GetDescription(Enum) for a unified API surface. Planned removal in 2.2.0.")]
-        public static string? GetEnumDescription2<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)] T>(this T currentEnum) where T : struct, IConvertible
-        {
-            Type type = currentEnum.GetType();
-            if (!type.IsEnum)
-            {
-                return null;
-            }
-
-            var field = type.GetField(currentEnum.ToString(CultureInfo.InvariantCulture));
-
-            if (field == null)
-            {
-                return null;
-            }
-
-            var descriptionAttribute = Attribute.GetCustomAttribute(field, typeof(DescriptionAttribute)) as DescriptionAttribute;
-            return descriptionAttribute != null ? descriptionAttribute.Description : currentEnum.ToString(CultureInfo.InvariantCulture);
-        }
-
-        /// <summary>
-        /// Gets the <see cref="DescriptionAttribute"/> text for the specified <see cref="Enum"/> value.
-        /// </summary>
-        /// <param name="currentEnum">The current enum value.</param>
-        /// <returns>The description text, or the enum member name if no attribute is present.</returns>
-        [Obsolete("Use GetDescription(Enum) for the canonical Enum description API. Planned removal in 2.2.0.")]
-        public static string GetEnumDescription3(this Enum currentEnum)
-        {
-            Type type = currentEnum.GetType();
-            var fi = type.GetField(currentEnum.ToString());
-            if (fi == null)
-            {
-                return currentEnum.ToString();
-            }
-
-            var da = Attribute.GetCustomAttribute(fi, typeof(DescriptionAttribute)) as DescriptionAttribute;
-            return da != null ? da.Description : currentEnum.ToString();
-        }
-
-        /// <summary>
         /// Gets a list of description strings for each enum value in the collection.
         /// </summary>
         /// <typeparam name="T">The enum type.</typeparam>
@@ -154,56 +108,6 @@ namespace Transformations
             foreach (T enumItem in enumCollection)
             {
                 resultList.Add(new KeyValuePair<T, string>(enumItem, enumItem.GetEnumDescription() ?? string.Empty));
-            }
-
-            return resultList;
-        }
-
-        /// <summary>
-        /// Gets key-value pairs mapping each enum value to its description string, constructed from the enum type.
-        /// </summary>
-        /// <typeparam name="T">The enum type.</typeparam>
-        /// <param name="enumType">Type of the enum.</param>
-        /// <returns>The result.</returns>
-        [Obsolete("Use GetEnumDescriptionKeyValuePairs<T>(...) where possible. This overload is retained for compatibility and planned for removal in 2.2.0.")]
-        public static List<KeyValuePair<T, string>>? GetEnumDescriptionKeyValuePairs2<T>(this Type enumType) where T : struct, IConvertible
-        {
-            if (!enumType.IsEnum)
-            {
-                return null;
-            }
-
-            List<KeyValuePair<T, string>> resultList = new List<KeyValuePair<T, string>>();
-            var values = Enum.GetValues(enumType);
-
-            foreach (T item in values)
-            {
-                resultList.Add(new KeyValuePair<T, string>(item, item.GetEnumDescription() ?? string.Empty));
-            }
-
-            return resultList;
-        }
-
-        /// <summary>
-        /// Gets key-value pairs of <see cref="Enum"/> values and their description strings, constructed from the enum type.
-        /// </summary>
-        /// <param name="enumType">Type of the enum.</param>
-        /// <example><code>typeof(test.EnumGrades).GetEnumDescriptionKeyValuePairs<!--test.EnumGrades-->();</code></example>
-        /// <returns>The result.</returns>
-        [Obsolete("Use GetEnumDescriptionKeyValuePairs<T>(...) where possible. This overload is retained for compatibility and planned for removal in 2.2.0.")]
-        public static List<KeyValuePair<Enum, string>>? GetEnumDescriptionKeyValuePairs3(this Type enumType)
-        {
-            if (!enumType.IsEnum)
-            {
-                return null;
-            }
-
-            List<KeyValuePair<Enum, string>> resultList = new List<KeyValuePair<Enum, string>>();
-            var values = Enum.GetValues(enumType);
-
-            foreach (Enum item in values)
-            {
-                resultList.Add(new KeyValuePair<Enum, string>(item, item.GetDescription()));
             }
 
             return resultList;

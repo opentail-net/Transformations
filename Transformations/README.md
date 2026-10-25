@@ -1,6 +1,6 @@
 # **Transformations**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: PolyForm Strict 1.0.0](https://img.shields.io/badge/License-PolyForm%20Strict%201.0.0-blue.svg)](https://polyformproject.org/licenses/strict/1.0.0)
 [![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
 [![NUnit](https://img.shields.io/badge/Tests-NUnit-green)]()
 
@@ -365,23 +365,32 @@ dotnet test
 
 ---
 
-## API Migration Guidance (2.x)
+## API Migration Guidance (removed in 3.0.0.0)
 
-Legacy APIs are retained with `[Obsolete]` markers and explicit replacements:
+The obsolete APIs below were removed in 3.0.0.0. The replacements are listed with any difference in behaviour. Where the
+difference matters, the note says so.
 
-| Legacy | Replacement | Why |
-|--------|------------|-----|
-| `ExtensionHelper.Between<T>(...)` | `BetweenExclusive(...)` | Explicit half-open range semantics |
-| `ComparableHelper.IsBetween<T>(...)` | `IsBetweenInclusive(...)` | Inclusive behavior is now clear from the name |
-| `EnumHelper.GetEnumDescription2(...)` | `GetEnumDescription(...)` | Numbered suffixes removed |
+| Removed | Replacement | Note |
+|---------|-------------|------|
+| `ExtensionHelper.Between<T>(actual, lower, upper)` | `BetweenExclusive(...)` | Same half-open range. |
+| `ComparableHelper.IsBetween<T>(actual, min, max)` | `IsBetweenInclusive(...)` | Same inclusive range. |
+| `ComparableHelper.IsBetween<T>(actual, min, max, default)` | `IsBetweenInclusiveOrDefault(...)` | Same inclusive range. |
+| `CollectionHelper.CloneList2<T>(list)` | `new List<T>(list)` | **Not** `CloneList<T>`, which needs `ICloneable` elements. Both are shallow copies. |
+| `EnumHelper.GetEnumDescription2<T>(value)` | `GetEnumDescription<T>(value)` | For an undefined or combined value, the replacement returns `string.Empty`; the removed method returned `null`. |
+| `EnumHelper.GetEnumDescription3(Enum)` | `GetDescription(Enum)` | Same result. |
+| `EnumHelper.GetEnumDescriptionKeyValuePairs2<T>(Type)` | `GetEnumDescriptionKeyValuePairs(Enum.GetValues(type).Cast<T>())` | Takes the values, not the type. |
+| `EnumHelper.GetEnumDescriptionKeyValuePairs3(Type)` | `Enum.GetValues(type).Cast<Enum>().Select(e => new KeyValuePair<Enum, string>(e, e.GetDescription())).ToList()` | No single replacement. |
+| `StreamHelper.CopyTo(Stream, int)` | `Stream.CopyTo(Stream, int)` (BCL) | The BCL method returns `void`, so it cannot be chained. A non-readable source throws `NotSupportedException`, not `InvalidOperationException`. |
+| `DocumentContent.Compare`, `JsonSchemaValidator.CompareJson`, `MarkdownStructureExtractor.CompareMarkdown` | `HasChanged` | Same results. These called `HasChanged`. |
 
 **Deprecation timeline:**
 
 | Version | Behavior |
 |---------|----------|
 | **2.0.0** | `[Obsolete]` warning-only with replacement guidance |
-| **2.1.0** | Set `DeprecationErrorLevel=true` to promote to build errors |
-| **2.2.0** | Deprecated APIs removed |
+| **2.1.0** | Planned: set `DeprecationErrorLevel=true` to promote to build errors. Skipped. |
+| **3.0.0.0** | Deprecated APIs removed. The 2.2.0 step in the original plan was never released; this is the removal. |
+
 
 See [DEPRECATION_POLICY.md](DEPRECATION_POLICY.md) for full details.
 
@@ -424,7 +433,7 @@ GitHub Actions workflow: `.github/workflows/ci-quality-gates.yml`
 
 ## License
 
-[MIT](https://opensource.org/licenses/MIT) — Copyright © 2026 [opentail.net](https://opentail.net)
+[PolyForm Strict 1.0.0](https://github.com/opentail-net/Transformations/blob/main/LICENSE.md) — Copyright © 2026 [opentail.net](https://opentail.net)
 
 ---
 

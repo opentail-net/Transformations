@@ -170,22 +170,5 @@ namespace Transformations.Tests
 
         #endregion AddRange
 
-        #region CloneList2
-
-        [Test]
-        public void CloneList2_ReturnsShallowCopy()
-        {
-            //// Setup
-            var list = new List<int> { 10, 20, 30 };
-
-            //// Act
-            var clone = list.CloneList2();
-
-            //// Assert
-            Assert.That(clone, Is.EqualTo(list));
-            Assert.That(clone, Is.Not.SameAs(list));
-        }
-
-        #endregion CloneList2
     }
 }

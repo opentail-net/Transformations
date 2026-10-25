@@ -38,34 +38,34 @@ public class DocumentContentTests
     }
 
     [Test]
-    public void Compare_UsesMarkdownRules_WhenFormatIsMarkdown()
+    public void HasChanged_UsesMarkdownRules_WhenFormatIsMarkdown()
     {
         string left = "# Title\n\nBody   ";
         string right = "# Title\r\n\r\nBody";
 
-        bool changed = DocumentContent.Compare(left, right, DocFormat.Markdown);
+        bool changed = DocumentContent.HasChanged(left, right, DocFormat.Markdown);
 
         Assert.That(changed, Is.False);
     }
 
     [Test]
-    public void Compare_UsesJsonRules_WhenFormatIsJson()
+    public void HasChanged_UsesJsonRules_WhenFormatIsJson()
     {
         string left = "{\"a\":1}";
         string right = "{\"a\":2}";
 
-        bool changed = DocumentContent.Compare(left, right, DocFormat.Json);
+        bool changed = DocumentContent.HasChanged(left, right, DocFormat.Json);
 
         Assert.That(changed, Is.True);
     }
 
     [Test]
-    public void Compare_UsesTextRules_WhenFormatIsPlainText()
+    public void HasChanged_UsesTextRules_WhenFormatIsPlainText()
     {
         string left = "A\n\n\n\nB";
         string right = "A\r\n\r\nB";
 
-        bool changed = DocumentContent.Compare(left, right, DocFormat.PlainText);
+        bool changed = DocumentContent.HasChanged(left, right, DocFormat.PlainText);
 
         Assert.That(changed, Is.False);
     }

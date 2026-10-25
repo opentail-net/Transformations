@@ -359,49 +359,11 @@ public static class ComparableHelper
     }
 
     /// <summary>
-    /// Checks if the specified value is between the specified range values (inclusive comparison, including the supplied values).
-    /// </summary>
-    /// <typeparam name="T">The type.</typeparam>
-    /// <param name="actual">The actual.</param>
-    /// <param name="minValue">The minimum value.</param>
-    /// <param name="maxValue">The maximum value.</param>
-    /// <example>
-    /// <code>
-    /// if (myNumber.Between(3,7))
-    /// </code>
-    /// </example>
-    /// <returns>The result.</returns>
-    [Obsolete("Use IsBetweenInclusive(...) for explicit inclusive-range semantics. Planned removal in 2.2.0.")]
-    public static bool IsBetween<T>(this T actual, T minValue, T maxValue)
-        where T : IComparable<T>
-    {
-        return InRange(actual, minValue, maxValue);
-    }
-
-    /// <summary>
-    /// Inclusive range check shared by every overload, so the library never calls its own deprecated
-    /// <c>IsBetween</c> overloads.
+    /// Inclusive range check shared by the inclusive overloads.
     /// </summary>
     private static bool InRange<T>(T actual, T minValue, T maxValue)
         where T : IComparable<T>
         => actual.CompareTo(minValue) >= 0 && actual.CompareTo(maxValue) <= 0;
-
-    /// <summary>
-    /// Checks if the specified value is between the specified range values (inclusive comparison, including the supplied values).
-    /// </summary>
-    /// <typeparam name="T">The type.</typeparam>
-    /// <param name="actual">The actual.</param>
-    /// <param name="minValue">The minimum value.</param>
-    /// <param name="maxValue">The maximum value.</param>
-    /// <param name="defaultValue">The default value.</param>
-    /// <example><code>if (myNumber.Between(3,7))</code></example>
-    /// <returns>The result.</returns>
-    [Obsolete("Use IsBetweenInclusiveOrDefault(...) for explicit inclusive-range semantics. Planned removal in 2.2.0.")]
-    public static T IsBetween<T>(this T actual, T minValue, T maxValue, T defaultValue)
-        where T : IComparable<T>
-    {
-        return InRange(actual, minValue, maxValue) ? actual : defaultValue;
-    }
 
     /// <summary>
     /// Preferred inclusive-range naming variant.

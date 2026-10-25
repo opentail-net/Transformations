@@ -58,55 +58,23 @@ namespace Transformations.Tests
 
         #endregion GetEnumDescription
 
-        #region GetEnumDescription2
+        #region GetDescription
 
         [Test]
-        public void GetEnumDescription2_WithDescription_ReturnsDescription()
-        {
-            //// Setup
-            TestGrades valueInput = TestGrades.Fail;
-            string expected = "Failed the exam";
-
-            //// Act
-            string? actual = valueInput.GetEnumDescription2();
-
-            //// Assert
-            Assert.That(actual, Is.EqualTo(expected));
-        }
-
-        [Test]
-        public void GetEnumDescription2_WithoutDescription_ReturnsName()
-        {
-            //// Setup
-            TestGrades valueInput = TestGrades.Promoted;
-            string expected = "Promoted";
-
-            //// Act
-            string? actual = valueInput.GetEnumDescription2();
-
-            //// Assert
-            Assert.That(actual, Is.EqualTo(expected));
-        }
-
-        #endregion GetEnumDescription2
-
-        #region GetEnumDescription3
-
-        [Test]
-        public void GetEnumDescription3_WithDescription_ReturnsDescription()
+        public void GetDescription_WithDescription_ReturnsDescription()
         {
             //// Setup
             Enum valueInput = TestGrades.Pass;
             string expected = "Passed the exam";
 
             //// Act
-            string actual = valueInput.GetEnumDescription3();
+            string actual = valueInput.GetDescription();
 
             //// Assert
             Assert.That(actual, Is.EqualTo(expected));
         }
 
-        #endregion GetEnumDescription3
+        #endregion GetDescription
 
         #region GetEnumDescriptionsList
 
@@ -314,27 +282,6 @@ namespace Transformations.Tests
             Assert.That(actual, Is.Not.Null);
             Assert.That(actual!.Count, Is.EqualTo(2));
             Assert.That(actual[0].Value, Is.EqualTo("Passed the exam"));
-        }
-
-        [Test]
-        public void GetEnumDescriptionKeyValuePairs3_FromType_ReturnsAll()
-        {
-            //// Act
-            var actual = typeof(TestGrades).GetEnumDescriptionKeyValuePairs3();
-
-            //// Assert
-            Assert.That(actual, Is.Not.Null);
-            Assert.That(actual!.Count, Is.EqualTo(3));
-        }
-
-        [Test]
-        public void GetEnumDescriptionKeyValuePairs3_NonEnumType_ReturnsNull()
-        {
-            //// Act
-            var actual = typeof(string).GetEnumDescriptionKeyValuePairs3();
-
-            //// Assert
-            Assert.That(actual, Is.Null);
         }
 
         #endregion GetEnumDescriptionKeyValuePairs

@@ -148,21 +148,6 @@
         }
 
         /// <summary>
-        /// Checks if the specified value is between certain range values.
-        /// </summary>
-        /// <typeparam name="T">The type.</typeparam>
-        /// <param name="actual">The actual.</param>
-        /// <param name="lower">The lower.</param>
-        /// <param name="upper">The upper.</param>
-        /// <example>if (myNumber.Between(3,7))</example>
-        /// <returns>The result.</returns>
-        [Obsolete("Use BetweenExclusive(...) for explicit half-open range semantics. Planned removal in 2.2.0.")]
-        public static bool Between<T>(this T actual, T lower, T upper) where T : IComparable<T>
-        {
-            return actual.CompareTo(lower) >= 0 && actual.CompareTo(upper) < 0;
-        }
-
-        /// <summary>
         /// Checks whether the value is within an exclusive upper bound range.
         /// </summary>
         /// <typeparam name="T">The comparable value type.</typeparam>

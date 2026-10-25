@@ -108,9 +108,4 @@ public static class JsonSchemaValidator
     /// <summary>Blank, or nothing but an empty markdown code fence.</summary>
     private static bool IsEmpty(string? json)
         => string.IsNullOrWhiteSpace(json) || NormalizeJson(json).Length == 0;
-
-    /// <inheritdoc cref="HasChanged"/>
-    [Obsolete("Use HasChanged instead — CompareJson returns true when content differs, which is unintuitive.")]
-    public static bool CompareJson(string leftJson, string rightJson) =>
-        HasChanged(leftJson, rightJson);
 }

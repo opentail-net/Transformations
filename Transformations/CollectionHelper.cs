@@ -291,18 +291,6 @@ public static class CollectionHelper
         return listToClone.Select(item => (T)item.Clone()).ToList();
     }
 
-    /// <summary>
-    /// Clones the list - version 2.
-    /// </summary>
-    /// <typeparam name="T">The type to use.</typeparam>
-    /// <param name="listToClone">The list to clone.</param>
-    /// <returns>The copy of the list.</returns>
-    [Obsolete("Use CloneList<T>() instead. Planned removal in 2.2.0.")]
-    public static List<T> CloneList2<T>(this List<T> listToClone)
-    {
-        return listToClone.GetRange(0, listToClone.Count);
-    }
-
     /////// <summary>
     /////// Perform a deep Copy of the object.
     /////// </summary>

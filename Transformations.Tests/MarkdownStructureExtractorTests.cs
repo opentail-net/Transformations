@@ -7,23 +7,23 @@ namespace Transformations.Tests;
 public class MarkdownStructureExtractorTests
 {
     [Test]
-    public void CompareMarkdown_ReturnsFalse_ForEquivalentMarkdownAfterNormalization()
+    public void HasChanged_ReturnsFalse_ForEquivalentMarkdownAfterNormalization()
     {
         string left = "# Title\n\nBody   ";
         string right = "# Title\r\n\r\nBody";
 
-        bool changed = MarkdownStructureExtractor.CompareMarkdown(left, right);
+        bool changed = MarkdownStructureExtractor.HasChanged(left, right);
 
         Assert.That(changed, Is.False);
     }
 
     [Test]
-    public void CompareMarkdown_ReturnsTrue_WhenMarkdownContentDiffers()
+    public void HasChanged_ReturnsTrue_WhenMarkdownContentDiffers()
     {
         string left = "# Title\n\nBody";
         string right = "# Title\n\nBody updated";
 
-        bool changed = MarkdownStructureExtractor.CompareMarkdown(left, right);
+        bool changed = MarkdownStructureExtractor.HasChanged(left, right);
 
         Assert.That(changed, Is.True);
     }

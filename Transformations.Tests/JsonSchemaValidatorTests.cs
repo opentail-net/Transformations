@@ -51,23 +51,23 @@ public class JsonSchemaValidatorTests
     }
 
     [Test]
-    public void CompareJson_ReturnsTrue_WhenJsonDiffers()
+    public void HasChanged_ReturnsTrue_WhenJsonDiffers()
     {
         var left = "{ \"name\": \"alpha\", \"count\": 1 }";
         var right = "{ \"name\": \"alpha\", \"count\": 2 }";
 
-        var changed = JsonSchemaValidator.CompareJson(left, right);
+        var changed = JsonSchemaValidator.HasChanged(left, right);
 
         Assert.That(changed, Is.True);
     }
 
     [Test]
-    public void CompareJson_ReturnsFalse_WhenJsonMatches()
+    public void HasChanged_ReturnsFalse_WhenJsonMatches()
     {
         var left = "{ \"name\": \"alpha\", \"count\": 1 }";
         var right = "{ \"name\": \"alpha\", \"count\": 1 }";
 
-        var changed = JsonSchemaValidator.CompareJson(left, right);
+        var changed = JsonSchemaValidator.HasChanged(left, right);
 
         Assert.That(changed, Is.False);
     }

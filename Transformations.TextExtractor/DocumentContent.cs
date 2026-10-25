@@ -39,9 +39,4 @@ public static class DocumentContent
             DocumentFormat.Json => JsonSchemaValidator.HasChanged(left, right),
             _ => !string.Equals(TextNormalizer.Normalize(left), TextNormalizer.Normalize(right), StringComparison.Ordinal)
         };
-
-    /// <inheritdoc cref="HasChanged"/>
-    [Obsolete("Use HasChanged instead — Compare returns true when content differs, which is unintuitive.")]
-    public static bool Compare(string left, string right, DocumentFormat format) =>
-        HasChanged(left, right, format);
 }

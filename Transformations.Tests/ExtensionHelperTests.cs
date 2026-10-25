@@ -100,7 +100,7 @@ namespace Transformations.Tests
             const bool expected = true;
 
             //// Act
-            bool result = ExtensionHelper.Between<int>(actual, 1, 10);
+            bool result = ExtensionHelper.BetweenExclusive<int>(actual, 1, 10);
 
             //// Assert
             Assert.That(result, Is.EqualTo(expected));
