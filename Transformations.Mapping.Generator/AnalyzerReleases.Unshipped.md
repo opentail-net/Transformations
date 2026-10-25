@@ -22,3 +22,4 @@ TXMAP017 | Mapping  | Warning  | Reverse mapping would be ambiguous
 TXMAP018 | Mapping  | Warning  | Source member maps to several target members
 TXMAP019 | Mapping  | Warning  | Type parameter name is declared twice
 TXMAP020 | Mapping  | Warning  | Mapped target member not found
+TXMAP021 | Mapping  | Warning  | Static type cannot be mapped

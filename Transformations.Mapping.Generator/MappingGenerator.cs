@@ -189,6 +189,15 @@ namespace Transformations.Mapping.Generator
             isEnabledByDefault: true,
             description: "The mapping methods are generated in a class at namespace level, which cannot name a private or protected nested type. Make the type internal or public.");
 
+        private static readonly DiagnosticDescriptor StaticType = new DiagnosticDescriptor(
+            id: "TXMAP021",
+            title: "Static type cannot be mapped",
+            messageFormat: "The mapping between '{0}' and '{1}' is not generated because '{2}' is a static class, which cannot be used as a parameter or return type",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Mapping methods take and return both types, and a static class cannot be a parameter, a return type or a type argument.");
+
         private static readonly DiagnosticDescriptor UnknownTargetMember = new DiagnosticDescriptor(
             id: "TXMAP020",
             title: "Mapped target member not found",
@@ -298,6 +307,13 @@ namespace Transformations.Mapping.Generator
                     yield break;
                 }
 
+                if (decoratedType.IsStatic)
+                {
+                    diagnostics.Add(Diagnostic.Create(StaticType, location, decoratedType.Name, decoratedType.Name, decoratedType.Name));
+                    yield return MappingModel.Invalid(diagnostics);
+                    yield break;
+                }
+
                 if (HasDuplicateTypeParameterNames(decoratedType))
                 {
                     diagnostics.Add(Diagnostic.Create(DuplicateTypeParameterName, location, decoratedType.Name));
@@ -374,7 +390,8 @@ namespace Transformations.Mapping.Generator
                     sourceLocation: location,
                     diagnostics: diagnostics,
                     targets: targets,
-                    converterWrappers: wrappers);
+                    converterWrappers: wrappers,
+                    reservedTypeNames: GetReservedTypeNames(compilation, decoratedType));
             }
             else
             {
@@ -393,6 +410,14 @@ namespace Transformations.Mapping.Generator
                     {
                         var hidden = IsReferenceable(compilation, sourceType) ? decoratedType : sourceType;
                         diagnostics.Add(Diagnostic.Create(InaccessibleType, location, sourceType.Name, decoratedType.Name, hidden.Name));
+                        yield return MappingModel.Invalid(diagnostics);
+                        continue;
+                    }
+
+                    // Only the decorated class can be static: C# rejects a static class as an attribute type argument.
+                    if (decoratedType.IsStatic)
+                    {
+                        diagnostics.Add(Diagnostic.Create(StaticType, location, sourceType.Name, decoratedType.Name, decoratedType.Name));
                         yield return MappingModel.Invalid(diagnostics);
                         continue;
                     }
@@ -421,7 +446,8 @@ namespace Transformations.Mapping.Generator
                         diagnostics: diagnostics,
                         targets: new List<TargetMapping> { target },
                         converterWrappers: new List<ConverterWrapper>(),
-                        targetMetadataName: GetMetadataName(decoratedType));
+                        targetMetadataName: GetMetadataName(decoratedType),
+                        reservedTypeNames: GetReservedTypeNames(compilation, decoratedType));
                 }
             }
         }
@@ -448,6 +474,25 @@ namespace Transformations.Mapping.Generator
                         sourceType.Name, sourceProp.Name, attribute.TargetPropertyName, targetNames));
                 }
             }
+        }
+
+        /// <summary>
+        /// Members of the type's namespace (in this and the referenced assemblies) whose names look like a generated
+        /// extension class, so that a user-declared <c>SourceMappingExtensions</c> is not collided with.
+        /// </summary>
+        private static ISet<string> GetReservedTypeNames(CSharpCompilation compilation, INamedTypeSymbol type)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            var merged = compilation.GetCompilationNamespace(type.ContainingNamespace);
+            if (merged != null)
+            {
+                foreach (var member in merged.GetMembers())
+                {
+                    if (member.Name.Contains("MappingExtensions")) names.Add(member.Name);
+                }
+            }
+
+            return names;
         }
 
         private static bool HasMapToTargets(INamedTypeSymbol type)
@@ -907,11 +952,28 @@ namespace Transformations.Mapping.Generator
             var wrapper = context.Wrappers.FirstOrDefault(w => w.MethodName == method.Name && w.ParameterType == parameterType);
             if (wrapper == null)
             {
-                wrapper = new ConverterWrapper($"__TxMap_{method.Name}_{context.Wrappers.Count}", method.Name, parameterType, returnType);
+                // Not the name of any member the partial source type (or a base type) already has, or of another wrapper.
+                string wrapperName;
+                for (int n = context.Wrappers.Count; IsMemberNameTaken(context.SourceType, wrapperName = $"__TxMap_{method.Name}_{n}")
+                    || context.Wrappers.Any(w => w.WrapperName == wrapperName); n++)
+                {
+                }
+
+                wrapper = new ConverterWrapper(wrapperName, method.Name, parameterType, returnType);
                 context.Wrappers.Add(wrapper);
             }
 
             return $"{context.SourceFullName}.{wrapper.WrapperName}({argument})";
+        }
+
+        private static bool IsMemberNameTaken(INamedTypeSymbol type, string name)
+        {
+            for (INamedTypeSymbol? current = type; current != null; current = current.BaseType)
+            {
+                if (current.GetMembers(name).Length > 0) return true;
+            }
+
+            return false;
         }
 
         private static (IMethodSymbol Method, ITypeSymbol? CoalesceTo)? ResolveConverterMethod(
@@ -1068,6 +1130,12 @@ namespace Transformations.Mapping.Generator
         private static IEnumerable<IPropertySymbol> GetMappableProperties(CSharpCompilation compilation, INamedTypeSymbol type,
             Func<IPropertySymbol, bool> hasAccessor)
         {
+            if (type.TypeKind == TypeKind.Interface)
+            {
+                foreach (var property in GetInterfaceProperties(type, hasAccessor)) yield return property;
+                yield break;
+            }
+
             var hidden = new HashSet<string>(StringComparer.Ordinal);
             foreach (var current in TypeAndBases(type))
             {
@@ -1102,15 +1170,48 @@ namespace Transformations.Mapping.Generator
             }
         }
 
-        private static IEnumerable<INamedTypeSymbol> TypeAndBases(INamedTypeSymbol type)
+        /// <summary>
+        /// Interface member lookup: a member of an interface hides same-named members of the interfaces it inherits, and
+        /// a name found in two interfaces where neither inherits the other is ambiguous (<c>source.Name</c> is CS0229),
+        /// so it is not offered at all. One interface reached by two paths (a diamond) is a single member.
+        /// </summary>
+        private static IEnumerable<IPropertySymbol> GetInterfaceProperties(INamedTypeSymbol type, Func<IPropertySymbol, bool> hasAccessor)
         {
-            if (type.TypeKind == TypeKind.Interface)
+            var interfaces = new List<INamedTypeSymbol> { type };
+            interfaces.AddRange(type.AllInterfaces);
+
+            var names = new List<string>();
+            var byName = new Dictionary<string, List<(INamedTypeSymbol Owner, ISymbol Member)>>(StringComparer.Ordinal);
+            foreach (var owner in interfaces)
             {
-                yield return type;
-                foreach (var inherited in type.AllInterfaces) yield return inherited;
-                yield break;
+                foreach (var member in owner.GetMembers())
+                {
+                    if (member is IPropertySymbol { IsIndexer: true }) continue;
+                    if (member is not (IPropertySymbol or IFieldSymbol or IEventSymbol or INamedTypeSymbol or IMethodSymbol { MethodKind: MethodKind.Ordinary })) continue;
+
+                    if (!byName.TryGetValue(member.Name, out var candidates))
+                    {
+                        byName[member.Name] = candidates = new List<(INamedTypeSymbol, ISymbol)>();
+                        names.Add(member.Name);
+                    }
+
+                    candidates.Add((owner, member));
+                }
             }
 
+            foreach (string name in names)
+            {
+                var candidates = byName[name];
+                var visible = candidates.Where(c => !candidates.Any(d => d.Owner.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, c.Owner)))).ToList();
+                if (visible.Count == 1 && visible[0].Member is IPropertySymbol { IsStatic: false } property && hasAccessor(property))
+                {
+                    yield return property;
+                }
+            }
+        }
+
+        private static IEnumerable<INamedTypeSymbol> TypeAndBases(INamedTypeSymbol type)
+        {
             for (INamedTypeSymbol? current = type; current != null; current = current.BaseType)
             {
                 yield return current;
@@ -1252,7 +1353,17 @@ namespace Transformations.Mapping.Generator
                 .ThenBy(m => m.Targets.Count == 0 ? string.Empty : m.Targets[0].TargetFullName, StringComparer.Ordinal)
                 .ToImmutableArray();
             // The models are cached between compilations, so suppression is tracked here and never stored on them.
+            // Keyed by namespace, method name and parameter type. The forward methods are registered first so that they win:
+            // a class mapped to itself, or two classes mapped to each other, would otherwise get a reverse method with the
+            // signature of a forward one.
             var reverseMethods = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var model in models)
+            {
+                foreach (var target in model.Targets.Where(t => t.CanCreate))
+                {
+                    reverseMethods.Add($"{model.Namespace}|To{target.TargetClassName}|{model.SourceFullName}|{model.TypeParameters.Count}");
+                }
+            }
             var noReverse = new HashSet<TargetMapping>();
             var mappedFromPairs = new HashSet<string>(StringComparer.Ordinal);
             // [MapTo] models come first (see Initialize), so a [MapFrom] repeating one of their pairs is the one dropped.
@@ -1273,8 +1384,9 @@ namespace Transformations.Mapping.Generator
 
                 context.CancellationToken.ThrowIfCancellationRequested();
 
-                // The reverse method is To<Source>(this <Target>): two sources with the same simple name that map to one
-                // target in one namespace would differ only by return type, so a call would be ambiguous.
+                // The reverse method is To<Source>(this <Target>): another method with that name and parameter type in the
+                // namespace (a forward method, or the reverse of a same-named source) would differ only by return type,
+                // so a call would be ambiguous.
                 foreach (var target in model.Targets.Where(t => t.CanReverse))
                 {
                     string key = $"{model.Namespace}|To{model.SourceClassName}|{target.TargetFullName}|{model.TypeParameters.Count}";
@@ -1314,7 +1426,7 @@ namespace Transformations.Mapping.Generator
                     ? model.SourceMetadataName
                     : $"{model.SourceMetadataName}To{model.TargetMetadataName}") + "MappingExtensions";
                 string className = baseName;
-                for (int n = 2; !usedClassNames.Add($"{model.Namespace}|{className}"); n++)
+                for (int n = 2; model.ReservedTypeNames.Contains(className) || !usedClassNames.Add($"{model.Namespace}|{className}"); n++)
                 {
                     className = $"{baseName}{n}";
                 }
@@ -1852,6 +1964,8 @@ namespace Transformations.Mapping.Generator
         /// <summary><c>class</c> or <c>record</c>, as a partial declaration of the source type must write it.</summary>
         public string SourceKeyword { get; }
         public string? TargetMetadataName { get; }
+        /// <summary>Names in the namespace that could clash with a generated extension class (declared by the user or a reference).</summary>
+        public ISet<string> ReservedTypeNames { get; }
         public List<TypeParameterModel> TypeParameters { get; }
         public List<TypeDeclarationModel> ContainingTypes { get; }
         public string Namespace { get; }
@@ -1863,7 +1977,7 @@ namespace Transformations.Mapping.Generator
         public MappingModel(bool isMapTo, string sourceClassName, string sourceFullName, string sourceMetadataName, string sourceDeclarationName, string sourceKeyword,
             List<TypeParameterModel> typeParameters, List<TypeDeclarationModel> containingTypes, string @namespace, Location? sourceLocation,
             List<Diagnostic> diagnostics, List<TargetMapping> targets, List<ConverterWrapper> converterWrappers,
-            string? targetMetadataName = null)
+            string? targetMetadataName = null, ISet<string>? reservedTypeNames = null)
         {
             IsMapTo = isMapTo;
             SourceClassName = sourceClassName;
@@ -1872,6 +1986,7 @@ namespace Transformations.Mapping.Generator
             SourceDeclarationName = sourceDeclarationName;
             SourceKeyword = sourceKeyword;
             TargetMetadataName = targetMetadataName;
+            ReservedTypeNames = reservedTypeNames ?? new HashSet<string>(StringComparer.Ordinal);
             TypeParameters = typeParameters;
             ContainingTypes = containingTypes;
             Namespace = @namespace;

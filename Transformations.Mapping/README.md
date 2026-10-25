@@ -99,7 +99,7 @@ The bundled Roslyn analyzer runs at build time and flags mapping problems before
 | `TXMAP004` | Warning | A nested `[MapTo]` source has a containing type that is not `partial` |
 | `TXMAP005` | Warning | Several source members map to the same target member |
 | `TXMAP006` | Warning | A nullable source member maps to a non-nullable target member |
-| `TXMAP007` | Warning | A `SourcePath` does not resolve to public readable properties |
+| `TXMAP007` | Warning | A `SourcePath` does not resolve to public readable properties (a name inherited from two unrelated interfaces is ambiguous and does not resolve) |
 | `TXMAP008` | Warning | A `Converter` method is missing or has the wrong signature (it must take its argument by value; `ref` and `out` are not supported) |
 | `TXMAP009` | Info | An init-only target member is set on creation but not updated by `MapTo(existing)` |
 | `TXMAP010` | Warning | The target cannot be created (no accessible parameterless constructor, several ambiguous optional-parameter constructors, abstract, or an unmapped `required` member); only `MapTo(existing)` is generated |
@@ -109,10 +109,11 @@ The bundled Roslyn analyzer runs at build time and flags mapping problems before
 | `TXMAP014` | Warning | The same mapping is declared twice (`[MapTo]` and `[MapFrom]`, or a `[MapFrom]` repeated); the extra `[MapFrom]` is ignored |
 | `TXMAP015` | Warning | The reverse mapping assigns a nullable target member to a non-nullable source member without a fallback (strings and value types get one; other reference types do not) |
 | `TXMAP016` | Warning | A source or target is a private or protected nested type, which the generated namespace-level class cannot name; that mapping is not generated. Internal types are supported: their mapping methods are `internal` |
-| `TXMAP017` | Warning | Two sources with the same simple name map to one target in the same namespace; only the first reverse method (`To{Source}(this Target)`) is generated, because calls to both would be ambiguous |
+| `TXMAP017` | Warning | A reverse method `To{Source}(this Target)` would have the same name and parameter type as another generated method in the namespace (a forward method, as when a class maps to itself or two classes map to each other, or the reverse of a same-named source); only the forward or first one is generated, because calls would be ambiguous |
 | `TXMAP018` | Warning | One source property is mapped to several target members with repeated `[MapProperty]`; the forward mapping fills them all, but the reverse mapping does not set that property |
 | `TXMAP019` | Warning | A nested generic type reuses a type parameter name of a containing type; no mapping is generated for it |
 | `TXMAP020` | Warning | A `[MapProperty]` names a target member that is not a public settable property (of any of the `[MapTo]` targets); that mapping is ignored |
+| `TXMAP021` | Warning | A `[MapTo]` source or `[MapFrom]` target is a `static` class, which cannot be a parameter or return type; no mapping is generated |
 
 Escalate `TXMAP001` from warning to build error via MSBuild:
 

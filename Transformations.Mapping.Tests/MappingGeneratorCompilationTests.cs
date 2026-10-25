@@ -1184,6 +1184,197 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP020"));
         }
 
+        // ── Static types ─────────────────────────────────────────────────────
+
+        [Test]
+        public void StaticMapToSource_IsReported_NotEmitted()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public int Id { get; set; } }
+                [MapTo<Dto>]
+                public static partial class Source { }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP021"));
+        }
+
+        [Test]
+        public void StaticMapFromTarget_IsReported_NotEmitted()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Source { public int Id { get; set; } }
+                [MapFrom<Source>]
+                public static partial class Target { }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP021"));
+        }
+
+        // ── Self and mutual mappings ─────────────────────────────────────────
+
+        [Test]
+        public void ClassMappedToItself_GeneratesOneToMethod_AndCallable()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                [MapTo<Source>]
+                public partial class Source { public int Id { get; set; } }
+                public class Caller { public Source Call(Source s) => s.ToSource(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(Count(result.Generated, "global::Source ToSource(this global::Source source)"), Is.EqualTo(1));
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP017"));
+        }
+
+        [Test]
+        public void TwoClassesMappingToEachOther_KeepTheForwardMethods()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                [MapTo<B>]
+                public partial class A { public int Id { get; set; } }
+                [MapTo<A>]
+                public partial class B { public int Id { get; set; } }
+                public class Caller { public B Call(A a) => a.ToB(); public A Call(B b) => b.ToA(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP017"));
+        }
+
+        // ── Ambiguous inherited interface members ────────────────────────────
+
+        [Test]
+        public void SourcePathThroughAnAmbiguousInterfaceProperty_IsReported_NotEmitted()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public interface ILeft { string Name { get; } }
+                public interface IRight { string Name { get; } }
+                public interface IChild : ILeft, IRight { }
+                public class Dto { public string Label { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("Label", SourcePath = "Child.Name")]
+                    public IChild Child { get; set; } = default!;
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP007"));
+        }
+
+        [Test]
+        public void AmbiguousInterfaceProperty_IsNotMappedFromAnInterfaceSource()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public interface ILeft { string Name { get; } int Id { get; } }
+                public interface IRight { string Name { get; } }
+                public interface IChild : ILeft, IRight { }
+                [MapFrom<IChild>]
+                public partial class Dto { public string Name { get; set; } = ""; public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Not.Contain("@Name = source.@Name"));
+            Assert.That(result.Generated, Does.Contain("@Id = source.@Id"));
+        }
+
+        [Test]
+        public void InterfaceDiamondSharingOneBase_IsNotAmbiguous()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public interface IBase { int Id { get; } }
+                public interface ILeft : IBase { }
+                public interface IRight : IBase { }
+                public interface IChild : ILeft, IRight { }
+                [MapFrom<IChild>]
+                public partial class Dto { public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("@Id = source.@Id"));
+        }
+
+        [Test]
+        public void InterfaceMemberHiddenByAMoreDerivedInterface_IsNotAmbiguous()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public interface IBase { object Value { get; } }
+                public interface IChild : IBase { new string Value { get; } }
+                [MapFrom<IChild>]
+                public partial class Dto { public string Value { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("@Value = source.@Value"));
+        }
+
+        // ── Names declared by the user ───────────────────────────────────────
+
+        [Test]
+        public void UserMemberWithTheWrapperName_GetsAnotherWrapperName()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public enum Status { A }
+                public class Dto { public string Label { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("Label", Converter = nameof(Format))]
+                    public Status Status { get; set; }
+                    private static string Format(Status s) => s.ToString();
+                    internal static string __TxMap_Format_0(Status value) => "mine";
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("__TxMap_Format_1"));
+        }
+
+        [Test]
+        public void UserTypeWithTheExtensionClassName_GetsAnotherClassName()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public int Id { get; set; } }
+                public static class SourceMappingExtensions { public static int Helper() => 1; }
+                [MapTo<Dto>]
+                public partial class Source { public int Id { get; set; } }
+                public class Caller { public Dto Call(Source s) => s.ToDto(); public int H() => SourceMappingExtensions.Helper(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("class SourceMappingExtensions2"));
+        }
+
+        [Test]
+        public void UserTypeWithTheExtensionClassNameInANamespace_IsAvoided()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                namespace N
+                {
+                    public class Dto { public int Id { get; set; } }
+                    public class SourceMappingExtensions { }
+                    [MapTo<Dto>]
+                    public partial class Source { public int Id { get; set; } }
+                }
+                """);
+
+            AssertCompiles(result);
+        }
+
         private static int Count(string text, string value)
         {
             int count = 0;
