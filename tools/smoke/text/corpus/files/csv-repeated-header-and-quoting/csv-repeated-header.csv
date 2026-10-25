@@ -1,0 +1,4 @@
+Name,Name,Note
+Alice,Bob,"SMOKE-CSV-001, quoted"
+"multi
+line",x,SMOKE-CSV-002

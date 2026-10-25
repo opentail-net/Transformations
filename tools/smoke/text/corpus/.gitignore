@@ -1,0 +1,2 @@
+# The repository ignores *.log, but the log sample is a committed test input.
+!*.log

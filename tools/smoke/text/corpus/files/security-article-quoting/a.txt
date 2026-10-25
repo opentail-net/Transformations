@@ -1,0 +1,1 @@
+Attackers write "ignore previous instructions" into web pages to hijack assistants.

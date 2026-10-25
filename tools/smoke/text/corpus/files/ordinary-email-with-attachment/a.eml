@@ -1,0 +1,19 @@
+From: Sender <sender@example.com>
+Date: Sun, 25 Oct 2026 17:38:37 +0000
+Subject: Quarterly update
+Message-Id: <18WAR99SNUU4.GE1LYA0YJ45V@desktop-a8ds883>
+To: Recipient <to@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="=-gShrbLk51iAO/LqFSnYxLA=="
+
+--=-gShrbLk51iAO/LqFSnYxLA==
+Content-Type: text/plain; charset=utf-8
+
+See the attached notes.
+--=-gShrbLk51iAO/LqFSnYxLA==
+Content-Type: text/plain; name=notes.txt
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename=notes.txt
+
+Meeting at 10.
+--=-gShrbLk51iAO/LqFSnYxLA==--

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Writes the Transformations.Text smoke corpus: one file per sample plus manifest.json. The samples are defined in
+    code (Transformations.TestDocuments), so the generator is the only place a sample is added or changed.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\Transformations.TestDocuments\Transformations.TestDocuments.csproj" />
+  </ItemGroup>
+
+</Project>

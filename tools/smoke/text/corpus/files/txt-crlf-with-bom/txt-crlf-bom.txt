@@ -1,0 +1,2 @@
+﻿SMOKE-TXT-001 first line
+second line SMOKE-TXT-002
