@@ -74,6 +74,46 @@ namespace Transformations.Analyzers.Tests
         }
 
         [Test]
+        public async Task Analyzer_NamespacedHelperCall_ReportsDiagnostic()
+        {
+            // The library's EnumHelper lives in the Transformations namespace, so its display name is
+            // "Transformations.EnumHelper". The rule must match on the type name, not the qualified name.
+            string testCode = """
+                using System;
+
+                namespace Transformations
+                {
+                    public static class EnumHelper
+                    {
+                        [Obsolete] public static string GetEnumDescription3(this Enum value) => "";
+                        public static string GetDescription(this Enum value) => "";
+                    }
+                }
+
+                namespace Consumer
+                {
+                    using Transformations;
+
+                    public enum Color { Red, Blue }
+
+                    public class Test
+                    {
+                        public void Run()
+                        {
+                            var d = Color.Red.{|#0:GetEnumDescription3|}();
+                        }
+                    }
+                }
+                """;
+
+            var expected = AnalyzerVerifier.Diagnostic(DeprecatedApiAnalyzer.DiagnosticId)
+                .WithLocation(0)
+                .WithArguments("GetEnumDescription3", "GetDescription");
+
+            await AnalyzerVerifier.VerifyAnalyzerAsync(testCode, expected);
+        }
+
+        [Test]
         public async Task Analyzer_NonDeprecatedMethod_NoDiagnostic()
         {
             string testCode = """

@@ -61,7 +61,9 @@ namespace Transformations.Analyzers
             var invocation = (IInvocationOperation)context.Operation;
             IMethodSymbol method = invocation.TargetMethod;
 
-            string? containingType = method.ContainingType?.ToDisplayString();
+            // The short type name, not ToDisplayString(): the keys are "EnumHelper.Method", and a type in the
+            // Transformations namespace would otherwise display as "Transformations.EnumHelper" and never match.
+            string? containingType = method.ContainingType?.Name;
             if (containingType == null)
             {
                 return;

@@ -21,6 +21,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Transformations.Analyzers\Transformations.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Transformations.Analyzers.CodeFixes\Transformations.Analyzers.CodeFixes.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Transformations.Dapper\Transformations.Dapper.csproj" Aliases="TransformationsDapper" />
     <ProjectReference Include="..\Transformations.EntityFramework\Transformations.EntityFramework.csproj" Aliases="TransformationsEntityFramework" />
     <ProjectReference Include="..\Transformations.Mapping\Transformations.Mapping.csproj" Aliases="TransformationsMapping" />
@@ -37,6 +38,7 @@
   <Target Name="PackAnalyzer" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">
     <ItemGroup>
       <_PackageFiles Include="..\Transformations.Analyzers\bin\$(Configuration)\netstandard2.0\Transformations.Analyzers.dll" PackagePath="analyzers/dotnet/cs/Transformations.Analyzers.dll" />
+      <_PackageFiles Include="..\Transformations.Analyzers.CodeFixes\bin\$(Configuration)\netstandard2.0\Transformations.Analyzers.CodeFixes.dll" PackagePath="analyzers/dotnet/cs/Transformations.Analyzers.CodeFixes.dll" />
       <_PackageFiles Include="..\Transformations.Mapping.Generator\bin\$(Configuration)\netstandard2.0\Transformations.Mapping.Generator.dll" PackagePath="analyzers/dotnet/cs/Transformations.Mapping.Generator.dll" />
     </ItemGroup>
   </Target>
