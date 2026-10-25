@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Consumer for the analyzer smoke test. It installs the Transformations meta package, which ships TX0001 and its
+    code fix, and calls a deprecated member defined in Acme. The analyzer must report it.
+    Pass -p:SmokeTfm=<tfm> and -p:SmokeVersion=<version> from the runner.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework Condition="'$(SmokeTfm)' != ''">$(SmokeTfm)</TargetFramework>
+    <TargetFramework Condition="'$(SmokeTfm)' == ''">net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>Smoke.Analyzers.Consumer</RootNamespace>
+    <AssemblyName>Smoke.Analyzers.Consumer</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Transformations" Version="$(SmokeVersion)" />
+  </ItemGroup>
+
+</Project>
