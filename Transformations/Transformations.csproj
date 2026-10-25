@@ -23,6 +23,8 @@
     <!-- The shared helpers are compiled once, in Transformations.Core. Compiling them here as well put each type in two
          assemblies, and any consumer that referenced both got ambiguous calls (CS0121). -->
     <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
+    <ProjectReference Include="..\Transformations.Data\Transformations.Data.csproj" />
+    <ProjectReference Include="..\Transformations.Web\Transformations.Web.csproj" />
     <ProjectReference Include="..\Transformations.Analyzers\Transformations.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Transformations.Analyzers.CodeFixes\Transformations.Analyzers.CodeFixes.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Transformations.Dapper\Transformations.Dapper.csproj" Aliases="TransformationsDapper" />
@@ -30,12 +32,13 @@
     <ProjectReference Include="..\Transformations.Mapping\Transformations.Mapping.csproj" Aliases="TransformationsMapping" />
     <ProjectReference Include="..\Transformations.TextExtractor\Transformations.Text.csproj" Aliases="TransformationsText" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Include="..\Transformations.Web\SelectListExtensions.cs" Link="SelectListExtensions.cs" />
-  </ItemGroup>
-  <!-- Files Transformations.Core compiles from this folder. Excluded here so each type is defined once. -->
+  <!-- Each type is defined once. Core, Data and Web own their files; this project only holds what none of them compile. -->
   <ItemGroup>
     <Compile Remove="AdditionalStringHelper.cs;ArrayHelper.cs;BasicTypeConverter.cs;BatchTransformations.cs;BitConvertor.cs;CollectionHelper.cs;ComparableHelper.cs;ConverterOld.cs;DateHelper.cs;DirectoryInfoHelper.cs;DiagnosticExtensions.cs;EnumHelper.cs;ExtensionHelper.cs;FileInfoHelper.cs;Helper.cs;HolidayHelper.cs;Inspect.cs;DiagnosticsProbe.cs;MiscHelper.cs;MeasurementExtensions.cs;RegExHelper.cs;RangeSemanticsHelper.cs;ObjectDelta.cs;Resilience.cs;SemanticStringComparer.cs;StopwatchHelper.cs;StreamHelper.cs;StreamExtensions.cs;StringHelper.cs;TimeSpanHelper.cs;Transform.cs;TransformationsHelper.cs;WebAndFileExtensions.cs;Properties\Resources.Designer.cs" />
+    <!-- Owned by Transformations.Web. -->
+    <Compile Remove="ConfigurationHelper.cs;CookieHelper.cs;QueryStringHelper.cs;ResponseHelper.cs;SessionHelper.cs;WebHelper.cs" />
+    <!-- Owned by Transformations.Data. -->
+    <Compile Remove="CollectionConvertor.cs;CsvHelper.cs;DataReaderHelper.cs;DataRowConverter.cs;SqlHelper.cs;StringHelper.SqlClient.cs;TransformationsHelper.SqlClient.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
