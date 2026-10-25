@@ -145,10 +145,10 @@ internal static class Program
         }
         else if (sample.Kind == "BenignOcrReview")
         {
-            // Provisional expectation, not a policy decision. Instruction-like wording read from an image is always a
-            // Medium OCR finding (safety.ocrInstruction), even when it is discussion, so the document goes to review.
-            // Plain text with the same phrase, discussed rather than addressed, is Low and not caught. Until the policy is
-            // decided, this row records the current outcome: review, never quarantine.
+            // Decided: instruction-like wording read from an image is a Medium OCR finding (safety.ocrInstruction), even
+            // when it is discussion, so the document goes to review and is never quarantined. The discussion check that
+            // lets plain text stay Low relies on quotation marks, and OCR often drops or merges them, so it cannot be
+            // trusted on OCR text. Review costs a human read; a missed instruction would reach the model.
             yield return new Check($"[BenignOcrReview] {sample.Id}: review, not quarantine, and the OCR finding is shown", () =>
             {
                 ModelInput input = lazy.Value.Input;
