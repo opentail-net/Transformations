@@ -1,4 +1,5 @@
 using System.Data;
+using System.Linq;
 using System.Reflection;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
@@ -55,6 +56,8 @@ namespace Transformations.Dapper.Tests
         }
 
         [TestCase(-2)]
+        [TestCase(53)]
+        [TestCase(121)]
         [TestCase(1205)]
         [TestCase(1221)]
         [TestCase(10053)]
@@ -79,6 +82,26 @@ namespace Transformations.Dapper.Tests
             var ex = CreateSqlException(errorNumber);
 
             Assert.That(SqlTransientFaultDetector.IsTransient(ex), Is.False);
+        }
+
+        [Test]
+        public void GetTransientErrorNumbers_IsTheDocumentedList()
+        {
+            // The README lists these codes. A change here must change the README and this list together.
+            int[] documented =
+            {
+                -2, 53, 64, 121, 233, 921,
+                1205, 1221, 1807,
+                8628, 8645,
+                10053, 10054, 10060,
+                10928, 10929, 10936,
+                14355, 17197,
+                40143, 40197, 40501, 40540, 40613,
+                41301, 41302, 41305, 41325, 41839,
+                49918, 49919, 49920,
+            };
+
+            Assert.That(SqlTransientFaultDetector.GetTransientErrorNumbers().OrderBy(n => n), Is.EqualTo(documented.OrderBy(n => n)));
         }
 
         [Test]

@@ -50,7 +50,17 @@ int count = await connection.ExecuteScalarWithRetryAsync<int>(
 
 ### Transient Fault Detection
 
-`SqlTransientFaultDetector.IsTransient` classifies SQL errors that are safe to retry: deadlocks (1205), timeouts (‑2, 53, 121), Azure throttling (40197, 40501, 40613, 49918), and transport-level errors. Use it in your own catch blocks:
+`SqlTransientFaultDetector.IsTransient` classifies SQL Server errors that are safe to retry, and `TimeoutException`. The SQL Server error numbers are:
+
+| Group | Error numbers |
+|---|---|
+| Connection and timeouts | -2 (client timeout), 53 (cannot open a connection), 121 (semaphore timeout), 64 (connection dropped after it was established), 233 (connection initialisation), 921 (database not yet recovered), 17197 (login timeout), 14355 (busy service) |
+| Locks and memory | 1205 (deadlock victim), 1221 (lock request timeout), 1807 (exclusive lock on database), 8628 and 8645 (memory grant or resource timeout) |
+| Transport | 10053, 10054, 10060 (network errors while sending or receiving) |
+| Azure SQL throttling and availability | 10928, 10929, 10936, 40143, 40197, 40501, 40540, 40613, 49918, 49919, 49920 |
+| In-memory OLTP | 41301, 41302, 41305, 41325, 41839 |
+
+`GetTransientErrorNumbers()` returns the same set. A test pins that set, so changing the codes means updating the test and this table together. SQLite and other providers have no entries here, so their busy errors are not retried by these wrappers. Use it in your own catch blocks:
 
 ```csharp
 catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex))

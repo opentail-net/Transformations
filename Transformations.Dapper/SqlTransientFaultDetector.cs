@@ -14,6 +14,8 @@ namespace Transformations.Dapper
         /// <remarks>
         /// <list type="bullet">
         ///   <item><description>-2: Client timeout</description></item>
+        ///   <item><description>53: Could not open a connection to SQL Server (network path not found)</description></item>
+        ///   <item><description>121: Semaphore timeout period has expired</description></item>
         ///   <item><description>20: Instance does not support encryption</description></item>
         ///   <item><description>64: Connection was successfully established but then dropped</description></item>
         ///   <item><description>233: Connection initialization error</description></item>
@@ -48,7 +50,7 @@ namespace Transformations.Dapper
         /// </remarks>
         private static readonly HashSet<int> TransientErrorNumbers = new()
         {
-            -2, 64, 233, 921,
+            -2, 53, 64, 121, 233, 921,
             1205, 1221, 1807,
             8628, 8645,
             10053, 10054, 10060,

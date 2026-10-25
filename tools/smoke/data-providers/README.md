@@ -63,8 +63,8 @@ SQLite busy codes) lives in the Dapper package and depends on SqlClient. The opt
 - **CSV.** `ToCsvAsync` writes no header and does not quote values. A value that contains a comma is not escaped, so the
   output is not CSV in the RFC 4180 sense. The check asserts the documented join. The name and the EF README's "CSV export"
   overstate what the method does.
-- **Dapper README.** It lists timeout codes 53 and 121. `SqlTransientFaultDetector` does not contain them. The code's
-  timeout codes are -2, 64, 233, 921 and the 10053/10054/10060 transport codes. One of the two needs correcting.
+- **Dapper README.** Resolved. The detector now includes 53 and 121, and the README lists the exact codes. A Dapper unit
+  test pins the set, so the two cannot drift apart again without a deliberate change.
 - **SQL Server.** `Transformations.Data` and the SQL Server path of the Dapper detector are not tested here. They need a
   SQL Server, and this machine has none.
 - **Retry counts.** Dapper's wrappers do not expose their attempts. Only EF's retry is measured, through an interceptor.
