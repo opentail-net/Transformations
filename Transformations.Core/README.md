@@ -69,7 +69,7 @@ someDate.AddSafely(TimeSpan.FromDays(30));   // null-safe
 
 // UK & US public holidays
 int year = 2025;
-year.GetEasterSunday();
+HolidayHelper.GetEasterSunday(year);
 year.GetEnglishBankHolidays();
 year.GetThanksgivingDay();
 

@@ -94,7 +94,7 @@ MyEnum.Value.GetEnumDescription();           // reads [Description] attribute
 
 // Date helpers
 DateTime.Now.IsWeekend();                    // true/false
-2024.GetEasterSunday();                      // Easter date calculation
+HolidayHelper.GetEasterSunday(2024);             // 2024-03-31, Easter date calculation
 
 // Semantic compare
 "+1 (555) 111-2222".IsSemanticMatch("15551112222", SemanticType.PhoneNumber); // true
