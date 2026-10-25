@@ -14,7 +14,7 @@ namespace Smoke.Text.Checks;
 /// </summary>
 public static class CorpusChecks
 {
-    public static IEnumerable<SmokeCheck> For(Corpus corpus, TextExtractor extractor)
+    public static IEnumerable<SmokeCheck> For(Corpus corpus, IDocumentTextExtractor extractor)
     {
         foreach (CorpusEntry entry in corpus.Entries)
         {
@@ -22,7 +22,7 @@ public static class CorpusChecks
         }
     }
 
-    private static void CheckSample(Corpus corpus, TextExtractor extractor, CorpusEntry entry)
+    private static void CheckSample(Corpus corpus, IDocumentTextExtractor extractor, CorpusEntry entry)
     {
         byte[] bytes = corpus.ReadBytes(entry);
         ExtractionOptions options = ExtractionOptions.ForAiIngestion() with
@@ -90,7 +90,7 @@ public static class CorpusChecks
     }
 
     private static void CheckOrdinary(
-        TextExtractor extractor,
+        IDocumentTextExtractor extractor,
         CorpusEntry entry,
         byte[] bytes,
         ExtractionOptions options,

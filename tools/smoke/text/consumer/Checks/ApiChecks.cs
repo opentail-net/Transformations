@@ -16,6 +16,8 @@ public static class ApiChecks
         yield return new SmokeCheck("api: AddTextExtractor registers IDocumentTextExtractor", RegistersDefaultExtractor);
         yield return new SmokeCheck("api: GetTextBatchAsync returns one successful result per ordinary document",
             () => BatchReturnsOneResultPerOrdinaryDocument(corpus).GetAwaiter().GetResult());
+        yield return new SmokeCheck("api: GetModelInput on IDocumentTextExtractor returns an untrusted, indexable input",
+            () => ModelInputIsUntrustedThroughInterface(corpus));
         yield return new SmokeCheck("api: GetSupportedExtensions and IsSupported cover the built-in formats", SupportsBuiltInFormats);
         yield return new SmokeCheck("api: DetectFormat identifies a PDF by its content", () => DetectsPdfByContent(corpus));
     }
@@ -37,7 +39,7 @@ public static class ApiChecks
             .Select(e => (e.FileName, corpus.ReadBytes(e)))
             .ToList();
 
-        var extractor = new TextExtractor();
+        IDocumentTextExtractor extractor = new TextExtractor();
         var results = new List<ExtractionResult>();
         await foreach (ExtractionResult result in extractor.GetTextBatchAsync(documents, maxDegreeOfParallelism: 4))
         {
@@ -48,9 +50,21 @@ public static class ApiChecks
         Expect.True(results.All(r => r.IsSuccess), "every ordinary document in the batch succeeds");
     }
 
+    private static void ModelInputIsUntrustedThroughInterface(Corpus corpus)
+    {
+        CorpusEntry entry = corpus.Entries.First(e => e.Id == "markdown-with-code-and-unicode");
+        IDocumentTextExtractor extractor = new TextExtractor();
+
+        ModelInput input = extractor.GetModelInput(entry.FileName, corpus.ReadBytes(entry));
+
+        Expect.True(!input.IsTrusted, "IsTrusted is false");
+        Expect.True(input.CanIndexWithoutReview, "an ordinary markdown file is indexable without review");
+        Expect.True(input.Segments.Count > 0, "the model input has segments");
+    }
+
     private static void SupportsBuiltInFormats()
     {
-        var extractor = new TextExtractor();
+        IDocumentTextExtractor extractor = new TextExtractor();
         IReadOnlyList<string> extensions = extractor.GetSupportedExtensions();
 
         foreach (string expected in new[] { ".pdf", ".docx", ".pptx", ".xlsx", ".html", ".md", ".csv", ".eml", ".zip", ".epub", ".odt", ".rtf" })

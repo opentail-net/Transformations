@@ -53,6 +53,15 @@ public interface IDocumentTextExtractor
         ExtractionOptions? options = null,
         CancellationToken cancellationToken = default);
 
+    // ── AI ingestion ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Extracts a document for AI ingestion: safety-gated segments with provenance, a verdict, and withheld sources.
+    /// Uses <see cref="ExtractionOptions.ForAiIngestion"/> when <paramref name="options"/> is null.
+    /// Content that the policy withholds is not in <see cref="ModelInput.Segments"/>.
+    /// </summary>
+    ModelInput GetModelInput(string fileName, byte[] content, ExtractionOptions? options = null);
+
     // ── Discovery ────────────────────────────────────────────────────────────
 
     /// <summary>

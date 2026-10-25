@@ -26,7 +26,7 @@ internal static class Program
         }
 
         Corpus corpus = Corpus.Load(corpusDir);
-        var extractor = new TextExtractor();
+        IDocumentTextExtractor extractor = new TextExtractor();
 
         var checks = new List<SmokeCheck>();
         checks.AddRange(ApiChecks.For(corpus));
