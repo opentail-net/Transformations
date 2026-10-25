@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Consumer for the OCR injection smoke test. It references only the packed Transformations.Text package and reads
+    the committed corpus from disk. Pass -p:SmokeTfm=<tfm> and -p:SmokeTextVersion=<version> from the runner.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework Condition="'$(SmokeTfm)' != ''">$(SmokeTfm)</TargetFramework>
+    <TargetFramework Condition="'$(SmokeTfm)' == ''">net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Smoke.OcrInjection</RootNamespace>
+    <AssemblyName>Smoke.OcrInjection</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Transformations.Text" Version="$(SmokeTextVersion)" />
+  </ItemGroup>
+
+</Project>
