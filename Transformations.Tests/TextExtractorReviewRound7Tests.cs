@@ -1,3 +1,4 @@
+using Transformations.TestDocuments;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
@@ -8,7 +9,7 @@ using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Fonts.Standard14Fonts;
 using UglyToad.PdfPig.Writer;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 
 namespace Transformations.Tests;
 

@@ -1,6 +1,7 @@
+using Transformations.TestDocuments;
 using NUnit.Framework;
 using Transformations.Text;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 
 namespace Transformations.Tests;
 

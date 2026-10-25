@@ -1,8 +1,9 @@
+using Transformations.TestDocuments;
 using System.Collections.Concurrent;
 using System.Text;
 using NUnit.Framework;
 using Transformations.Text;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 
 namespace Transformations.Tests;
 

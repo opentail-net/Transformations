@@ -1,9 +1,10 @@
+using Transformations.TestDocuments;
 using System.Diagnostics;
 using DocumentFormat.OpenXml.Packaging;
 using MimeKit;
 using NUnit.Framework;
 using Transformations.Text;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using P = DocumentFormat.OpenXml.Presentation;
 using W = DocumentFormat.OpenXml.Wordprocessing;

@@ -4,20 +4,20 @@ using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using MimeKit;
-using Transformations.Text;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Fonts.Standard14Fonts;
+using Transformations.Text;
 using UglyToad.PdfPig.Writer;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 using S = DocumentFormat.OpenXml.Spreadsheet;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 
-namespace Transformations.Tests;
+namespace Transformations.TestDocuments;
 
 /// <summary>Small document builders shared by the safety corpus and model-input tests.</summary>
-internal static class SafetyTestDocs
+public static class SafetyTestDocs
 {
     public static readonly byte[] Png1x1 = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");

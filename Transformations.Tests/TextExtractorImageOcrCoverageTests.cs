@@ -1,3 +1,4 @@
+using Transformations.TestDocuments;
 using System.IO.Compression;
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
@@ -8,7 +9,7 @@ using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Fonts.Standard14Fonts;
 using UglyToad.PdfPig.Writer;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 using W = DocumentFormat.OpenXml.Wordprocessing;

@@ -54,6 +54,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Audio.Fidel
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.Audio", "Transformations.Audio\Transformations.Audio.csproj", "{125919FC-A664-48C5-87E7-CDC8AFC0A921}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transformations.TestDocuments", "Transformations.TestDocuments\Transformations.TestDocuments.csproj", "{E40CF079-63FC-44E2-B7C5-748778F81AD4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -304,6 +306,18 @@ Global
 		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x64.Build.0 = Release|Any CPU
 		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x86.ActiveCfg = Release|Any CPU
 		{125919FC-A664-48C5-87E7-CDC8AFC0A921}.Release|x86.Build.0 = Release|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Debug|x64.Build.0 = Debug|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Debug|x86.Build.0 = Debug|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Release|x64.ActiveCfg = Release|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Release|x64.Build.0 = Release|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Release|x86.ActiveCfg = Release|Any CPU
+		{E40CF079-63FC-44E2-B7C5-748778F81AD4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,9 +1,10 @@
+using Transformations.TestDocuments;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using Markdig;
 using NUnit.Framework;
 using Transformations.Text;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 
 namespace Transformations.Tests;
 

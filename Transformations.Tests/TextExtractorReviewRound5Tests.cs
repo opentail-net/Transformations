@@ -1,8 +1,9 @@
+using Transformations.TestDocuments;
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using NUnit.Framework;
 using Transformations.Text;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 using S = DocumentFormat.OpenXml.Spreadsheet;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 

@@ -1,9 +1,10 @@
+using Transformations.TestDocuments;
 using System.IO.Compression;
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using NUnit.Framework;
 using Transformations.Text;
-using static Transformations.Tests.SafetyTestDocs;
+using static Transformations.TestDocuments.SafetyTestDocs;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 
