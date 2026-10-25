@@ -1,0 +1,42 @@
+I found three more distinct issues in this pass. None changes my overall priority order, but they’re concrete correctness problems rather than just code-style concerns.
+
+### 1. Medium — CSV extraction can lose data when headers repeat
+
+In [`CsvExtractor.cs`](https://github.com/opentail-net/Transformations/blob/main/Transformations.TextExtractor/CsvExtractor.cs?utm_source=chatgpt.com), each value is retrieved by header name:
+
+```
+headers.Select(h => csv.GetField(h))
+```
+
+That fails to distinguish columns with identical names. For example:
+
+```
+Name,Name
+Alice,Bob
+```
+
+Both lookups can resolve to the first `Name` column, losing `Bob`. CsvHelper provides a name-index overload specifically to distinguish repeated header names. 【turn165082search0】【turn165082search1】
+
+Fix: Read fields by column index, such as `csv.GetField(i)`, while keeping the header text as the output label.
+
+### 2. Medium — RTF extraction mishandles legacy character encodings
+
+In [`RtfExtractor.cs`](https://github.com/opentail-net/Transformations/blob/main/Transformations.TextExtractor/RtfExtractor.cs?utm_source=chatgpt.com), hexadecimal escapes such as `\'80` are converted directly into Unicode characters. However, their meaning depends on the document’s character set and code page; the parser doesn’t apply `\ansicpgN` when decoding them. 【turn940384search0】【turn940384search2】
+
+For example, in Windows-1252 text, the escape `\'80` represents `€`, but this implementation emits the Unicode character U+0080 instead. That can corrupt text extracted from older RTF documents.
+
+Fix: Decode escaped bytes according to the active code page, including relevant font-level character-set settings, or use a parser that handles them.
+
+### 3. Low–medium — Nested HTML tables can produce duplicated and misaligned text
+
+In [`HtmlExtractor.cs`](https://github.com/opentail-net/Transformations/blob/main/Transformations.TextExtractor/HtmlExtractor.cs?utm_source=chatgpt.com), table extraction uses descendant selectors for both rows and cells. When a table appears inside a cell of another table, its rows and cells can be included in the outer table’s grid and processed as separate rows within that grid.
+
+The result can repeat cell text and place values under the wrong columns.
+
+Fix: Restrict row and cell selection to the current table’s own structure, excluding rows belonging to nested tables.
+
+## Where I’d draw the line now
+
+I don’t see another high-confidence, high-severity issue to add from this pass. That is not a guarantee that the project is bug-free: a static code review cannot establish that, and I have not run the build or test suite.
+
+I’d address the CSV and RTF issues first, add regression tests for all three, and then move from repeated code skims to a systematic test run across supported target frameworks, malformed inputs, and resource-limit boundaries. That will provide stronger evidence of readiness than continuing to accumulate findings without executing the project.

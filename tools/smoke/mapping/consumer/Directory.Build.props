@@ -1,0 +1,4 @@
+<Project>
+  <!-- Stops MSBuild from importing a Directory.Build.props from a parent folder. The smoke consumer must not
+       inherit the repository's build settings. -->
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Negative control for Transformations.Mapping. This project is supposed to FAIL to build. Run-MappingSmoke.ps1
+    checks that the expected diagnostics appear in the build output. If they do not, the generator's diagnostics
+    are not reaching consumers, and the positive checks cannot be trusted to catch mapping regressions.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <TransformationsMappingUnmappedMembersAsErrors>true</TransformationsMappingUnmappedMembersAsErrors>
+    <SmokeMappingVersion Condition="'$(SmokeMappingVersion)' == ''">2.0.5.2</SmokeMappingVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Transformations.Mapping" Version="$(SmokeMappingVersion)" />
+  </ItemGroup>
+
+</Project>
