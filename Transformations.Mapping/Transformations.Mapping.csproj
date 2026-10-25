@@ -25,6 +25,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="build\Transformations.Mapping.props" Pack="true" PackagePath="build\" Visible="false" />
   </ItemGroup>
   <!-- Pack the generator DLL into the NuGet package so consumers get it automatically. -->
   <Target Name="PackGenerator" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">

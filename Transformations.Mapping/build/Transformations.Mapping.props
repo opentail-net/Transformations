@@ -1,0 +1,6 @@
+<Project>
+  <!-- Makes the escalation switch reach the source generator. Without this, TransformationsMappingUnmappedMembersAsErrors is set in the consumer project but never seen by the analyzer. -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="TransformationsMappingUnmappedMembersAsErrors" />
+  </ItemGroup>
+</Project>
