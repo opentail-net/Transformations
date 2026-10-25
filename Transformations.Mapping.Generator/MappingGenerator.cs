@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -1331,8 +1332,12 @@ namespace Transformations.Mapping.Generator
             return type.NullableAnnotation == NullableAnnotation.NotAnnotated;
         }
 
+        // The receiver is "source" where it starts an operand. A member of that name is written "@source" and a member
+        // such as "Resource" contains "source", so a plain string replacement would rewrite those too.
+        private static readonly Regex ReceiverPattern = new Regex(@"(?<![\w@.])source\.", RegexOptions.CultureInvariant);
+
         private static string ToProjectionExpression(string expression)
-            => expression.Replace("source.", "item.");
+            => ReceiverPattern.Replace(expression, "item.");
 
         /// <summary>A verbatim identifier, valid whether or not the name is a C# keyword (<c>@event</c>).</summary>
         private static string Escape(string identifier) => "@" + identifier;

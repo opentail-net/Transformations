@@ -1375,6 +1375,36 @@ namespace Transformations.Mapping.Tests
             AssertCompiles(result);
         }
 
+        // ── Query projection ─────────────────────────────────────────────────
+
+        [TestCase("source")]
+        [TestCase("Resource")]
+        [TestCase("resource")]
+        public void ProjectTo_RewritesOnlyTheLeadingReceiver(string member)
+        {
+            var result = Compile($$"""
+                using Transformations.Mapping;
+                public class Inner { public string Name { get; set; } = ""; }
+                public class Customer { public Inner @{{member}} { get; set; } = new Inner(); }
+                public class Dto { public string Label { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("Label", SourcePath = "Customer.{{member}}.Name")]
+                    public Customer Customer { get; set; } = new Customer();
+                }
+                public class Caller
+                {
+                    public System.Linq.IQueryable<Dto> Project(System.Linq.IQueryable<Source> q) => q.ProjectToDto();
+                    public Dto Map(Source s) => s.ToDto();
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain($"item.@Customer.@{member}.@Name"));
+            Assert.That(result.Generated, Does.Contain($"source.@Customer.@{member}.@Name"));
+        }
+
         private static int Count(string text, string value)
         {
             int count = 0;
