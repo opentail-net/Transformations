@@ -19,3 +19,5 @@ TXMAP014 | Mapping  | Warning  | Mapping declared twice
 TXMAP015 | Mapping  | Warning  | Reverse mapping may assign null to a non-nullable member
 TXMAP016 | Mapping  | Warning  | Type is not accessible to generated code
 TXMAP017 | Mapping  | Warning  | Reverse mapping would be ambiguous
+TXMAP018 | Mapping  | Warning  | Source member maps to several target members
+TXMAP019 | Mapping  | Warning  | Type parameter name is declared twice

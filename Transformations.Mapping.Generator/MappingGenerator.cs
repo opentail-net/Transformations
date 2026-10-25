@@ -165,11 +165,11 @@ namespace Transformations.Mapping.Generator
         private static readonly DiagnosticDescriptor DuplicateMapping = new DiagnosticDescriptor(
             id: "TXMAP014",
             title: "Mapping declared twice",
-            messageFormat: "The mapping from '{0}' to '{1}' is already declared with [MapTo] on '{0}'; this [MapFrom] is ignored",
+            messageFormat: "The mapping from '{0}' to '{1}' is already declared by another [MapTo] or [MapFrom]; this [MapFrom] is ignored",
             category: "Mapping",
             defaultSeverity: DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: "[MapTo<T>] on the source and [MapFrom<S>] on the target describe the same mapping; generating both would make every mapping call ambiguous.");
+            description: "[MapTo<T>] on the source and [MapFrom<S>] on the target, or a [MapFrom<S>] repeated on the target, describe the same mapping; generating both would make every mapping call ambiguous.");
 
         private static readonly DiagnosticDescriptor ReverseNullableToNonNullableRisk = new DiagnosticDescriptor(
             id: "TXMAP015",
@@ -188,6 +188,24 @@ namespace Transformations.Mapping.Generator
             defaultSeverity: DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
             description: "The mapping methods are generated in a class at namespace level, which cannot name a private or protected nested type. Make the type internal or public.");
+
+        private static readonly DiagnosticDescriptor AmbiguousReverseSource = new DiagnosticDescriptor(
+            id: "TXMAP018",
+            title: "Source member maps to several target members",
+            messageFormat: "Source member '{0}.{1}' is mapped to several members of '{2}' ({3}); the reverse mapping does not set it",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Several [MapProperty] attributes send one source member to different target members. The forward mapping fills them all, but a reverse mapping cannot choose which one to read back, so none is used.");
+
+        private static readonly DiagnosticDescriptor DuplicateTypeParameterName = new DiagnosticDescriptor(
+            id: "TXMAP019",
+            title: "Type parameter name is declared twice",
+            messageFormat: "No mapping is generated for '{0}' because it reuses a type parameter name of a containing type; rename one of them",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Generated methods declare the type parameters of the type and its containing types together, and a name declared twice is a compiler error.");
 
         private static readonly DiagnosticDescriptor ReverseMethodCollision = new DiagnosticDescriptor(
             id: "TXMAP017",
@@ -267,6 +285,13 @@ namespace Transformations.Mapping.Generator
                 if (!IsReferenceable(compilation, decoratedType))
                 {
                     diagnostics.Add(Diagnostic.Create(InaccessibleType, location, decoratedType.Name, decoratedType.Name, decoratedType.Name));
+                    yield return MappingModel.Invalid(diagnostics);
+                    yield break;
+                }
+
+                if (HasDuplicateTypeParameterNames(decoratedType))
+                {
+                    diagnostics.Add(Diagnostic.Create(DuplicateTypeParameterName, location, decoratedType.Name));
                     yield return MappingModel.Invalid(diagnostics);
                     yield break;
                 }
@@ -359,6 +384,13 @@ namespace Transformations.Mapping.Generator
                         continue;
                     }
 
+                    if (HasDuplicateTypeParameterNames(decoratedType))
+                    {
+                        diagnostics.Add(Diagnostic.Create(DuplicateTypeParameterName, location, decoratedType.Name));
+                        yield return MappingModel.Invalid(diagnostics);
+                        continue;
+                    }
+
                     var target = BuildTargetMapping(compilation, sourceType, decoratedType, isMapTo: false, new List<ConverterWrapper>(), diagnostics, location, ct);
 
                     yield return new MappingModel(
@@ -404,6 +436,13 @@ namespace Transformations.Mapping.Generator
 
             return true;
         }
+
+        /// <summary>
+        /// A nested generic type may reuse a type parameter name of its containing type (legal, with warning CS0693).
+        /// The generated methods declare all of them as their own type parameters, where a repeated name is an error.
+        /// </summary>
+        private static bool HasDuplicateTypeParameterNames(INamedTypeSymbol type)
+            => GetTypeParameters(type).GroupBy(p => p.Name, StringComparer.Ordinal).Any(g => g.Count() > 1);
 
         /// <summary>The keyword a partial declaration of the type must use: <c>record</c> for a record class, else <c>class</c>.</summary>
         private static string GetDeclarationKeyword(INamedTypeSymbol type) => type.IsRecord ? "record" : "class";
@@ -452,7 +491,7 @@ namespace Transformations.Mapping.Generator
             var propertyMappings = BuildPropertyMappings(compilation, sourceType, targetType, sourceFullName, isMapTo, wrappers, diagnostics, ct);
 
             var mappedTargetNames = new HashSet<string>(propertyMappings.Select(m => m.TargetPropertyName), StringComparer.Ordinal);
-            var unmapped = GetSettableProperties(targetType)
+            var unmapped = GetSettableProperties(compilation, targetType)
                 .Where(p => !mappedTargetNames.Contains(p.Name))
                 .Select(p => p.Name)
                 .ToList();
@@ -645,11 +684,11 @@ namespace Transformations.Mapping.Generator
             List<Diagnostic> diagnostics,
             CancellationToken ct)
         {
-            var targetProps = GetSettableProperties(targetType).ToDictionary(p => p.Name, StringComparer.Ordinal);
+            var targetProps = GetSettableProperties(compilation, targetType).ToDictionary(p => p.Name, StringComparer.Ordinal);
             var mappingsByTarget = new Dictionary<string, PropertyMapping>(StringComparer.Ordinal);
             var context = new MappingContext(compilation, sourceType, targetType, sourceFullName, isMapTo, wrappers, diagnostics);
 
-            foreach (var sourceProp in GetReadableProperties(sourceType))
+            foreach (var sourceProp in GetReadableProperties(compilation, sourceType))
             {
                 ct.ThrowIfCancellationRequested();
                 if (HasAttribute(sourceProp, IgnoreMapAttributeFullName)) continue;
@@ -668,7 +707,20 @@ namespace Transformations.Mapping.Generator
                 }
             }
 
-            return mappingsByTarget.Values.ToList();
+            var mappings = mappingsByTarget.Values.ToList();
+
+            // A source property mapped to several targets cannot be initialised from all of them in the reverse mapping.
+            foreach (var group in mappings.Where(m => m.CanReverse).GroupBy(m => m.SourceReversePropertyName!, StringComparer.Ordinal).Where(g => g.Count() > 1))
+            {
+                diagnostics.Add(Diagnostic.Create(AmbiguousReverseSource, sourceType.Locations.FirstOrDefault() ?? Location.None,
+                    sourceType.Name, group.Key, targetType.Name, string.Join(", ", group.Select(m => m.TargetPropertyName))));
+                foreach (var ambiguous in group.ToList())
+                {
+                    mappings[mappings.IndexOf(ambiguous)] = ambiguous.WithoutReverse();
+                }
+            }
+
+            return mappings;
         }
 
         private static void AddPropertyMapping(
@@ -948,21 +1000,24 @@ namespace Transformations.Mapping.Generator
                 : null;
 
         /// <summary>Public properties whose getter is public too, so generated code can read them.</summary>
-        private static IEnumerable<IPropertySymbol> GetReadableProperties(INamedTypeSymbol type)
-            => GetMappableProperties(type, p => p.GetMethod is { DeclaredAccessibility: Accessibility.Public });
+        private static IEnumerable<IPropertySymbol> GetReadableProperties(CSharpCompilation compilation, INamedTypeSymbol type)
+            => GetMappableProperties(compilation, type, p => p.GetMethod is { DeclaredAccessibility: Accessibility.Public });
 
         /// <summary>Public properties with a public set or init accessor, so a new instance can be initialised with them.</summary>
-        private static IEnumerable<IPropertySymbol> GetSettableProperties(INamedTypeSymbol type)
-            => GetMappableProperties(type, p => p.SetMethod is { DeclaredAccessibility: Accessibility.Public });
+        private static IEnumerable<IPropertySymbol> GetSettableProperties(CSharpCompilation compilation, INamedTypeSymbol type)
+            => GetMappableProperties(compilation, type, p => p.SetMethod is { DeclaredAccessibility: Accessibility.Public });
 
         /// <summary>
         /// The type's usable public instance properties, most derived first, including those inherited from base classes
         /// and, for an interface, from its base interfaces. C# member hiding applies: a public member of a derived type
         /// occupies its name for every type below it, even when it is not itself usable (a property whose getter is
         /// private, a static property, a method), because <c>source.Name</c> then binds to that member and never to the
-        /// base property. An override that lacks the accessor does not hide: the base accessor is still callable.
+        /// base property. So does an internal member, because the generated code is in the same assembly; private and
+        /// protected members are not accessible to it and do not take part in the lookup. An override that lacks the
+        /// accessor does not hide: the base accessor is still callable.
         /// </summary>
-        private static IEnumerable<IPropertySymbol> GetMappableProperties(INamedTypeSymbol type, Func<IPropertySymbol, bool> hasAccessor)
+        private static IEnumerable<IPropertySymbol> GetMappableProperties(CSharpCompilation compilation, INamedTypeSymbol type,
+            Func<IPropertySymbol, bool> hasAccessor)
         {
             var hidden = new HashSet<string>(StringComparer.Ordinal);
             foreach (var current in TypeAndBases(type))
@@ -970,13 +1025,14 @@ namespace Transformations.Mapping.Generator
                 var declared = new List<string>();
                 foreach (var member in current.GetMembers())
                 {
-                    if (member.DeclaredAccessibility != Accessibility.Public) continue;
+                    bool isPublic = member.DeclaredAccessibility == Accessibility.Public;
+                    if (!isPublic && !IsAccessible(compilation, member)) continue;
 
                     if (member is IPropertySymbol property)
                     {
                         if (property.IsIndexer) continue;
 
-                        bool usable = !property.IsStatic && hasAccessor(property);
+                        bool usable = isPublic && !property.IsStatic && hasAccessor(property);
                         if (usable && !hidden.Contains(property.Name))
                         {
                             declared.Add(property.Name);
@@ -1012,13 +1068,26 @@ namespace Transformations.Mapping.Generator
             }
         }
 
+        /// <summary>
+        /// The property and the properties it overrides, most derived first. Both mapping attributes are
+        /// <c>Inherited = true</c>, so an override carries the attributes of the property it overrides.
+        /// </summary>
+        private static IEnumerable<IPropertySymbol> OverrideChain(IPropertySymbol prop)
+        {
+            for (IPropertySymbol? current = prop; current != null; current = current.OverriddenProperty)
+            {
+                yield return current;
+            }
+        }
+
         private static bool HasAttribute(IPropertySymbol prop, string fullName)
-            => prop.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == fullName);
+            => OverrideChain(prop).Any(p => p.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == fullName));
 
         private static List<MapPropertyModel> GetMapPropertyAttributes(IPropertySymbol prop)
         {
             var mappings = new List<MapPropertyModel>();
-            foreach (var attr in prop.GetAttributes())
+            // [MapProperty] allows multiple and is inherited, so the attributes of the whole override chain apply.
+            foreach (var attr in OverrideChain(prop).SelectMany(p => p.GetAttributes()))
             {
                 if (attr.AttributeClass?.ToDisplayString() != MapPropertyAttributeFullName) continue;
                 if (attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not string name) continue;
@@ -1030,6 +1099,9 @@ namespace Transformations.Mapping.Generator
                     if (namedArgument.Key == "SourcePath" && namedArgument.Value.Value is string rawSourcePath) sourcePath = rawSourcePath;
                     if (namedArgument.Key == "Converter" && namedArgument.Value.Value is string rawConverter) converter = rawConverter;
                 }
+
+                // The same attribute repeated on an override is one mapping, not an ambiguous pair.
+                if (mappings.Any(m => m.TargetPropertyName == name && m.SourcePath == sourcePath && m.Converter == converter)) continue;
 
                 mappings.Add(new MapPropertyModel(name, sourcePath, converter));
             }
@@ -1060,7 +1132,7 @@ namespace Transformations.Mapping.Generator
                 var lookupType = UnwrapNullable(currentType) ?? currentType;
                 if (lookupType is not INamedTypeSymbol namedType) return null;
 
-                var pathProperty = GetReadableProperties(namedType).FirstOrDefault(p => p.Name == pathPart);
+                var pathProperty = GetReadableProperties(compilation, namedType).FirstOrDefault(p => p.Name == pathPart);
                 if (pathProperty == null) return null;
 
                 pathProperties.Add(pathProperty);
@@ -1123,12 +1195,17 @@ namespace Transformations.Mapping.Generator
             // The models are cached between compilations, so suppression is tracked here and never stored on them.
             var reverseMethods = new HashSet<string>(StringComparer.Ordinal);
             var noReverse = new HashSet<TargetMapping>();
+            var mappedFromPairs = new HashSet<string>(StringComparer.Ordinal);
             // [MapTo] models come first (see Initialize), so a [MapFrom] repeating one of their pairs is the one dropped.
             var mappedPairs = new HashSet<string>(models.Where(m => m.IsMapTo)
                 .SelectMany(m => m.Targets.Select(t => $"{m.SourceFullName}|{t.TargetFullName}")), StringComparer.Ordinal);
             foreach (var model in models)
             {
-                if (!model.IsMapTo && model.Targets.Count == 1 && mappedPairs.Contains($"{model.SourceFullName}|{model.Targets[0].TargetFullName}"))
+                // A [MapFrom] repeating a [MapTo] pair, or an earlier [MapFrom] of the same pair (repeated or on another
+                // partial declaration), would generate the same methods twice.
+                if (!model.IsMapTo && model.Targets.Count == 1
+                    && (mappedPairs.Contains($"{model.SourceFullName}|{model.Targets[0].TargetFullName}")
+                        || !mappedFromPairs.Add($"{model.SourceFullName}|{model.Targets[0].TargetFullName}")))
                 {
                     context.ReportDiagnostic(Diagnostic.Create(DuplicateMapping, model.SourceLocation ?? Location.None,
                         model.SourceClassName, model.Targets[0].TargetClassName));
@@ -1855,6 +1932,10 @@ namespace Transformations.Mapping.Generator
         /// <summary>False for an init-only target member, which MapTo(existing) cannot assign.</summary>
         public bool CanUpdate { get; }
         public bool CanReverse => SourceReversePropertyName != null;
+
+        /// <summary>The same forward mapping with no reverse assignment.</summary>
+        public PropertyMapping WithoutReverse()
+            => new PropertyMapping(SourceDisplayName, TargetPropertyName, ForwardExpression, ProjectionExpression, null, null, CanUpdate);
 
         public PropertyMapping(string sourceDisplayName, string targetPropertyName, string forwardExpression, string? projectionExpression,
             string? sourceReversePropertyName, string? reverseExpression, bool canUpdate)

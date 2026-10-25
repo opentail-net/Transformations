@@ -767,6 +767,200 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.Generated, Does.Not.Contain("FromDto(global::Dto source)"));
         }
 
+        // ── One source property mapped to several targets ────────────────────
+
+        [Test]
+        public void OneSourcePropertyMappedToTwoTargets_ForwardFillsBoth_ReverseIsReported()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string FullName { get; set; } = ""; public string DisplayName { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("FullName")]
+                    [MapProperty("DisplayName")]
+                    public string Name { get; set; } = "";
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("@FullName = source.@Name"));
+            Assert.That(result.Generated, Does.Contain("@DisplayName = source.@Name"));
+            Assert.That(result.Generated, Does.Not.Contain("@Name = source.@FullName"));
+            Assert.That(result.Generated, Does.Not.Contain("@Name = source.@DisplayName"));
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP018"));
+        }
+
+        [Test]
+        public void OneSourcePropertyMappedToTwoTargets_OtherPropertiesStillReverse()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string FullName { get; set; } = ""; public string DisplayName { get; set; } = ""; public int Id { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source
+                {
+                    [MapProperty("FullName")]
+                    [MapProperty("DisplayName")]
+                    public string Name { get; set; } = "";
+                    public int Id { get; set; }
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("@Id = source.@Id"));
+            Assert.That(result.Generated, Does.Contain("FromDto("));
+        }
+
+        // ── Inherited mapping attributes ─────────────────────────────────────
+
+        [Test]
+        public void IgnoreMapOnTheBaseProperty_AppliesToTheOverride()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Password { get; set; } = ""; public int Id { get; set; } }
+                public class Base { [IgnoreMap] public virtual string Password { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source : Base { public override string Password { get; set; } = ""; public int Id { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Not.Contain("@Password = source.@Password"));
+            Assert.That(result.Generated, Does.Contain("@Id = source.@Id"));
+        }
+
+        [Test]
+        public void MapPropertyOnTheBaseProperty_AppliesToTheOverride()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Label { get; set; } = ""; }
+                public class Base { [MapProperty("Label")] public virtual string Title { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source : Base { public override string Title { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("@Label = source.@Title"));
+        }
+
+        [Test]
+        public void MapPropertyConverterOnTheBaseProperty_AppliesToTheOverride()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Label { get; set; } = ""; }
+                public class Base { [MapProperty("Label", Converter = "Format")] public virtual int Level { get; set; } public static string Format(int v) => "L" + v; }
+                [MapTo<Dto>]
+                public partial class Source : Base { public override int Level { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("Format("));
+        }
+
+        // ── Member hiding by non-public members ──────────────────────────────
+
+        [TestCase("private")]
+        [TestCase("protected")]
+        public void NonAccessibleMemberInTheDerivedType_DoesNotHideTheBasePropertyFromGeneratedCode(string modifier)
+        {
+            var result = Compile($$"""
+                using Transformations.Mapping;
+                public class Dto { public string Name { get; set; } = ""; }
+                public class Base { public string Name { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source : Base { {{modifier}} new int Name { get; set; } }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.Generated, Does.Contain("@Name = source.@Name"));
+        }
+
+        [Test]
+        public void InternalMemberInTheDerivedSource_HidesTheBaseProperty()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public string Name { get; set; } = ""; }
+                public class Base { public string Name { get; set; } = ""; }
+                [MapTo<Dto>]
+                public partial class Source : Base { internal new int Name { get; set; } }
+                """);
+
+            AssertCompiles(result);
+        }
+
+        [Test]
+        public void InternalMemberInTheDerivedTarget_HidesTheBaseProperty()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Base { public string Name { get; set; } = ""; }
+                public class Dto : Base { internal new int Name { get; set; } }
+                [MapTo<Dto>]
+                public partial class Source { public string Name { get; set; } = ""; }
+                """);
+
+            AssertCompiles(result);
+        }
+
+        // ── Repeated [MapFrom] ───────────────────────────────────────────────
+
+        [Test]
+        public void RepeatedMapFromOnOneDeclaration_IsEmittedOnce_AndCallable()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Source { public int Id { get; set; } }
+                [MapFrom<Source>]
+                [MapFrom<Source>]
+                public partial class Target { public int Id { get; set; } }
+                public class Caller { public Target Call(Source s) => s.ToTarget(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP014"));
+        }
+
+        [Test]
+        public void RepeatedMapFromAcrossPartialDeclarations_IsEmittedOnce_AndCallable()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Source { public int Id { get; set; } }
+                [MapFrom<Source>]
+                public partial class Target { public int Id { get; set; } }
+                [MapFrom<Source>]
+                public partial class Target { }
+                public class Caller { public Target Call(Source s) => s.ToTarget(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP014"));
+        }
+
+        // ── Generic parameter names ──────────────────────────────────────────
+
+        [Test]
+        public void NestedGenericSourceReusingAnOuterTypeParameterName_IsReported_NotEmitted()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Dto { public int Id { get; set; } }
+                public partial class Outer<T>
+                {
+                    [MapTo<Dto>]
+                    public partial class Source<T> { public int Id { get; set; } }
+                }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Contain("TXMAP019"));
+        }
+
         private static int Count(string text, string value)
         {
             int count = 0;
