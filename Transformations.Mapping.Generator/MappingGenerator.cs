@@ -198,6 +198,15 @@ namespace Transformations.Mapping.Generator
             isEnabledByDefault: true,
             description: "The mapping methods are generated in a class at namespace level, which cannot name a private or protected nested type. Make the type internal or public.");
 
+        internal static readonly DiagnosticDescriptor WeakNestedInference = new DiagnosticDescriptor(
+            id: "TXMAP023",
+            title: "Nested mapping inferred from few matching members",
+            messageFormat: "'{0}' is mapped to '{1}' because their members have the same names, but only {2} of {3} members of '{1}' get a value; if these types are not meant to be mapped, add [IgnoreMap] to the property",
+            category: "Mapping",
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Nested objects are mapped without any attribute when their member names match. When fewer than half of the target's members are mapped it is more likely two unrelated types share a name than a deliberate mapping. Declaring the pair with [MapTo<T>] or [MapFrom<T>], or ignoring the property, silences this.");
+
         internal static readonly DiagnosticDescriptor UnmatchedEnumMember = new DiagnosticDescriptor(
             id: "TXMAP022",
             title: "Enum member has no counterpart",
@@ -522,6 +531,13 @@ namespace Transformations.Mapping.Generator
 
             return names;
         }
+
+        /// <summary>Whether the pair is declared with [MapTo&lt;target&gt;] on the source or [MapFrom&lt;source&gt;] on the target.</summary>
+        internal static bool IsDeclaredMapping(INamedTypeSymbol sourceType, INamedTypeSymbol targetType)
+            => sourceType.GetAttributes().Any(a => a.AttributeClass is INamedTypeSymbol t && IsMapToAttribute(t) && t.TypeArguments.Length == 1
+                    && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], targetType))
+                || targetType.GetAttributes().Any(a => a.AttributeClass is INamedTypeSymbol t && IsMapFromAttribute(t) && t.TypeArguments.Length == 1
+                    && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], sourceType));
 
         private static bool HasMapToTargets(INamedTypeSymbol type)
             => type.GetAttributes().Any(a => a.AttributeClass is INamedTypeSymbol t && IsMapToAttribute(t) && t.TypeArguments.Length == 1);

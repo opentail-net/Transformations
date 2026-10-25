@@ -2,7 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using NUnit.Framework;
 using Transformations.Mapping;
-using Transformations.Mapping.Generator;
+using Result = Transformations.Mapping.Tests.CompileResult;
 
 namespace Transformations.Mapping.Tests
 {
@@ -1961,6 +1961,85 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.Generated, Does.Contain("new global::InnerDto(item.@Inner.@Id)"));
         }
 
+        // ── Inferred nested mappings ─────────────────────────────────────────
+
+        private const string FiveMemberTarget = """
+            using Transformations.Mapping;
+            public class Inner { public int Id { get; set; } public string Other { get; set; } = ""; }
+            public class InnerDto { public int Id { get; set; } public int A { get; set; } public int B { get; set; } public int C { get; set; } public int D { get; set; } }
+            """;
+
+        [Test]
+        public void NestedMappingInferredFromFewMatchingMembers_IsWarnedAbout()
+        {
+            var result = Compile(FiveMemberTarget + """
+                public class Dto { public InnerDto Value { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Inner Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            var warning = result.Diagnostics.Single(d => d.Id == "TXMAP023").GetMessage();
+            Assert.That(warning, Does.Contain("1 of 5"));
+        }
+
+        [Test]
+        public void ADeclaredPair_IsNotWarnedAbout()
+        {
+            var result = Compile(FiveMemberTarget.Replace("public class Inner {", "[MapTo<InnerDto>] public partial class Inner {") + """
+                public class Dto { public InnerDto Value { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Inner Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP023"));
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP002"));
+        }
+
+        [Test]
+        public void AMapFromDeclaredPair_IsNotWarnedAbout()
+        {
+            var result = Compile(FiveMemberTarget.Replace("public class InnerDto {", "[MapFrom<Inner>] public partial class InnerDto {") + """
+                public class Dto { public InnerDto Value { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Inner Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP023"));
+        }
+
+        [Test]
+        public void AMostlyMatchingNestedMapping_IsNotWarnedAbout()
+        {
+            var result = Compile("""
+                using Transformations.Mapping;
+                public class Inner { public int Id { get; set; } public int A { get; set; } public int B { get; set; } }
+                public class InnerDto { public int Id { get; set; } public int A { get; set; } public int B { get; set; } public int C { get; set; } }
+                public class Dto { public InnerDto Value { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { public Inner Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP023"));
+        }
+
+        [Test]
+        public void IgnoringTheProperty_SilencesTheInferredMapping()
+        {
+            var result = Compile(FiveMemberTarget + """
+                public class Dto { public InnerDto Value { get; set; } = new(); }
+                [MapTo<Dto>]
+                public partial class Source { [IgnoreMap] public Inner Value { get; set; } = new(); }
+                """);
+
+            AssertCompiles(result);
+            Assert.That(result.DiagnosticIds, Does.Not.Contain("TXMAP023"));
+            Assert.That(result.Generated, Does.Not.Contain("__Map"));
+        }
+
         // ── Helper cache keys ────────────────────────────────────────────────
 
         [Test]
@@ -2012,11 +2091,6 @@ namespace Transformations.Mapping.Tests
 
         // ── Harness ──────────────────────────────────────────────────────────
 
-        private sealed record Result(IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<Diagnostic> Errors, string Generated)
-        {
-            public IEnumerable<string> DiagnosticIds => Diagnostics.Select(d => d.Id);
-        }
-
         private static void AssertCompiles(Result result)
         {
             Assert.That(result.Errors, Is.Empty, string.Join(Environment.NewLine, result.Errors.Select(e => $"{e.Id} {e.GetMessage()}"))
@@ -2024,28 +2098,6 @@ namespace Transformations.Mapping.Tests
             Assert.That(result.DiagnosticIds, Does.Not.Contain("CS8785"), "the generator itself failed");
         }
 
-        private static Result Compile(string source)
-        {
-            // Preview language version and no implicit usings: generated code must stand on its own.
-            var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
-            var syntaxTree = CSharpSyntaxTree.ParseText(source, parseOptions);
-            var references = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-                .Split(Path.PathSeparator)
-                .Select(path => MetadataReference.CreateFromFile(path))
-                .Cast<MetadataReference>()
-                .ToList();
-            references.Add(MetadataReference.CreateFromFile(typeof(MapToAttribute<>).Assembly.Location));
-            references.Add(MetadataReference.CreateFromFile(typeof(global::BasicTypeConverter).Assembly.Location));
-
-            var compilation = CSharpCompilation.Create("MappingCompilation", new[] { syntaxTree }, references,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
-
-            GeneratorDriver driver = CSharpGeneratorDriver.Create(new[] { new MappingGenerator().AsSourceGenerator() }, parseOptions: parseOptions);
-            driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics);
-
-            var errors = output.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-            var generated = string.Join(Environment.NewLine, output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
-            return new Result(generatorDiagnostics, errors, generated);
-        }
+        private static Result Compile(string source) => GeneratorHarness.Compile(source);
     }
 }

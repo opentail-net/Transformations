@@ -209,9 +209,15 @@ namespace Transformations.Mapping.Generator
             var classified = ctx.Compilation.ClassifyConversion(sourceType, targetType);
             if (classified.Exists && classified.IsImplicit)
             {
-                string direct = sourceIsNullable && targetIsNonNullable && targetType.SpecialType == SpecialType.System_String
-                    ? $"{expression} ?? string.Empty"
-                    : expression;
+                // A nullable value into a non-nullable member is reported to the user as TXMAP006 at their own code. In the
+                // generated file a string falls back to empty, and anything else carries "!" so that the compiler does not
+                // repeat the same warning (CS8601) where nobody can act on it.
+                string direct = expression;
+                if (sourceIsNullable && targetIsNonNullable)
+                {
+                    direct = targetType.SpecialType == SpecialType.System_String ? $"{expression} ?? string.Empty" : $"{expression}!";
+                }
+
                 return new Conversion(direct, ConversionKind.Direct, direct.Contains("?.") ? null : direct);
             }
 
@@ -227,7 +233,10 @@ namespace Transformations.Mapping.Generator
 
             if (targetType.SpecialType == SpecialType.System_String)
             {
-                return new Conversion(sourceIsNullable ? $"{operand}?.ToString() ?? string.Empty" : $"{operand}.ToString()", ConversionKind.ToString, null);
+                string toString = sourceIsNullable
+                    ? $"{operand}?.ToString() ?? string.Empty"
+                    : ReturnsNonNullString(sourceCore) ? $"{operand}.ToString()" : $"({operand}.ToString() ?? string.Empty)";
+                return new Conversion(toString, ConversionKind.ToString, null);
             }
 
             if (TryBuildCollection(ctx, expression, sourceType, sourceCore, targetType, targetCore, out var collectionConversion))
@@ -242,6 +251,26 @@ namespace Transformations.Mapping.Generator
             }
 
             return BuildConvertTo(expression, operand, sourceType, sourceCore, targetCore, nullableTargetCore);
+        }
+
+        /// <summary>
+        /// Whether <c>ToString()</c> on the type is known not to return null. <c>object.ToString()</c> is declared
+        /// <c>string?</c>, so any other type needs a fallback to avoid CS8601.
+        /// </summary>
+        private static bool ReturnsNonNullString(ITypeSymbol type)
+        {
+            if (type.TypeKind == TypeKind.Enum) return true;
+            if (type.SpecialType != SpecialType.None) return type.SpecialType != SpecialType.System_Object;
+
+            switch (type.ToDisplayString())
+            {
+                case "System.DateTimeOffset":
+                case "System.TimeSpan":
+                case "System.Guid":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         // ── ConvertTo<T>() ───────────────────────────────────────────────────
@@ -659,6 +688,17 @@ namespace Transformations.Mapping.Generator
             if (!ctx.Quiet)
             {
                 ctx.Diagnostics.AddRange(nestedDiagnostics);
+
+                // Inferred, not declared: say so when it looks more like a coincidence of names than a mapping.
+                var mappable = new HashSet<string>(
+                    MappingGenerator.GetSettableProperties(ctx.Compilation, targetObject)
+                        .Concat(ConstructionPlanner.ConstructorBindableProperties(ctx.Compilation, targetObject)).Select(p => p.Name),
+                    StringComparer.Ordinal);
+                if (mappable.Count > 0 && properties.Count * 2 < mappable.Count && !MappingGenerator.IsDeclaredMapping(sourceObject, targetObject))
+                {
+                    ctx.Diagnostics.Add(DiagnosticInfo.Create(MappingGenerator.WeakNestedInference, ctx.Location,
+                        sourceObject.Name, targetObject.Name, properties.Count, mappable.Count));
+                }
             }
 
             var mapped = new HashSet<string>(properties.Select(p => p.TargetPropertyName), StringComparer.Ordinal);
