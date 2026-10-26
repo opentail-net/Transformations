@@ -544,5 +544,74 @@ namespace Transformations.Tests
         }
 
         #endregion RetryAsync predicate
+
+        #region Inner-exception matching
+
+        [Test]
+        public void Retry_WrappedInnerExceptionMatchesRetryOn_Retries()
+        {
+            int attempts = 0;
+
+            int result = Resilience.Retry(
+                operation: () =>
+                {
+                    attempts++;
+                    if (attempts < 2)
+                    {
+                        throw new InvalidOperationException("wrapper", new TimeoutException("inner"));
+                    }
+
+                    return 7;
+                },
+                retryCount: 2,
+                initialDelay: TimeSpan.Zero,
+                retryOnExceptions: new[] { typeof(TimeoutException) },
+                failFastExceptions: null);
+
+            Assert.That(result, Is.EqualTo(7));
+            Assert.That(attempts, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void Retry_WrappedInnerExceptionMatchesFailFast_DoesNotRetry()
+        {
+            int attempts = 0;
+
+            Assert.Throws<InvalidOperationException>(() =>
+                Resilience.Retry(
+                    operation: () =>
+                    {
+                        attempts++;
+                        throw new InvalidOperationException("wrapper", new ArgumentException("inner"));
+                    },
+                    retryCount: 5,
+                    initialDelay: TimeSpan.Zero,
+                    retryOnExceptions: new[] { typeof(Exception) },
+                    failFastExceptions: new[] { typeof(ArgumentException) }));
+
+            Assert.That(attempts, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Retry_WrapperWithoutMatchingInner_DoesNotRetry()
+        {
+            int attempts = 0;
+
+            Assert.Throws<InvalidOperationException>(() =>
+                Resilience.Retry(
+                    operation: () =>
+                    {
+                        attempts++;
+                        throw new InvalidOperationException("wrapper", new ArgumentException("inner"));
+                    },
+                    retryCount: 5,
+                    initialDelay: TimeSpan.Zero,
+                    retryOnExceptions: new[] { typeof(TimeoutException) },
+                    failFastExceptions: null));
+
+            Assert.That(attempts, Is.EqualTo(1));
+        }
+
+        #endregion Inner-exception matching
     }
 }

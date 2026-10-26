@@ -754,13 +754,18 @@ namespace Transformations
             }
         }
 
+        // Walks the inner-exception chain, because providers wrap their own errors: EF Core throws DbUpdateException
+        // around a SqliteException, so a filter on SqliteException must match the inner exception.
         private static bool Matches(Exception ex, Type[] types)
         {
-            foreach (Type type in types)
+            for (Exception? current = ex; current != null; current = current.InnerException)
             {
-                if (type != null && type.IsAssignableFrom(ex.GetType()))
+                foreach (Type type in types)
                 {
-                    return true;
+                    if (type != null && type.IsAssignableFrom(current.GetType()))
+                    {
+                        return true;
+                    }
                 }
             }
 
