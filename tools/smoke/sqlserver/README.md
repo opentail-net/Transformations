@@ -73,6 +73,8 @@ in this suite uses the fully qualified name, so it is not affected.
 
 ## Verification history
 
+- `reports/20261026-225043-3.0.0.0-498da02.md`: PASS on net8.0 and net10.0, 15 of 15 checks each, clean tree
+  (`dirty: False`), after the Data documentation change. This is the report to cite.
 - `reports/20261026-223155-3.0.0.0-f6ebd67.md`: PASS on net8.0 and net10.0, 15 of 15 checks each, at commit `f6ebd67`
   (clean tree, `dirty: False`).
 - `reports/20261026-223653-3.0.0.0-7848cb3.md` and `reports/20261026-223802-3.0.0.0-7848cb3.md`: two more clean-tree PASS runs

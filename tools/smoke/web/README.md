@@ -58,6 +58,9 @@ does not set `Secure` here. Why it differs is not checked.
 
 ## Verification history
 
-- `reports/20261026-223613-3.0.0.0-378b9f3.md`: PASS on net8.0 and net10.0, 12 of 12 checks each, clean tree
+- `reports/20261026-225028-3.0.0.0-498da02.md`: PASS on net8.0 and net10.0, 12 of 12 checks each, clean tree
+  (`dirty: False`), after the cookie fix. This is the report to cite.
+- `reports/20261026-223613-3.0.0.0-378b9f3.md`: PASS on net8.0 and net10.0, 12 of 12 checks each, clean tree, before the
+  cookie fix (it pins the old `Secure` behaviour, so it no longer describes the code)
   (`dirty: False`). An earlier run failed one check because the test read the JSON property `Text` where the wire format is
   `text`. The check was corrected; the library was not changed.
