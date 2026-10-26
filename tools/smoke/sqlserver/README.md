@@ -80,6 +80,8 @@ Dapper and EF do not import both namespaces, so they are not affected.
 ## Verification history
 
 - `reports/20261026-223155-3.0.0.0-f6ebd67.md`: PASS on net8.0 and net10.0, 15 of 15 checks each, at commit `f6ebd67`
-  (clean tree, `dirty: False`). The earlier iterations in this folder were failures, and they are not kept. They found a
+  (clean tree, `dirty: False`).
+- `reports/20261026-223653-3.0.0.0-7848cb3.md` and `reports/20261026-223802-3.0.0.0-7848cb3.md`: two more clean-tree PASS runs
+  at `7848cb3`, 15 of 15 on both targets each time. Run back to back to check the deadlock timing. The earlier iterations in this folder were failures, and they are not kept. They found a
   race in the holder (the victim had not yet locked row 1), and a victim batch that committed each statement at once, so no
   lock was held across the wait.
