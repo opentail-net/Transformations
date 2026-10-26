@@ -1,6 +1,8 @@
+using System;
+using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 
-namespace Transformations.Dapper
+namespace Transformations.Sql
 {
     /// <summary>
     /// Classifies SQL exceptions as transient (retry-eligible) or permanent (fail-fast).
@@ -64,24 +66,29 @@ namespace Transformations.Dapper
         /// <summary>
         /// Determines whether the given exception represents a transient SQL fault.
         /// </summary>
-        /// <param name="exception">The exception to inspect.</param>
-        /// <returns><see langword="true"/> if any error in the <see cref="SqlException"/> is transient.</returns>
+        /// <param name="exception">The exception to inspect. Its inner exceptions are inspected too, so a
+        /// <see cref="SqlException"/> wrapped by an ORM (for example EF Core's <c>DbUpdateException</c>) is classified.</param>
+        /// <returns><see langword="true"/> if any error in the <see cref="SqlException"/> chain is transient, or a
+        /// <see cref="TimeoutException"/> is in the chain.</returns>
         public static bool IsTransient(Exception exception)
         {
-            if (exception is SqlException sqlEx)
+            for (Exception? current = exception; current is not null; current = current.InnerException)
             {
-                foreach (SqlError error in sqlEx.Errors)
+                if (current is SqlException sqlEx)
                 {
-                    if (TransientErrorNumbers.Contains(error.Number))
+                    foreach (SqlError error in sqlEx.Errors)
                     {
-                        return true;
+                        if (TransientErrorNumbers.Contains(error.Number))
+                        {
+                            return true;
+                        }
                     }
                 }
-            }
 
-            if (exception is TimeoutException)
-            {
-                return true;
+                if (current is TimeoutException)
+                {
+                    return true;
+                }
             }
 
             return false;

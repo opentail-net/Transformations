@@ -22,6 +22,7 @@ try {
         "Transformations.Core/Transformations.Core.csproj",
         "Transformations.Data/Transformations.Data.csproj",
         "Transformations.Web/Transformations.Web.csproj",
+        "Transformations.Sql/Transformations.Sql.csproj",
         "Transformations.Dapper/Transformations.Dapper.csproj",
         "Transformations.EntityFramework/Transformations.EntityFramework.csproj",
         "Transformations.Mapping/Transformations.Mapping.csproj",

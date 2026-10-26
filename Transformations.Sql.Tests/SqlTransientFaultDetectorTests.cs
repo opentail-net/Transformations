@@ -3,9 +3,9 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
-using Transformations.Dapper;
+using Transformations.Sql;
 
-namespace Transformations.Dapper.Tests
+namespace Transformations.Sql.Tests
 {
     [TestFixture]
     public class SqlTransientFaultDetectorTests
@@ -82,6 +82,23 @@ namespace Transformations.Dapper.Tests
             var ex = CreateSqlException(errorNumber);
 
             Assert.That(SqlTransientFaultDetector.IsTransient(ex), Is.False);
+        }
+
+        [Test]
+        public void IsTransient_TransientSqlExceptionInsideAWrapper_ReturnsTrue()
+        {
+            // EF Core reports a database failure as DbUpdateException with the SqlException underneath.
+            var wrapped = new InvalidOperationException("save failed", CreateSqlException(1205));
+
+            Assert.That(SqlTransientFaultDetector.IsTransient(wrapped), Is.True);
+        }
+
+        [Test]
+        public void IsTransient_PermanentSqlExceptionInsideAWrapper_ReturnsFalse()
+        {
+            var wrapped = new InvalidOperationException("save failed", CreateSqlException(2627));
+
+            Assert.That(SqlTransientFaultDetector.IsTransient(wrapped), Is.False);
         }
 
         [Test]
