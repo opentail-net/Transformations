@@ -59,6 +59,10 @@ namespace Transformations
         /// Is http only.
         /// </summary>
         private readonly bool _isHttpOnly;
+        /// <summary>
+        /// The configured Secure flag, or null to follow the request scheme.
+        /// </summary>
+        private readonly bool? _secure;
 
 
         /// <summary>
@@ -76,6 +80,10 @@ namespace Transformations
 
             var isHttpValue = configuration["Cookie:IsHttp"];
             _isHttpOnly = bool.TryParse(isHttpValue, out var b) ? b : true;
+
+            // Cookie:Secure overrides the request scheme. Unset, a cookie is Secure only when the request is HTTPS.
+            var secureValue = configuration["Cookie:Secure"];
+            _secure = bool.TryParse(secureValue, out var s) ? s : null;
         }
 
         ////public CookieHelper(IHttpContextAccessor httpContextAccessor, IConfiguration configuration)
@@ -127,7 +135,8 @@ namespace Transformations
             {
                 Expires = DateTimeOffset.UtcNow.AddDays(daysToExpiration ?? _defaultDuration),
                 HttpOnly = _isHttpOnly,
-                Secure = true, // Modern Best Practice
+                // Browsers reject a Secure cookie set over plain HTTP (localhost aside), so follow the request scheme.
+                Secure = _secure ?? Context.Request.IsHttps,
                 SameSite = SameSiteMode.Lax
             };
 

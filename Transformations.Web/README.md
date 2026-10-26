@@ -75,10 +75,15 @@ var all = QueryStringHelper.GetAllQueryStrings(httpContext);
 
 ```csharp
 // ICookieHelper is DI-registered; inject it into your controller
-string token = _cookies.Get(httpContext, "auth_token");
-_cookies.Set(httpContext, "pref", value, new CookieOptions { HttpOnly = true });
-_cookies.Delete(httpContext, "auth_token");
+string? token = _cookies.Get("auth_token");
+_cookies.Set("pref", value, daysToExpiration: 30);
+_cookies.Delete("auth_token");
 ```
+
+`Set` writes the cookie as HttpOnly (configurable with `Cookie:IsHttp`, default `true`) and with `SameSite=Lax`. Its lifetime
+defaults to 360 days, set with `Cookie:Duration`. Its `Secure` flag follows the request: a cookie set over HTTPS is Secure, and
+one set over plain HTTP is not. Browsers reject a Secure cookie set over plain HTTP, except on `localhost`, so the flag follows
+the scheme. To force the flag either way, set `Cookie:Secure` to `true` or `false`.
 
 ### HTTP Response Shortcuts
 
