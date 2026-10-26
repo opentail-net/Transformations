@@ -50,7 +50,8 @@ int count = await connection.ExecuteScalarWithRetryAsync<int>(
 
 ### Transient Fault Detection
 
-`SqlTransientFaultDetector.IsTransient` classifies SQL Server errors that are safe to retry, and `TimeoutException`. The SQL Server error numbers are:
+`SqlTransientFaultDetector.IsTransient` classifies SQL Server errors that are safe to retry, and `TimeoutException`. It lives in
+the `Transformations.Sql` package, which this package depends on, so import that namespace. The SQL Server error numbers are:
 
 | Group | Error numbers |
 |---|---|
@@ -63,10 +64,35 @@ int count = await connection.ExecuteScalarWithRetryAsync<int>(
 `GetTransientErrorNumbers()` returns the same set. A test pins that set, so changing the codes means updating the test and this table together. SQLite and other providers have no entries here, so their busy errors are not retried by these wrappers. Use it in your own catch blocks:
 
 ```csharp
+using Transformations.Sql;
+
 catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex))
 {
     logger.LogWarning(ex, "Transient SQL fault on attempt {Attempt}", attempt);
 }
+```
+
+#### Migrating from `Transformations.Dapper.SqlTransientFaultDetector`
+
+Earlier 3.x releases had the detector in this package's namespace. It is now `[Obsolete]` and forwards to
+`Transformations.Sql.SqlTransientFaultDetector`. The compiler reports CS0618 with that replacement. The forwarder will be
+removed in the next major version.
+
+Change the `using` and keep the calls as they are:
+
+```csharp
+// Before
+using Transformations.Dapper;
+
+// After
+using Transformations.Sql;
+```
+
+If your file also imports `Transformations.Dapper` for the extension methods, the unqualified name is ambiguous (CS0104).
+Qualify the call instead:
+
+```csharp
+catch (SqlException ex) when (Transformations.Sql.SqlTransientFaultDetector.IsTransient(ex))
 ```
 
 ### SqlParameter Bridge
@@ -97,7 +123,7 @@ IReadOnlyList<SqlParameter> sqlParams = SqlParameterBridge.ToSqlParameters<MyPar
 | Class | Purpose | Key Members |
 |-------|---------|-------------|
 | `DapperResilienceExtensions` | Retry-wrapped Dapper | `QueryWithRetryAsync<T>`, `QuerySingleOrDefaultWithRetryAsync<T>`, `ExecuteWithRetryAsync`, `ExecuteScalarWithRetryAsync<T>` |
-| `SqlTransientFaultDetector` | SQL error classification | `IsTransient(SqlException)` |
+| `SqlTransientFaultDetector` (in `Transformations.Sql`) | SQL error classification | `IsTransient(Exception)`, `GetTransientErrorNumbers()` |
 | `SqlParameterBridge` | Object → `SqlParameter[]` | `ToSqlParameters(object)`, `ToSqlParameters(object, typeMappings)`, `ToSqlParameters<T>(T)` |
 
 ---

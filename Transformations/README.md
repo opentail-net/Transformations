@@ -228,7 +228,7 @@ See [Batching.md](Batching.md) for the performance deep dive.
 | Class | Purpose | Key Methods |
 |-------|---------|-------------|
 | **DapperResilienceExtensions** | Retry-wrapped Dapper queries | `QueryWithRetryAsync<T>`, `QuerySingleOrDefaultWithRetryAsync<T>`, `ExecuteWithRetryAsync`, `ExecuteScalarWithRetryAsync<T>` |
-| **SqlTransientFaultDetector** | Transient SQL fault classification | `IsTransient` — deadlocks, timeouts, Azure throttling, transport errors |
+| **SqlTransientFaultDetector** (`Transformations.Sql`) | Transient SQL fault classification | `IsTransient` — deadlocks, timeouts, Azure throttling, transport errors |
 | **SqlParameterBridge** | Anonymous object → SqlParameter[] | `ToSqlParameters` — with optional `SqlDbType` mappings |
 
 ```csharp
@@ -237,7 +237,7 @@ var users = await connection.QueryWithRetryAsync<User>(
     "SELECT * FROM Users WHERE Active = @Active",
     new { Active = true });
 
-// Check if a caught exception is transient
+// Check if a caught exception is transient (the detector is in Transformations.Sql: `using Transformations.Sql;`)
 catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex))
 {
     logger.LogWarning(ex, "Transient SQL fault, will retry");

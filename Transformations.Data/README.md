@@ -25,20 +25,34 @@ Despite the rise of ORMs, enterprise architectures regularly drop down to raw AD
 
 ### Safe DataRow Extraction
 
-Eliminates `DBNull.Value` checks, boxing cast errors, and index-out-of-range exceptions. A unified generic getter accepts an explicit type and fallback.
+Eliminates `DBNull.Value` checks, boxing cast errors, and index-out-of-range exceptions. The typed getters take an explicit type. Where a default is given, it is returned for a missing column; a NULL value is handled as described in the table below.
 
 ```csharp
 foreach (DataRow row in dataTable.Rows)
 {
-    int    age  = row.GetValue<int>("Age", fallback: 0);
-    string name = row.GetValue<string>("FullName", fallback: "Unknown");
-    Guid   id   = row.GetValue<Guid>("TenantId");
+    // Returns 0 when the column is missing. A NULL "Age" returns null.
+    int?    age  = row.GetValue<int>("Age", 0);
+    // Returns "Unknown" for a NULL or missing name.
+    string  name = row.GetStringValue("FullName") ?? "Unknown";
+    // Without a default, a NULL or missing "TenantId" returns default(Guid).
+    Guid    id   = row.GetValue<Guid>("TenantId");
 }
 
 // Check column/row presence before reading
 if (row.HasColumns("LastLogin") && !row.IsNumericValue("Status"))
     Process(row);
 ```
+
+### NULL and missing-column behaviour
+
+| Call | NULL value | Missing column |
+|---|---|---|
+| `DataRow.GetValue<T>(column)` | `default(T)` | `default(T)` |
+| `DataRow.GetValue<T>(column, defaultValue)` | `null` | `defaultValue` |
+| `IDataReader.GetValue<T>(column)` | `default(T)` | `default(T)` |
+| `IDataReader.GetValue(column, defaultValue)` | the `DBNull` object | `defaultValue` |
+
+A default applies only to a missing column, not to NULL. To substitute a value for NULL, use `??` on the result.
 
 ### IDataReader Extensions
 
@@ -48,8 +62,9 @@ Type-safe column extraction directly on streaming readers:
 using var reader = await command.ExecuteReaderAsync();
 while (await reader.ReadAsync())
 {
-    Guid   tenantId = reader.GetValue<Guid>("TenantId");
-    string email    = reader.GetValue<string>("Email", fallback: string.Empty);
+    Guid    tenantId = reader.GetValue<Guid>("TenantId");
+    // NULL returns default(string), which is null. Substitute with ??.
+    string  email    = reader.GetValue<string>("Email") ?? string.Empty;
 }
 ```
 
@@ -94,7 +109,7 @@ string csv = dataTable.ToCsv();
 | Class | Purpose | Key Members |
 |-------|---------|-------------|
 | `DataRowConverter` | Safe `DataRow` access | `GetValue<T>`, `TryGetValue<T>`, `GetStringValue`, `HasRows`, `HasColumns`, `IsNumericValue` |
-| `DataReaderHelper` | `IDataReader` typed access | `GetValue<T>` with column name and optional fallback |
+| `DataReaderHelper` | `IDataReader` typed access | `GetValue<T>(column)`, `GetValue(column, defaultValue)`, `TryGetValue<T>` |
 | `SqlHelper` | `SqlParameter` builders | `ToSqlParameter` (20+ type overloads), `ToSqlParameterList`, `ToParameterArray`, `SetDirection`, `SetSqlDbType`, `SetValue`, `SetSize`, `ValidateParameters` |
 | `CsvHelper` | CSV generation | `ToCsv` — `IEnumerable<T>` or `DataTable`, configurable separator and text qualifier |
 

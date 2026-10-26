@@ -146,7 +146,7 @@ await connection.ExecuteAsync("EXEC sp_ProcessParams", dapperParams);
 ```
 
 ## 🛠 Advanced Usage
-The `SqlTransientFaultDetector` is exposed publicly. If you have custom SQL Server error codes that you consider transient (e.g. custom throttle warnings), you can configure the internal collection of accepted error numbers to control the resilience engine.
+The `SqlTransientFaultDetector` (in the `Transformations.Sql` namespace) is exposed publicly. If you have custom SQL Server error codes that you consider transient (e.g. custom throttle warnings), you can configure the internal collection of accepted error numbers to control the resilience engine.
 
 ## 📦 Dependencies
 * `Transformations.Core`
@@ -284,7 +284,7 @@ $data = @'
 [![NuGet](https://img.shields.io/nuget/v/Transformations.Data.svg)](https://nuget.org/packages/Transformations.Data)
 
 ## 📖 Overview
-Despite the rise of ORMs, enterprise architectures often drop down to raw ADO.NET for high-performance ETL syncs, reporting, and bulk pipelines. `Transformations.Data` wraps the harsh edges of `IDataReader` and `DataTable` with elegant, fallback-driven conversion extensions.
+Despite the rise of ORMs, enterprise architectures often drop down to raw ADO.NET for high-performance ETL syncs, reporting, and bulk pipelines. `Transformations.Data` wraps the harsh edges of `IDataReader` and `DataTable` with elegant, typed conversion extensions.
 
 ## 🚀 Why Transformations.Data?
 Retrieving `DBNull.Value` triggers runtime crashes if not constantly checked. These extensions introduce defensive getters, parameter upserting strategies, and collection-to-table mappers, dramatically cleaning up your data access layer.
@@ -292,15 +292,23 @@ Retrieving `DBNull.Value` triggers runtime crashes if not constantly checked. Th
 ## 💡 Key Features & Examples
 
 ### 1. Resilient DataRow Fetching
-Avoid index out of range and boxing cast errors with a unified generic getter that accepts explicit type conversions and fallbacks.
+Avoid index out of range and boxing cast errors with a unified generic getter that takes an explicit type. A default is returned for a missing column; a NULL value is handled as the table below shows.
 ```csharp
 foreach (DataRow row in dataTable.Rows)
 {
-    // Safely reads the value. If DBNull, missing, or mismatched, returns the fallback.
-    int age = row.GetValue<int>("Age", fallback: 0);
-    string name = row.GetValue<string>("FullName", fallback: "Unknown");
+    // Returns 0 when the column is missing. A NULL "Age" returns null.
+    int? age = row.GetValue<int>("Age", 0);
+    // Returns "Unknown" for a NULL or missing name.
+    string name = row.GetStringValue("FullName") ?? "Unknown";
 }
 ```
+
+| Call | NULL value | Missing column |
+|---|---|---|
+| `DataRow.GetValue<T>(column)` | `default(T)` | `default(T)` |
+| `DataRow.GetValue<T>(column, defaultValue)` | `null` | `defaultValue` |
+| `IDataReader.GetValue<T>(column)` | `default(T)` | `default(T)` |
+| `IDataReader.GetValue(column, defaultValue)` | the `DBNull` object | `defaultValue` |
 
 ### 2. IDataReader Streamlining
 Map streaming rows intuitively.
@@ -309,7 +317,7 @@ using (var reader = await command.ExecuteReaderAsync())
 {
     while (await reader.ReadAsync())
     {
-        // Null safe extraction
+        // NULL returns default(Guid)
         Guid tenantId = reader.GetValue<Guid>("TenantId");
     }
 }
@@ -454,7 +462,8 @@ C\#
 int result \= Resilience.Retry(() \=\> CallService(), retryCount: 3);
 
 // SQL transient fault detection for deadlocks and timeouts  
-catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex)) {  
+// SqlTransientFaultDetector is in the Transformations.Sql namespace (`using Transformations.Sql;`)
+catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex)) {
     // Safely retry or log  
 }
 
@@ -671,7 +680,7 @@ See [Batching.md](Batching.md) for the performance deep dive.
 | Class | Purpose | Key Methods |
 |-------|---------|-------------|
 | **DapperResilienceExtensions** | Retry-wrapped Dapper queries | `QueryWithRetryAsync<T>`, `QuerySingleOrDefaultWithRetryAsync<T>`, `ExecuteWithRetryAsync`, `ExecuteScalarWithRetryAsync<T>` |
-| **SqlTransientFaultDetector** | Transient SQL fault classification | `IsTransient` — deadlocks, timeouts, Azure throttling, transport errors |
+| **SqlTransientFaultDetector** (`Transformations.Sql`) | Transient SQL fault classification | `IsTransient` — deadlocks, timeouts, Azure throttling, transport errors |
 | **SqlParameterBridge** | Anonymous object → SqlParameter[] | `ToSqlParameters` — with optional `SqlDbType` mappings |
 
 ```csharp
@@ -681,6 +690,7 @@ var users = await connection.QueryWithRetryAsync<User>(
     new { Active = true });
 
 // Check if a caught exception is transient
+// SqlTransientFaultDetector is in the Transformations.Sql namespace (`using Transformations.Sql;`)
 catch (SqlException ex) when (SqlTransientFaultDetector.IsTransient(ex))
 {
     logger.LogWarning(ex, "Transient SQL fault, will retry");
