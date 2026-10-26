@@ -41,7 +41,7 @@ internal static class Program
             ("QueryStringHelper: TryGetQuery reads an integer", QueryReadsInteger),
             ("QueryStringHelper: TryGetQuery rejects a non-integer", QueryRejectsNonInteger),
             ("CookieHelper: Set writes a cookie that Get reads back", CookieRoundTrip),
-            ("CookieHelper: Set always marks the cookie Secure (over HTTP, a cookie-container client drops it)", CookieIsAlwaysSecure),
+            ("CookieHelper: Set does not mark the cookie Secure over plain HTTP", CookieIsNotSecureOverHttp),
             ("CookieHelper: Delete expires the cookie", CookieDeleteExpires),
             ("SessionHelper: SetValue persists across requests", SessionPersists),
             ("WebHelper: Redirect with a format writes 302 and the formatted Location", RedirectFormatsLocation),
@@ -205,22 +205,19 @@ internal static class Program
         Expect(set.Headers.TryGetValues("Set-Cookie", out var setCookies) && setCookies.Any(c => c.StartsWith("pref=blue")),
             "the response sets pref=blue");
 
-        // A cookie-container client drops a Secure cookie over HTTP, so the value is sent back explicitly. That is what a
-        // browser on HTTPS would do.
-        var request = new HttpRequestMessage(HttpMethod.Get, "/cookie/read");
-        request.Headers.Add("Cookie", "pref=blue");
-        using JsonDocument doc = await ReadJson(await client.SendAsync(request));
+        // The cookie is not Secure over HTTP, so the cookie container returns it on the next request.
+        using JsonDocument doc = await GetJson(client, "/cookie/read");
 
-        Expect(doc.RootElement.GetProperty("value").GetString() == "blue", "Get reads blue back from the request");
+        Expect(doc.RootElement.GetProperty("value").GetString() == "blue", "Get reads blue back through the cookie container");
         Expect(doc.RootElement.GetProperty("exists").GetBoolean(), "Exists is true");
     }
 
-    private static async Task CookieIsAlwaysSecure(HttpClient client)
+    private static async Task CookieIsNotSecureOverHttp(HttpClient client)
     {
         HttpResponseMessage set = await client.GetAsync("/cookie/set?v=blue");
         string cookie = set.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith("pref="));
 
-        Expect(cookie.Contains("secure", StringComparison.OrdinalIgnoreCase), $"Set-Cookie has the Secure attribute (was {cookie})");
+        Expect(!cookie.Contains("secure", StringComparison.OrdinalIgnoreCase), $"Set-Cookie has no Secure attribute over HTTP (was {cookie})");
     }
 
     private static async Task CookieDeleteExpires(HttpClient client)

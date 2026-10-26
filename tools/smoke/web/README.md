@@ -22,27 +22,30 @@ The host listens on `127.0.0.1` on a free port. Nothing needs installing beyond 
 |---|---|
 | `QueryStringHelper` | `TryGetQuery<int>` reads an integer, and rejects a non-integer. `HasValue` and `GetAllQueryStrings` see the key. |
 | `CookieHelper` | `Set` writes a cookie that `Get` and `Exists` read back, and `Delete` expires it. |
-| `CookieHelper` | **Finding, pinned.** `Set` always sets `Secure`. See below. |
+| `CookieHelper` | `Set` does not set `Secure` over plain HTTP. See below. |
 | `SessionHelper` | `SetValue` persists across requests through the session cookie. |
 | `WebHelper` | `Redirect(format, values)` writes 302 with the formatted `Location`. `SetFileNotFound` writes 404. `SetStatus` writes the code. |
 | `ConfigurationHelper` | `GetSetting`, `GetValue<int>`, the fallback for a missing key, and `GetConnectionString`. |
 | `SelectListExtensions` | `ToSelectList` returns one item per row, and marks the row whose value matches. |
 | `ResponseHelper` | `RedirectAsync` writes a script that contains the URL and the window target. |
 
-## Finding: `CookieHelper.Set` always sets Secure
+## Fixed: `CookieHelper.Set` followed a constant `Secure`
 
-`CookieHelper.Set` builds its `CookieOptions` with `Secure = true`, whatever the request scheme. A cookie with `Secure` is sent
-back only over HTTPS. A cookie-container client, and a browser on plain HTTP, will not return it, so over HTTP a value set with
-`Set` never comes back on the next request.
+`CookieHelper.Set` used to set `Secure = true` whatever the request scheme. Browsers reject a Secure cookie set over plain HTTP
+(except on `localhost`), so over HTTP the cookie was never stored. The helper now sets `Secure` from the request scheme, and
+`Cookie:Secure` overrides it.
 
-The check pins the current behaviour: `Set-Cookie` carries `Secure`. The round-trip check sends the cookie back in an explicit
-`Cookie` header, because that is what a browser on HTTPS does. This smoke does not run HTTPS, so it does not prove that the
-cookie works in a browser; it proves the header and the reading code. If `Secure` becomes conditional on the request scheme,
-change the `CookieIsAlwaysSecure` check.
+The checks now assert the fixed behaviour:
 
-The session cookie is different in practice: the session check goes through a cookie container over HTTP and passes, so the
-session cookie is returned on plain HTTP in this host. Why it differs (the session middleware's own cookie policy) is not
-checked here.
+- `CookieIsNotSecureOverHttp` checks that `Set-Cookie` has no `Secure` attribute on an HTTP request.
+- `CookieRoundTrip` reads the cookie back through the cookie container, with no explicit header. Before the fix this path
+  dropped the cookie, so the check now covers the regression directly.
+
+The HTTPS branch (`Secure` set) is covered by the unit tests in `Transformations.Tests/CookieHelperSecureTests.cs`, not by this
+smoke test, which runs HTTP only.
+
+The session cookie also round-trips through the cookie container over HTTP, so the session middleware's own cookie policy
+does not set `Secure` here. Why it differs is not checked.
 
 ## Limits
 

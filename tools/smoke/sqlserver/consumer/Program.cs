@@ -41,7 +41,7 @@ internal static class Program
             ("EF: a unique violation is not retried (one attempt)", EfUniqueViolationIsNotRetried),
             ("EF: a concurrency conflict fails fast (one attempt)", EfConcurrencyFailsFast),
             ("EF: a deadlock is retried by the default and the save succeeds", EfRetriesDeadlock),
-            ("Data: KNOWN MISMATCH - DataRow GetValue returns null for DBNull, not the fallback", DataRowNullIsNotFallback),
+            ("Data: DataRow GetValue returns null for a NULL value (documented)", DataRowNullIsNull),
             ("Data: DataRow GetValue returns the fallback for a missing column", DataRowFallbackOnMissingColumn),
             ("Data: SqlParameter values round-trip through SQL Server", DataSqlParameterRoundTrip),
         };
@@ -248,16 +248,14 @@ internal static class Program
 
     // ── Transformations.Data ────────────────────────────────────────────────────────────────────────────────────────
 
-    // KNOWN MISMATCH. The Transformations.Data README shows GetValue<T>(column, fallback) returning the fallback for a NULL.
-    // The code returns null for DBNull, and applies the default only when the column is missing. This check pins the code
-    // as it is, so the run stays green and the mismatch stays visible. When the code changes, change this check.
-    private static Task DataRowNullIsNotFallback()
+    // Documented in the Transformations.Data README: a default applies to a missing column, and a NULL returns null.
+    private static Task DataRowNullIsNull()
     {
         DataRow row = NewDataRow();
 
         int? age = row.GetValue<int>("Age", 7);
 
-        Expect(age is null, $"DBNull returns null, not the fallback (was {age}); the README says fallback. See the report.");
+        Expect(age is null, $"a NULL returns null, not the default (was {age})");
         Expect(row.GetStringValue("Name") == "Ada", $"the string column reads back (was {row.GetStringValue("Name")})");
         return Task.CompletedTask;
     }
@@ -301,9 +299,9 @@ internal static class Program
 
         Expect(reader.GetValue<int>("Id") == 7, $"Id reads back as 7 (was {reader.GetValue<int>("Id")})");
         Expect(reader.GetValue<string>("Label") == "hello", $"Label reads back as hello (was {reader.GetValue<string>("Label")})");
-        // KNOWN MISMATCH, as for DataRow: the reader returns DBNull for a NULL column, not the fallback. Pinned as it is.
+        // Documented in the Transformations.Data README: the non-generic reader getter returns the DBNull for a NULL.
         object amount = reader.GetValue("Amount", -1);
-        Expect(amount is DBNull, $"a NULL Amount returns DBNull, not the fallback (was {amount?.GetType().Name})");
+        Expect(amount is DBNull, $"a NULL Amount returns DBNull (was {amount?.GetType().Name})");
     }
 
     // ── Holder and victim ───────────────────────────────────────────────────────────────────────────────────────────

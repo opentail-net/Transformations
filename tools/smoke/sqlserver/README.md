@@ -39,31 +39,25 @@ database per run and drops it at the end.
 | EF: unique violation | 2627 | One save attempt. The inner exception is `SqlException` 2627. |
 | EF: concurrency conflict | `DbUpdateConcurrencyException` | One save attempt. The default fails fast. This path was not exercised before. |
 | EF: deadlock retried by the default | 1205 | The default retries it, the save succeeds, and the failed attempt leaves no change. The default classifier walks the inner exceptions, so it sees the `SqlException` that EF wraps. |
-| Data: `DataRow` NULL | none | **Known mismatch**, see below. |
+| Data: `DataRow` NULL | none | Returns `null`, as documented. |
 | Data: `DataRow` missing column | none | The fallback applies. |
 | Data: `SqlParameter` round trip | none | Int, string and NULL parameters are written and read back. |
 
 ## Findings
 
-### Known mismatch: Data's fallback does not apply to NULL
+### Data's NULL handling is documented, not a fallback
 
-The Transformations.Data README shows `row.GetValue<int>("Age", fallback: 0)` and `reader.GetValue<string>("Email", fallback:
-string.Empty)` as examples. In the code:
-
-- `DataRowConverter.GetValue<T>(column, defaultValue)` returns `null` for a `DBNull`. The default applies only when the column
-  is missing.
-- `DataReaderHelper.GetValue(reader, field, defaultValue)` returns the `DBNull` for a NULL column.
-- The README's `fallback:` named argument does not exist. The parameter is called `defaultValue`.
-
-The check pins the code as it is, so the run stays green and the mismatch stays visible. Changing the code or the README means
-changing that check too. Until then, a consumer who follows the README gets `null`, not the fallback.
+The Transformations.Data README used to show `fallback:` examples that did not compile, and it described a fallback for NULL
+that the code never applied. The README now says what the code does: a default applies to a missing column, a NULL returns
+`null` (or `default(T)`, or the `DBNull` for the non-generic reader getter), and `??` substitutes for NULL. The
+`DataRowNullIsNull` check pins that documented behaviour. Changing the code means changing the README and the check together.
 
 ### Consumers that import both `Transformations.Dapper` and `Transformations.Sql`
 
-`Transformations.Dapper` keeps a `[Obsolete]` forwarder named `SqlTransientFaultDetector`, and `Transformations.Sql` has the
-real one. A consumer that imports both namespaces and calls `SqlTransientFaultDetector.IsTransient` gets error CS0104
-(ambiguous reference). The consumer in this suite hit it, and it uses the fully qualified name. The README examples for
-Dapper and EF do not import both namespaces, so they are not affected.
+`Transformations.Dapper` keeps the `[Obsolete]` forwarder named `SqlTransientFaultDetector` for 3.x consumers, and
+`Transformations.Sql` has the real one. Importing both namespaces and using the unqualified name gives CS0104. The Dapper
+README now shows `using Transformations.Sql;` and has a migration section that also covers the qualified-name fix. The consumer
+in this suite uses the fully qualified name, so it is not affected.
 
 ## Limits
 
