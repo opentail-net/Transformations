@@ -59,8 +59,8 @@ matched. `Resilience` now matches the whole inner-exception chain, so the opt-in
   check does not cover that path.
 - **Dapper README.** Resolved. The detector now includes 53 and 121, and the README lists the exact codes. A Dapper unit
   test pins the set, so the two cannot drift apart again without a deliberate change.
-- **SQL Server.** The SQL Server path of the transient detector is not run here: this suite uses SQLite only. A separate
-  SQL Server suite on LocalDB covers it (see `tools/smoke/sqlserver`, once it exists).
+- **SQL Server.** The SQL Server path of the transient detector is not run here: this suite uses SQLite only. The SQL Server
+  suite on LocalDB covers it (see `tools/smoke/sqlserver`).
 - **Retry counts.** Dapper's wrappers do not expose their attempts. Only EF's retry is measured, through an interceptor.
 - **Concurrency.** The fail-fast path for `DbUpdateConcurrencyException` is not exercised here.
 
