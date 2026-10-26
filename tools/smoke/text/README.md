@@ -114,7 +114,9 @@ from disk.
 
 These are real gaps in this harness, not in the product. They are listed so that a passing run is not over-read.
 
-- **OCR instructions through the real engine.** The OCR rows run Tesseract on an invoice line, which contains no instruction. Only the fixed-text engine carries an instruction through the gate (`OCR instruction` in the safety corpus). A rendered image of an adversarial instruction, read by Tesseract, is not in the corpus.
+- **OCR instructions through the real engine.** Covered by `tools/smoke/ocr-injection`, which renders adversarial images and
+  runs them through Tesseract. It passed 23 of 23 on net8.0 and net10.0 at `d9f70d3` (clean tree). This suite still uses the
+  fixed-text engine for its own rows.
 - **Formats.** There are no samples yet for MSG, ODP, RTF beyond one code-page case, EPUB beyond two chapters, nested
   ZIP or EML, or PPTX and XLSX tables. There is no builder for MSG in `TestDocuments`.
 - **Hidden-text modes.** Only the default AI-ingestion profile is run. `Mark` and `Keep` are not exercised.
