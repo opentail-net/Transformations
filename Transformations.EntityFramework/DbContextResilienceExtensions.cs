@@ -22,8 +22,14 @@ namespace Transformations.EntityFramework
         public static readonly TimeSpan DefaultInitialDelay = TimeSpan.FromMilliseconds(200);
 
         /// <summary>
-        /// Saves all changes with automatic retry and exponential backoff.
+        /// Saves all changes, retrying only transient SQL faults with exponential backoff.
         /// </summary>
+        /// <remarks>
+        /// A transient fault is one <see cref="Transformations.Sql.SqlTransientFaultDetector"/> classifies as transient:
+        /// a timeout, or a SQL Server error such as a deadlock. A constraint violation, a concurrency conflict, or any other
+        /// error is thrown on the first attempt. SQLite and other providers have no transient codes here, so a busy database
+        /// is not retried by this overload. Use the overload with <c>retryOnExceptions</c> to retry it.
+        /// </remarks>
         /// <param name="context">The <see cref="DbContext"/> to save.</param>
         /// <param name="retryCount">Number of retries after the initial attempt.</param>
         /// <param name="initialDelay">Initial delay before first retry (doubles each retry).</param>
@@ -35,16 +41,23 @@ namespace Transformations.EntityFramework
             TimeSpan? initialDelay = null,
             CancellationToken cancellationToken = default)
         {
-            // DbUpdateConcurrencyException is never transient — retrying re-issues the same conflicting
-            // write and fails identically, so fail fast on it by default.
-            return SaveChangesWithRetryAsync(
-                context,
-                retryCount,
-                initialDelay,
-                retryOnExceptions: null,
-                failFastExceptions: new[] { typeof(DbUpdateConcurrencyException) },
-                cancellationToken);
+            if (context == null)
+            {
+                throw new ArgumentNullException(nameof(context));
+            }
+
+            return Resilience.RetryAsync(
+                operation: () => context.SaveChangesAsync(cancellationToken),
+                retryCount: retryCount,
+                initialDelay: initialDelay ?? DefaultInitialDelay,
+                shouldRetry: IsRetryableByDefault,
+                cancellationToken: cancellationToken);
         }
+
+        // A concurrency conflict is never transient: retrying re-issues the same conflicting write and fails identically.
+        private static bool IsRetryableByDefault(Exception exception) =>
+            exception is not DbUpdateConcurrencyException
+            && Transformations.Sql.SqlTransientFaultDetector.IsTransient(exception);
 
         /// <summary>
         /// Saves all changes with automatic retry and exponential backoff, using exception filters.
