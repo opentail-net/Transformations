@@ -54,8 +54,8 @@ Write-Step "Candidate $version at $shortCommit (dirty: $isDirty)"
 # 1. Pack Core, Dapper and EF
 # ---------------------------------------------------------------------------------------------------------------------
 
-Write-Step 'Packing Transformations.Core, Dapper and EntityFramework (Release)'
-foreach ($project in 'Transformations.Core\Transformations.Core.csproj', 'Transformations.Dapper\Transformations.Dapper.csproj', 'Transformations.EntityFramework\Transformations.EntityFramework.csproj') {
+Write-Step 'Packing Transformations.Core, Sql, Dapper and EntityFramework (Release)'
+foreach ($project in 'Transformations.Core\Transformations.Core.csproj', 'Transformations.Sql\Transformations.Sql.csproj', 'Transformations.Dapper\Transformations.Dapper.csproj', 'Transformations.EntityFramework\Transformations.EntityFramework.csproj') {
     $name = [IO.Path]::GetFileNameWithoutExtension($project)
     & dotnet pack (Join-Path $repoRoot $project) -c Release -o $feedDir *> (Join-Path $logDir "pack-$name.log")
     if ($LASTEXITCODE -ne 0) { throw "dotnet pack failed for $name. See $logDir." }
@@ -98,7 +98,7 @@ $efSha512 = [Convert]::ToBase64String([Security.Cryptography.SHA512]::HashData([
 
 $globalPackages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
 $clearedCache = @()
-foreach ($id in 'transformations.core', 'transformations.dapper', 'transformations.entityframework') {
+foreach ($id in 'transformations.core', 'transformations.sql', 'transformations.dapper', 'transformations.entityframework') {
     $cacheDir = Join-Path $globalPackages "$id\$packageVersion"
     if (Test-Path $cacheDir) {
         Remove-Item -Recurse -Force $cacheDir

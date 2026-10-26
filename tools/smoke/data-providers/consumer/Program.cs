@@ -31,10 +31,12 @@ internal static class Program
             ("Dapper: a busy database surfaces as SQLITE_BUSY (no SQL Server transient match)", DapperBusySurfaces),
             ("EF: SaveChangesWithRetryAsync saves and returns the count", EfSaveReturnsCount),
             ("EF: GetAuditEntries reports the added entity", EfAuditReportsAdded),
-            ("KNOWN DEFECT - EF: the default SaveChangesWithRetryAsync retries a constraint violation", EfConstraintIsNotRetried),
-            ("EF: a busy database is retried and succeeds once the lock is released", EfBusyIsRetriedAndSucceeds),
+            ("EF: a constraint violation is not retried (one attempt)", EfConstraintIsNotRetried),
+            ("EF: the default does not retry a busy database (not a transient code)", EfDefaultDoesNotRetryBusy),
+            ("EF: a busy database is retried and succeeds when the busy error is opted in", EfBusyIsRetriedWhenOptedIn),
             ("EF: a cancelled token stops SaveChangesWithRetryAsync before any attempt", EfCancelledTokenStops),
             ("EF: ToCsvAsync writes a header and rows", EfCsvHasHeaderAndRows),
+            ("EF: ToJoinedStringAsync joins the values with commas", EfJoinedStringJoinsValues),
         };
 
         var results = new List<CheckResult>();
@@ -211,40 +213,66 @@ internal static class Program
         await using var context = NewContext(interceptor: new InsertCounter(() => insertAttempts++));
         context.Items.Add(new Item { Id = 12, Label = "duplicate" });
 
-        // The README says the retry handles transient connectivity drops. A duplicate key is not transient, so one
-        // attempt is the documented outcome. The check asserts that.
+        // The default retries only transient faults. A duplicate key is not transient, so it is thrown on the first attempt.
         DbUpdateException error = await ExpectThrowsAsync<DbUpdateException>(() =>
             context.SaveChangesWithRetryAsync(retryCount: 2, initialDelay: TimeSpan.FromMilliseconds(1)));
 
-        // KNOWN DEFECT. The default overload retries every exception except DbUpdateConcurrencyException, so a UNIQUE
-        // constraint violation is attempted retryCount + 1 times. The README says the retry is for transient faults, so
-        // one attempt is the intended outcome. This check asserts the defect as it is today, so the run stays green and
-        // the defect stays visible. When the default is fixed, this check fails and must be changed to assert one attempt.
-        Expect(insertAttempts == 3,
-            insertAttempts == 1
-                ? "the EF default no longer retries a constraint violation: the defect is fixed, change this check to one attempt"
-                : $"KNOWN DEFECT still present: EF default made {insertAttempts} INSERT attempts for a constraint violation (error: {error.InnerException?.Message ?? error.Message})");
+        Expect(insertAttempts == 1, $"one INSERT attempt (was {insertAttempts}; error: {error.InnerException?.Message ?? error.Message})");
     }
 
-    private static async Task EfBusyIsRetriedAndSucceeds()
+    // With the lock held, the default does not retry SQLite's busy error: it is not a SQL Server transient code. This is
+    // the documented behaviour, so the check asserts it.
+    // A one-second busy timeout makes the first attempt fail while the lock is held. (Default Timeout=0 means wait forever.)
+    private static async Task EfDefaultDoesNotRetryBusy()
+    {
+        using var holder = OpenConnection();
+        holder.Execute("BEGIN IMMEDIATE;");
+        try
+        {
+            int attempts = 0;
+            await using var context = NewContext(busyTimeoutSeconds: 1, interceptor: new InsertCounter(() => attempts++));
+            context.Items.Add(new Item { Id = 16, Label = "sixteen" });
+
+            // EF Core wraps the provider's SqliteException in DbUpdateException, so the busy code is on the inner exception.
+            DbUpdateException error = await ExpectThrowsAsync<DbUpdateException>(() =>
+                context.SaveChangesWithRetryAsync(retryCount: 3, initialDelay: TimeSpan.FromMilliseconds(1)));
+
+            var busy = error.InnerException as SqliteException;
+            Expect(busy?.SqliteErrorCode == 5, $"SQLITE_BUSY (5) on the inner exception (was {busy?.SqliteErrorCode})");
+            Expect(attempts == 1, $"one attempt: the default does not retry busy (was {attempts})");
+        }
+        finally
+        {
+            holder.Execute("ROLLBACK;");
+        }
+    }
+
+    // With the busy error named in retryOnExceptions, a failed attempt is retried, and the save succeeds once the lock is released.
+    private static async Task EfBusyIsRetriedWhenOptedIn()
     {
         using var holder = OpenConnection();
         holder.Execute("BEGIN IMMEDIATE;");
 
-        // Release the write lock after the first attempt has failed, so a retry can succeed.
+        // The lock is released after the first attempt has failed (1 s busy timeout) and before the retry has finished.
         Task release = Task.Run(async () =>
         {
-            await Task.Delay(400);
+            await Task.Delay(1500);
             holder.Execute("ROLLBACK;");
         });
 
-        await using var context = NewContext(busyTimeoutSeconds: 0);
+        int attempts = 0;
+        await using var context = NewContext(busyTimeoutSeconds: 1, interceptor: new InsertCounter(() => attempts++));
         context.Items.Add(new Item { Id = 13, Label = "thirteen" });
 
-        int saved = await context.SaveChangesWithRetryAsync(retryCount: 10, initialDelay: TimeSpan.FromMilliseconds(100));
+        int saved = await context.SaveChangesWithRetryAsync(
+            retryCount: 10,
+            initialDelay: TimeSpan.FromMilliseconds(100),
+            retryOnExceptions: new[] { typeof(SqliteException) },
+            failFastExceptions: null);
         await release;
 
         Expect(saved == 1, $"saved after the lock was released (was {saved})");
+        Expect(attempts >= 2, $"at least two attempts, so a retry happened (was {attempts})");
     }
 
     private static async Task EfCancelledTokenStops()
@@ -267,12 +295,26 @@ internal static class Program
             await seed.SaveChangesAsync();
         }
 
-        // ToCsvAsync joins each element's ToString() with commas. It writes no header and does not quote values, so
-        // this check asserts the documented join. A value containing a comma is not escaped; see the report.
+        // ToCsvAsync writes RFC 4180 CSV: a header of the scalar columns, then one record per row.
         await using var context = NewContext();
-        string joined = await context.Items.OrderBy(i => i.Id).Select(i => i.Label).ToCsvAsync();
+        string csv = await context.Items.OrderBy(i => i.Id).Select(i => new { i.Id, i.Label }).ToCsvAsync();
 
-        Expect(joined == "fifteen", $"the labels joined with commas (was \"{joined}\")");
+        Expect(csv == "Id,Label\r\n15,fifteen\r\n", $"CSV with a header and one record (was \"{csv}\")");
+    }
+
+    private static async Task EfJoinedStringJoinsValues()
+    {
+        await using (var seed = NewContext())
+        {
+            seed.Items.Add(new Item { Id = 17, Label = "a" });
+            seed.Items.Add(new Item { Id = 18, Label = "b" });
+            await seed.SaveChangesAsync();
+        }
+
+        await using var context = NewContext();
+        string joined = await context.Items.OrderBy(i => i.Id).Select(i => i.Label).ToJoinedStringAsync();
+
+        Expect(joined == "a,b", $"the labels joined with commas (was \"{joined}\")");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────

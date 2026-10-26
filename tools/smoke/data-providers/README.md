@@ -34,45 +34,45 @@ the SQLite busy case is not retried by Dapper. That is a documented limit of the
 | Dapper: busy database | PASS | Surfaces as `SQLITE_BUSY`. The detector has no SQLite codes, so no retry. Recorded, not a defect in the SQL Server design. |
 | EF: `SaveChangesWithRetryAsync` saves | PASS | Returns the row count. |
 | EF: `GetAuditEntries` | PASS | One entry per property of the added entity (`Id`, `Label`). The README describes per-property entries. |
-| EF: busy database, retried | PASS | The lock is released after the first attempt fails, and the retry succeeds. The transient path works on SQLite. |
+| EF: busy database, default | PASS | Not retried: one attempt. SQLite busy is not a transient code for the default. The error is a `DbUpdateException` whose inner exception is `SqliteException` with code 5. |
+| EF: busy database, opted in | PASS | Opted in with `retryOnExceptions: typeof(SqliteException)`. The lock is released after the first attempt fails, and the retry succeeds. The filter matches the inner exception, because EF wraps the provider error. |
+| EF: constraint violation | PASS | Not retried: one attempt. The default retries only transient SQL faults. |
 | EF: cancelled token | PASS | Stops before any attempt. |
-| **KNOWN DEFECT - EF: constraint violation retried** | PASS (defect present) | See below. |
-| EF: `ToCsvAsync` | PASS | Joins the values with commas. See the CSV limit below. |
+| EF: `ToCsvAsync` | PASS | Writes a header row and one RFC 4180 record per row. |
+| EF: `ToJoinedStringAsync` | PASS | Joins the values with commas. No quoting, so a value with a comma is not escaped. |
 
-### Known defect: EF's default retries a constraint violation
+### Resolved: EF's default no longer retries a constraint violation
 
-`SaveChangesWithRetryAsync(retryCount: 2)` made **three** INSERT attempts for a UNIQUE constraint violation. The default
-overload retries every exception except `DbUpdateConcurrencyException`, so a non-transient error is retried. The EF README
-says the retry handles transient connectivity drops, and the EF tests README says non-retryable exceptions propagate
-immediately. Both describe the intent, and the default does not meet it.
+An earlier run (`reports/20261025-223238-3.0.0.0-4d4e78a.md`) recorded a defect: the default EF overload retried every
+exception except `DbUpdateConcurrencyException`, so a UNIQUE constraint violation made three INSERT attempts. The default now
+retries only the transient faults that `Transformations.Sql.SqlTransientFaultDetector` classifies. The check asserts one
+attempt, and it passes.
 
-The check asserts the defect as it is, so the run stays green and the defect stays visible. When the default is fixed, the
-check fails and must be changed to assert one attempt.
-
-The fix needs a decision. The EF package references only Core, and the transient knowledge (SQL Server error numbers, and
-SQLite busy codes) lives in the Dapper package and depends on SqlClient. The options are:
-
-1. Give the EF package its own transient predicate. It would cover `TimeoutException`, SQL Server transient codes read
-   from `DbUpdateException.InnerException`, and SQLite busy codes. It duplicates the code list, unless it is moved.
-2. Move the transient list into a shared place that both packages reference. Core cannot take it, because Core has no
-   external dependencies.
-3. Keep the broad default, and document that the default retries every error and that callers must pass a predicate.
+A second fix followed from the busy-lock checks. `Resilience` matched `retryOnExceptions` and `failFastExceptions` against
+the outer exception only. EF Core wraps a `SqliteException` in `DbUpdateException`, so `typeof(SqliteException)` never
+matched. `Resilience` now matches the whole inner-exception chain, so the opt-in in the EF README works as written.
 
 ## Other limits recorded here
 
-- **CSV.** `ToCsvAsync` writes no header and does not quote values. A value that contains a comma is not escaped, so the
-  output is not CSV in the RFC 4180 sense. The check asserts the documented join. The name and the EF README's "CSV export"
-  overstate what the method does.
+- **CSV.** `ToCsvAsync` writes RFC 4180 CSV for objects. The check asserts a header and one record. The check on
+  `ToJoinedStringAsync` asserts the plain comma join, which does not quote. Scalar element types throw in `ToCsvAsync`; the
+  check does not cover that path.
 - **Dapper README.** Resolved. The detector now includes 53 and 121, and the README lists the exact codes. A Dapper unit
   test pins the set, so the two cannot drift apart again without a deliberate change.
-- **SQL Server.** `Transformations.Data` and the SQL Server path of the Dapper detector are not tested here. They need a
-  SQL Server, and this machine has none.
+- **SQL Server.** The SQL Server path of the transient detector is not run here: this suite uses SQLite only. A separate
+  SQL Server suite on LocalDB covers it (see `tools/smoke/sqlserver`, once it exists).
 - **Retry counts.** Dapper's wrappers do not expose their attempts. Only EF's retry is measured, through an interceptor.
 - **Concurrency.** The fail-fast path for `DbUpdateConcurrencyException` is not exercised here.
 
 ## Verification history
 
-- `reports/20261025-223238-3.0.0.0-4d4e78a.md`: PASS on net8.0 and net10.0, 12 of 12 checks each, with the known defect
-  recorded.
-- Earlier runs found two of the test's own mistakes: an audit expectation that assumed one entry per entity, and an
-  interceptor that counted only the synchronous path. The check was corrected in each case; the library was not changed.
+- `reports/20261025-223238-3.0.0.0-4d4e78a.md`: PASS on net8.0 and net10.0, 12 of 12 checks each, with the constraint-violation
+  defect recorded (since resolved).
+- `reports/20261026-002949-3.0.0.0-9d1d68e.md`: net10.0 only, 12 of 14. Both EF busy-lock checks failed. The first check
+  expected `SqliteException` where EF throws `DbUpdateException`. The second showed that `Resilience` matched the outer
+  exception only.
+- `reports/20261026-081314-3.0.0.0-9d1d68e.md`: PASS on net8.0 and net10.0, 14 of 14 checks each, after the inner-exception
+  matching fix and the corrected first check.
+- Earlier runs found the test's own mistakes: an audit expectation that assumed one entry per entity, an interceptor that
+  counted only the synchronous path, and busy-lock checks with the default timeout of 0 (which waits forever). Those checks
+  were corrected each time.
