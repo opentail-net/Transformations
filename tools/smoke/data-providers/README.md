@@ -73,6 +73,8 @@ matched. `Resilience` now matches the whole inner-exception chain, so the opt-in
   exception only.
 - `reports/20261026-081314-3.0.0.0-9d1d68e.md`: PASS on net8.0 and net10.0, 14 of 14 checks each, after the inner-exception
   matching fix and the corrected first check.
+- `reports/20261026-222323-3.0.0.0-8d3d8dd.md`: clean tree (`dirty: False`), PASS on net8.0 and net10.0, 14 of 14 checks each.
+  This is the report to cite for the release.
 - Earlier runs found the test's own mistakes: an audit expectation that assumed one entry per entity, an interceptor that
   counted only the synchronous path, and busy-lock checks with the default timeout of 0 (which waits forever). Those checks
   were corrected each time.
