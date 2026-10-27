@@ -160,6 +160,43 @@ namespace Transformations.Tests
             Assert.That(result, Is.EqualTo(new DateTime(year, month, day)));
         }
 
+        [TestCase("Jan", 1)] [TestCase("January", 1)]
+        [TestCase("Feb", 2)] [TestCase("February", 2)]
+        [TestCase("Mar", 3)] [TestCase("March", 3)]
+        [TestCase("Apr", 4)] [TestCase("April", 4)]
+        [TestCase("May", 5)]
+        [TestCase("Jun", 6)] [TestCase("June", 6)]
+        [TestCase("Jul", 7)] [TestCase("July", 7)]
+        [TestCase("Aug", 8)] [TestCase("August", 8)]
+        [TestCase("Sep", 9)] [TestCase("Sept", 9)] [TestCase("September", 9)]
+        [TestCase("Oct", 10)] [TestCase("October", 10)]
+        [TestCase("Nov", 11)] [TestCase("November", 11)]
+        [TestCase("Dec", 12)] [TestCase("December", 12)]
+        public void EnglishMonthNames_EveryShortAndFullForm_ParsesUnderEnGbAndInvariant(string name, int month)
+        {
+            foreach (string culture in new[] { "en-GB", "" })
+            {
+                IFormatProvider provider = CultureInfo.GetCultureInfo(culture);
+
+                bool success = $"03 {name} 2026".TryToDateTimeExact(provider, new[] { "dd MMM yyyy", "dd MMMM yyyy" }, BasicTypeConverter.EnglishMonthNames, out DateTime result);
+
+                Assert.That(success, Is.True, culture);
+                Assert.That(result, Is.EqualTo(new DateTime(2026, month, 3)), culture);
+            }
+        }
+
+        [Test]
+        public void EnglishMonthNames_HasTwentyFourCaseInsensitiveReadOnlyEntries()
+        {
+            var names = BasicTypeConverter.EnglishMonthNames;
+
+            Assert.That(names.Count, Is.EqualTo(24));
+            Assert.That(names["SEPT"], Is.EqualTo(9));
+            Assert.That(names["december"], Is.EqualTo(12));
+            Assert.That(names.ContainsKey("Septem"), Is.False);
+            Assert.Throws<NotSupportedException>(() => ((System.Collections.Generic.IDictionary<string, int>)names).Add("Sepmember", 9));
+        }
+
         [Test]
         public void TryToDateTimeExact_MonthTable_InvalidTable_Throws()
         {
