@@ -507,15 +507,15 @@ Pick what you need:
 
 ```xml
 <!-- All-in-one -->
-<PackageReference Include="Transformations" Version="2.0.0" />
+<PackageReference Include="Transformations" Version="3.0.0.0" />
 
 <!-- Or pick your slice -->
-<PackageReference Include="Transformations.Core" Version="2.0.0" />
-<PackageReference Include="Transformations.Data" Version="2.0.0" />
-<PackageReference Include="Transformations.Web" Version="2.0.0" />
-<PackageReference Include="Transformations.Dapper" Version="2.0.0" />
-<PackageReference Include="Transformations.EntityFramework" Version="2.0.0" />
-<PackageReference Include="Transformations.Mapping" Version="2.0.0" />
+<PackageReference Include="Transformations.Core" Version="3.0.0.0" />
+<PackageReference Include="Transformations.Data" Version="3.0.0.0" />
+<PackageReference Include="Transformations.Web" Version="3.0.0.0" />
+<PackageReference Include="Transformations.Dapper" Version="3.0.0.0" />
+<PackageReference Include="Transformations.EntityFramework" Version="3.0.0.0" />
+<PackageReference Include="Transformations.Mapping" Version="3.0.0.0" />
 ```
 
 ---
@@ -885,7 +885,7 @@ Legacy APIs are retained with `[Obsolete]` markers and explicit replacements:
 |---------|----------|
 | **2.0.0** | `[Obsolete]` warning-only with replacement guidance |
 | **2.1.0** | Set `DeprecationErrorLevel=true` to promote to build errors |
-| **2.2.0** | Deprecated APIs removed |
+| **3.0.0.0** | Deprecated APIs removed. The 2.2.0 step in the original plan was never released; this is the removal. |
 
 See [DEPRECATION_POLICY.md](DEPRECATION_POLICY.md) for full details.
 

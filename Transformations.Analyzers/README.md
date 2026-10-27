@@ -16,7 +16,7 @@ This package is **bundled automatically** inside `Transformations` (the all-in-o
 
 ```xml
 <!-- Explicit install (uncommon) -->
-<PackageReference Include="Transformations.Analyzers" Version="2.0.2">
+<PackageReference Include="Transformations.Analyzers" Version="3.0.0.0">
   <PrivateAssets>all</PrivateAssets>
   <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
 </PackageReference>

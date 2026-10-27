@@ -11,15 +11,6 @@ using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Transformations.Mapping.Generator
 {
-    /// <summary>
-    /// Incremental source generator that emits zero-reflection mapping methods
-    /// for classes decorated with [MapTo&lt;TTarget&gt;] or [MapFrom&lt;TSource&gt;].
-    /// </summary>
-    /// <remarks>
-    /// Everything it emits must compile for every input it accepts: a mapping it cannot generate correctly (an
-    /// inaccessible accessor, an unsupported conversion, a type it cannot construct, a name collision) is left out and
-    /// reported as a diagnostic instead of producing broken C#.
-    /// </remarks>
     /// <summary>Names of the pipeline steps, so tests can check which of them the incremental engine reused.</summary>
     internal static class TrackingNames
     {
@@ -30,6 +21,15 @@ namespace Transformations.Mapping.Generator
         public const string Output = nameof(Output);
     }
 
+    /// <summary>
+    /// Incremental source generator that emits zero-reflection mapping methods
+    /// for classes decorated with [MapTo&lt;TTarget&gt;] or [MapFrom&lt;TSource&gt;].
+    /// </summary>
+    /// <remarks>
+    /// Everything it emits must compile for every input it accepts: a mapping it cannot generate correctly (an
+    /// inaccessible accessor, an unsupported conversion, a type it cannot construct, a name collision) is left out and
+    /// reported as a diagnostic instead of producing broken C#.
+    /// </remarks>
     [Generator(LanguageNames.CSharp)]
     public sealed class MappingGenerator : IIncrementalGenerator
     {
