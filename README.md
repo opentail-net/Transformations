@@ -37,16 +37,16 @@ Pick what you need:
 
 ```xml
 <!-- All-in-one -->
-<PackageReference Include="Transformations" Version="3.0.0.0" />
+<PackageReference Include="Transformations" Version="3.1.0.0" />
 
 <!-- Or pick your slice -->
-<PackageReference Include="Transformations.Core" Version="3.0.0.0" />
-<PackageReference Include="Transformations.Data" Version="3.0.0.0" />
-<PackageReference Include="Transformations.Web" Version="3.0.0.0" />
-<PackageReference Include="Transformations.Dapper" Version="3.0.0.0" />
-<PackageReference Include="Transformations.EntityFramework" Version="3.0.0.0" />
-<PackageReference Include="Transformations.Mapping" Version="3.0.0.0" />
-<PackageReference Include="Transformations.Text" Version="3.0.0.0" />
+<PackageReference Include="Transformations.Core" Version="3.1.0.0" />
+<PackageReference Include="Transformations.Data" Version="3.1.0.0" />
+<PackageReference Include="Transformations.Web" Version="3.1.0.0" />
+<PackageReference Include="Transformations.Dapper" Version="3.1.0.0" />
+<PackageReference Include="Transformations.EntityFramework" Version="3.1.0.0" />
+<PackageReference Include="Transformations.Mapping" Version="3.1.0.0" />
+<PackageReference Include="Transformations.Text" Version="3.1.0.0" />
 ```
 
 ---
