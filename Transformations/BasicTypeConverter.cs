@@ -4308,6 +4308,22 @@ public static class BasicTypeConverter
     public static bool TryConvertTo<T>(this string? value, out T result)
         where T : struct, IComparable<T>
     {
+        return value.TryConvertTo<T>(CultureInfo.CurrentCulture, out result);
+    }
+
+    /// <summary>
+    /// Converts a string to the specified type, using the supplied format provider for culture-sensitive parsing.
+    /// </summary>
+    /// <typeparam name="T">The destination type to convert to.</typeparam>
+    /// <param name="value">The value to convert from.</param>
+    /// <param name="provider">The format provider (for example <see cref="CultureInfo"/> for en-GB). Required; there is no default.</param>
+    /// <param name="result">The object as the specified type.</param>
+    /// <returns>
+    /// The success outcome as a boolean.
+    /// </returns>
+    public static bool TryConvertTo<T>(this string? value, IFormatProvider provider, out T result)
+        where T : struct, IComparable<T>
+    {
         if (value == null)
         {
             result = default(T);
@@ -4346,7 +4362,7 @@ public static class BasicTypeConverter
                 }
 
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)Convert.ChangeType(value, t, provider);
                 return true;
 
                 ////OLD: result = (T)value.ConvertObjectTo<T>();
@@ -4372,6 +4388,24 @@ public static class BasicTypeConverter
     public static bool TryConvertTo<T>(this string? value, T? defaultValue, out T? result)
         where T : struct, IComparable<T>
     {
+        return value.TryConvertTo<T>(CultureInfo.CurrentCulture, defaultValue, out result);
+    }
+
+    /// <summary>
+    /// Converts a string to the specified type, using the supplied format provider for culture-sensitive parsing.
+    /// Returns the default value on failure. Recognised words (for example <c>yes</c>) are converted by the word fallback, as in the culture-free overload.
+    /// </summary>
+    /// <typeparam name="T">The destination type to convert to.</typeparam>
+    /// <param name="value">The value to convert from.</param>
+    /// <param name="provider">The format provider (for example <see cref="CultureInfo"/> for en-GB). Required; there is no default.</param>
+    /// <param name="defaultValue">The value returned when conversion fails.</param>
+    /// <param name="result">The object as the specified type, or <paramref name="defaultValue"/>.</param>
+    /// <returns>
+    /// The success outcome as a boolean.
+    /// </returns>
+    public static bool TryConvertTo<T>(this string? value, IFormatProvider provider, T? defaultValue, out T? result)
+        where T : struct, IComparable<T>
+    {
         if (value == null)
         {
             result = defaultValue;
@@ -4388,7 +4422,7 @@ public static class BasicTypeConverter
                     return true;
                 }
 
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)Convert.ChangeType(value, t, provider);
                 return true;
 
                 ////OLD: result = (T)value.ConvertObjectTo<T>();
@@ -4406,7 +4440,7 @@ public static class BasicTypeConverter
                         case "true":
                             {
                                 const short ShortValue = 1;
-                                result = (T)Convert.ChangeType(ShortValue, t);
+                                result = (T)Convert.ChangeType(ShortValue, t, provider);
                                 return true;
                             }
 
@@ -4416,7 +4450,7 @@ public static class BasicTypeConverter
                         case "false":
                             {
                                 const short ShortValue = 0;
-                                result = (T)Convert.ChangeType(ShortValue, t);
+                                result = (T)Convert.ChangeType(ShortValue, t, provider);
                                 return true;
                             }
                     }
@@ -14231,6 +14265,165 @@ public static class BasicTypeConverter
         }
 
         return conversionSuccess;
+    }
+
+    /// <summary>
+    /// Tries to parse a date using only the supplied exact formats and format provider.
+    /// No format is guessed: the input must match one of the formats exactly.
+    /// </summary>
+    /// <param name="inputText">The text to parse.</param>
+    /// <param name="provider">The format provider. Required; there is no default.</param>
+    /// <param name="formats">The exact formats allowed, for example <c>dd/MM/yyyy</c>. Must not be empty.</param>
+    /// <param name="result">The parsed date, or <c>default</c> when parsing fails.</param>
+    /// <returns>
+    /// The success outcome as a boolean.
+    /// </returns>
+    /// <remarks>
+    /// <c>MMM</c> and <c>MMMM</c> use the provider's month names, which come from the machine's ICU data and can change
+    /// with an operating-system update (en-GB now abbreviates September as <c>Sept</c>, so <c>03 Sep 2026</c> fails).
+    /// Use the overload that takes a month-name table when the spellings must not depend on the machine.
+    /// </remarks>
+    public static bool TryToDateTimeExact(this string? inputText, IFormatProvider provider, string[] formats, out DateTime result)
+    {
+        result = default;
+
+        if (string.IsNullOrWhiteSpace(inputText) || formats == null || formats.Length == 0)
+        {
+            return false;
+        }
+
+        return DateTime.TryParseExact(inputText, formats, provider, DateTimeStyles.None, out result);
+    }
+
+    /// <summary>
+    /// Tries to parse a date using only the supplied exact formats, reading month names from the supplied table
+    /// instead of the provider's culture data. No format is guessed: the input must match one of the formats exactly.
+    /// </summary>
+    /// <param name="inputText">The text to parse.</param>
+    /// <param name="provider">The format provider, used for everything except month names. Required; there is no default.</param>
+    /// <param name="formats">The exact formats allowed, for example <c>dd MMM yyyy</c>. Must not be empty.</param>
+    /// <param name="monthNames">
+    /// Month spellings and their month numbers (1 to 12), for example <c>Sep</c> → 9 and <c>Sept</c> → 9.
+    /// Matching is ordinal and case-insensitive, and a spelling must stand as a whole word in the input.
+    /// </param>
+    /// <param name="result">The parsed date, or <c>default</c> when parsing fails.</param>
+    /// <returns>
+    /// The success outcome as a boolean.
+    /// </returns>
+    /// <exception cref="ArgumentException">A month number is outside 1 to 12, or a spelling is empty or maps to two months.</exception>
+    public static bool TryToDateTimeExact(this string? inputText, IFormatProvider provider, string[] formats, IReadOnlyDictionary<string, int> monthNames, out DateTime result)
+    {
+        result = default;
+
+        if (monthNames == null)
+        {
+            throw new ArgumentNullException(nameof(monthNames));
+        }
+
+        var table = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in monthNames)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Key))
+            {
+                throw new ArgumentException("A month spelling is empty.", nameof(monthNames));
+            }
+
+            if (entry.Value < 1 || entry.Value > 12)
+            {
+                throw new ArgumentException($"Month '{entry.Key}' maps to {entry.Value}, which is not 1 to 12.", nameof(monthNames));
+            }
+
+            if (table.TryGetValue(entry.Key, out int existing) && existing != entry.Value)
+            {
+                throw new ArgumentException($"Month '{entry.Key}' maps to two months.", nameof(monthNames));
+            }
+
+            table[entry.Key] = entry.Value;
+        }
+
+        if (string.IsNullOrWhiteSpace(inputText) || formats == null || formats.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (string format in formats)
+        {
+            bool usesMonthName = format.Contains("MMM", StringComparison.Ordinal);
+            if (!usesMonthName)
+            {
+                if (DateTime.TryParseExact(inputText, format, provider, DateTimeStyles.None, out result))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            // Replace the one whole-word month spelling with its number, and MMM/MMMM with MM, so the
+            // provider's month names are never consulted.
+            string? numericInput = ReplaceMonthName(inputText, table);
+            if (numericInput == null)
+            {
+                continue;
+            }
+
+            string numericFormat = format.Replace("MMMM", "MM", StringComparison.Ordinal).Replace("MMM", "MM", StringComparison.Ordinal);
+            if (DateTime.TryParseExact(numericInput, numericFormat, provider, DateTimeStyles.None, out result))
+            {
+                return true;
+            }
+        }
+
+        result = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Replaces the single whole-word month spelling in <paramref name="text"/> with its two-digit month number.
+    /// Returns <c>null</c> when no spelling, or more than one, is found.
+    /// </summary>
+    private static string? ReplaceMonthName(string text, Dictionary<string, int> table)
+    {
+        int start = -1;
+        int length = 0;
+        int month = 0;
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (!char.IsLetter(text[i]))
+            {
+                i++;
+                continue;
+            }
+
+            int wordStart = i;
+            while (i < text.Length && char.IsLetter(text[i]))
+            {
+                i++;
+            }
+
+            string word = text.Substring(wordStart, i - wordStart);
+            if (!table.TryGetValue(word, out int found))
+            {
+                return null;
+            }
+
+            if (start >= 0)
+            {
+                return null;
+            }
+
+            start = wordStart;
+            length = word.Length;
+            month = found;
+        }
+
+        if (start < 0)
+        {
+            return null;
+        }
+
+        return string.Concat(text.AsSpan(0, start), month.ToString("00", CultureInfo.InvariantCulture), text.AsSpan(start + length));
     }
 
     /// <summary>
