@@ -16,7 +16,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string[]]$TargetFrameworks = @('net8.0', 'net10.0'),
+    [string[]]$TargetFrameworks = @('net8.0', 'net10.0', 'net11.0'),
     [string]$WorkRoot = (Join-Path $env:LOCALAPPDATA 'TransformationsSmoke')
 )
 

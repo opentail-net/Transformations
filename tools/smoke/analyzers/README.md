@@ -18,7 +18,7 @@ From the repository root, in PowerShell 7:
 pwsh ./tools/smoke/analyzers/Run-AnalyzersSmoke.ps1
 ```
 
-Optional parameters: `-TargetFrameworks net10.0` runs one framework (default: `net8.0`, `net10.0`), and
+Optional parameters: `-TargetFrameworks net10.0` runs one framework (default: `net8.0`, `net10.0`, `net11.0`), and
 `-WorkRoot <path>` changes where run folders go (default: `%LOCALAPPDATA%\TransformationsSmoke`).
 
 The runner packs every package with `repack-nuget.ps1` into a fresh feed, because the meta package depends on the

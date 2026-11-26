@@ -17,7 +17,7 @@ pwsh ./tools/smoke/mapping/Run-MappingSmoke.ps1
 
 Optional parameters:
 
-- `-TargetFrameworks net10.0` runs one framework (default: `net8.0`, `net9.0`, `net10.0`).
+- `-TargetFrameworks net10.0` runs one framework (default: `net8.0`, `net9.0`, `net10.0`, `net11.0`).
 - `-WorkRoot <path>` changes where run folders go (default: `%LOCALAPPDATA%\TransformationsSmoke`).
 
 The exit code is `0` when everything passes and `1` otherwise. The verdict and a full report are written to
