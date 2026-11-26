@@ -59,6 +59,41 @@ namespace Transformations.Tests
             Assert.That(result, Is.EqualTo(decimal.Parse(expected, CultureInfo.InvariantCulture)));
         }
 
+        // These expected values are what the net8.0 to net10.0 (decimal)double and (decimal)float casts return, digit for
+        // digit and in scale. A plain 15-digit or 7-digit format rounds some of them differently in the last place, and
+        // leaves a different number of trailing zeros, so the test compares the text, not the decimal value.
+        [TestCase(7165560721.031185d, "7165560721.03118")]
+        [TestCase(0.09396717045175246d, "0.0939671704517524")]
+        [TestCase(0.9999999999999999d, "1.0")]
+        [TestCase(9.829914197246505E-11d, "0.000000000098299141972465")]
+        public void TryConvertTo_DoubleToDecimal_MatchesNet8ValueAndScale(double input, string expected)
+        {
+            Assert.That(input.TryConvertTo<decimal>(out decimal result), Is.True);
+            Assert.That(result.ToString(CultureInfo.InvariantCulture), Is.EqualTo(expected));
+        }
+
+        [TestCase(6.746155E-23f, "0.0000000000000000000000674615")]
+        [TestCase(2.3411052E-23f, "0.0000000000000000000000234111")]
+        public void TryConvertTo_FloatToDecimal_MatchesNet8ValueAndScale(float input, string expected)
+        {
+            Assert.That(input.TryConvertTo<decimal>(out decimal result), Is.True);
+            Assert.That(result.ToString(CultureInfo.InvariantCulture), Is.EqualTo(expected));
+        }
+
+        // (decimal)double and (decimal)float throw from 2^96 upwards on every target; the conversion must not return a value.
+        [TestCase(7.9228162514264337593543950336E+28d)]
+        [TestCase(1e30d)]
+        public void TryConvertTo_DoubleToDecimal_AtOrAboveTwoToThe96_IsNotConverted(double input)
+        {
+            Assert.That(input.TryConvertTo<decimal>(out _), Is.False);
+        }
+
+        [TestCase(7.9228163E+28f)]
+        public void TryConvertTo_FloatToDecimal_AtOrAboveTwoToThe96_IsNotConverted(float input)
+        {
+            Assert.That(input.TryConvertTo<decimal>(out _), Is.False);
+        }
+
         [TestCase("1,5", "de-DE", 1.5)]
         [TestCase("1.5", "en-GB", 1.5)]
         public void TryConvertTo_WithProvider_DoubleParsesWithTheSuppliedCulture(string input, string culture, double expected)

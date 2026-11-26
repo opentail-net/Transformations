@@ -131,7 +131,7 @@ internal static class ExtractionGuard
                 ThrowIfCancellationRequested(options);
                 using var entryStream = entry.Open();
                 int read;
-                while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
+                while ((read = ReadChargingFailures(entryStream, buffer, ref total)) > 0)
                 {
                     total += read;
                     if (total > maxBytes)
@@ -149,6 +149,24 @@ internal static class ExtractionGuard
     }
 
     /// <summary>
+    /// One read from a package entry. When the archive refuses the read, one buffer is charged to
+    /// <paramref name="total"/> before the exception is rethrown: the most a single read can decompress. On net11.0 an
+    /// entry whose header under-reports its size throws before any bytes come back, so nothing else would count it.
+    /// </summary>
+    private static int ReadChargingFailures(Stream source, byte[] buffer, ref long total)
+    {
+        try
+        {
+            return source.Read(buffer, 0, buffer.Length);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            total += buffer.Length;
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Decompresses <paramref name="entry"/> against a budget shared by the whole container. Bytes are added to
     /// <paramref name="total"/> as they are read, so a failed or oversized entry still uses up the budget, whatever its
     /// header declared. Throws <see cref="ExtractionLimitExceededException"/> once <paramref name="total"/> passes
@@ -162,24 +180,8 @@ internal static class ExtractionGuard
         try
         {
             int read;
-            while (true)
+            while ((read = ReadChargingFailures(source, buffer, ref total)) > 0)
             {
-                try
-                {
-                    read = source.Read(buffer, 0, buffer.Length);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // The archive refused this read. On net11.0 an entry whose header under-reports its size throws
-                    // before any bytes come back, so nothing else would count the work done for it. Charge one buffer,
-                    // the most a single read can decompress, so the failed entry still uses up the budget.
-                    total += buffer.Length;
-                    throw;
-                }
-
-                if (read <= 0)
-                    break;
-
                 total += read;
                 if (total > maxBytes)
                     throw new ExtractionLimitExceededException(
