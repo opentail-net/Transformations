@@ -1020,7 +1020,7 @@
         /// <returns>The converted value of type <typeparamref name="T"/>.</returns>
         public static T ConvertValue1111<T, U>(U value) where U : IConvertible
         {
-            return (T)Convert.ChangeType(value, typeof(T));
+            return (T)FloatingPointDecimal.ChangeType(value, typeof(T));
         }
 
         /// <summary>
@@ -1033,7 +1033,7 @@
         /// <returns>The converted value of type <typeparamref name="T"/>.</returns>
         public static T ConvertValue222<T, U>(U value, T defaultValue) where U : IConvertible
         {
-            return (T)Convert.ChangeType(value, typeof(T));
+            return (T)FloatingPointDecimal.ChangeType(value, typeof(T));
         }
 
         /// <summary>

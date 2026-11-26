@@ -3,7 +3,7 @@
 Resilient `SaveChanges`, structured audit extraction, and `IQueryable` CSV export for EF Core — without subclassing `DbContext` or adding custom interceptors.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.EntityFramework.svg)](https://nuget.org/packages/Transformations.EntityFramework)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 
 ## 📖 Overview
 

@@ -3,7 +3,7 @@
 The dependency-free foundation of the Transformations ecosystem — safe type conversion, string manipulation, date arithmetic, collections, file utilities, batching, resilience, and diagnostics.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.Core.svg)](https://nuget.org/packages/Transformations.Core)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 
 ## 📖 Overview
 
@@ -11,7 +11,7 @@ The dependency-free foundation of the Transformations ecosystem — safe type co
 
 ## 🚀 Why Transformations.Core?
 
-When building modern .NET services you inevitably need safe type conversion with fallbacks, resilient retry logic, fast collection handling, and readable time formatting — without pulling in ASP.NET Core or an ORM. `Transformations.Core` covers all of this in a single zero-dependency package targeting .NET 8, 9, and 10. Hot-path operations use `Span<T>` and modern BCL APIs for a near-zero allocation profile.
+When building modern .NET services you inevitably need safe type conversion with fallbacks, resilient retry logic, fast collection handling, and readable time formatting — without pulling in ASP.NET Core or an ORM. `Transformations.Core` covers all of this in a single zero-dependency package targeting .NET 8, 9, 10, and 11. Hot-path operations use `Span<T>` and modern BCL APIs for a near-zero allocation profile.
 
 ## 📦 Install
 

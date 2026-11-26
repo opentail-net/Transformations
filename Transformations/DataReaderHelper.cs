@@ -1079,7 +1079,7 @@ public static class DataReaderHelper
             }
             else
             {
-                result = Convert.ToDecimal(obj);
+                result = FloatingPointDecimal.ToDecimal(obj);
             }
 
             successfulRead = true;
@@ -1211,7 +1211,7 @@ public static class DataReaderHelper
             }
             else
             {
-                result = (T)Convert.ChangeType(obj, typeof(T));
+                result = (T)FloatingPointDecimal.ChangeType(obj, typeof(T));
             }
 
             successfulRead = true;
@@ -2587,7 +2587,7 @@ public static class DataReaderHelper
         bool successfulRead = false;
         try
         {
-            result = Convert.ToDecimal(reader[fieldName]);
+            result = FloatingPointDecimal.ToDecimal(reader[fieldName]);
             successfulRead = true;
         }
         catch

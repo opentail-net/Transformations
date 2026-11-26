@@ -8,11 +8,11 @@ namespace Transformations.Tests
     [TestFixture]
     public class BasicTypeConverterCultureTests
     {
-        [TestCase("1.234,56", "de-DE", true, 1234.56)]
-        [TestCase("1,234.56", "en-GB", true, 1234.56)]
-        [TestCase("1,234.56", "de-DE", false, 0.0)]
-        [TestCase("1.234,56", "en-GB", false, 0.0)]
-        public void TryConvertTo_WithProvider_DecimalSeparatorsFollowTheProvider(string input, string culture, bool expectedSuccess, double expectedValue)
+        [TestCase("1.234,56", "de-DE", true, "1234.56")]
+        [TestCase("1,234.56", "en-GB", true, "1234.56")]
+        [TestCase("1,234.56", "de-DE", false, "0")]
+        [TestCase("1.234,56", "en-GB", false, "0")]
+        public void TryConvertTo_WithProvider_DecimalSeparatorsFollowTheProvider(string input, string culture, bool expectedSuccess, string expectedValue)
         {
             IFormatProvider provider = CultureInfo.GetCultureInfo(culture);
 
@@ -21,8 +21,42 @@ namespace Transformations.Tests
             Assert.That(success, Is.EqualTo(expectedSuccess));
             if (expectedSuccess)
             {
-                Assert.That(result, Is.EqualTo((decimal)expectedValue));
+                Assert.That(result, Is.EqualTo(decimal.Parse(expectedValue, CultureInfo.InvariantCulture)));
             }
+        }
+
+        // The expected values are written as decimal text. Casting a double literal to decimal in the test would use the
+        // runtime's own (decimal)double conversion, which changed on net11.0.
+        [TestCase(1234.56d, "1234.56")]
+        [TestCase(0.1d, "0.1")]
+        [TestCase(2.675d, "2.675")]
+        [TestCase(3.14d, "3.14")]
+        [TestCase(1e-7d, "0.0000001")]
+        [TestCase(123456789012.345d, "123456789012.345")]
+        public void TryConvertTo_DoubleToDecimal_RoundsToFifteenSignificantDigits(double input, string expected)
+        {
+            Assert.That(input.TryConvertTo<decimal>(out decimal result), Is.True);
+            Assert.That(result, Is.EqualTo(decimal.Parse(expected, CultureInfo.InvariantCulture)));
+        }
+
+        [TestCase(0.1f, "0.1")]
+        [TestCase(3.14f, "3.14")]
+        [TestCase(123456789012.345f, "123456800000")]
+        public void TryConvertTo_FloatToDecimal_RoundsToSevenSignificantDigits(float input, string expected)
+        {
+            Assert.That(input.TryConvertTo<decimal>(out decimal result), Is.True);
+            Assert.That(result, Is.EqualTo(decimal.Parse(expected, CultureInfo.InvariantCulture)));
+        }
+
+        [TestCase(0.1d, "0.1")]
+        [TestCase(1234.56d, "1234.56")]
+        [TestCase(2.675d, "2.675")]
+        public void TrySetValue_BoxedDoubleToDecimal_RoundsToFifteenSignificantDigits(double input, string expected)
+        {
+            object boxed = input;
+
+            Assert.That(BasicTypeConverter.TrySetValue(boxed, out decimal result), Is.True);
+            Assert.That(result, Is.EqualTo(decimal.Parse(expected, CultureInfo.InvariantCulture)));
         }
 
         [TestCase("1,5", "de-DE", 1.5)]

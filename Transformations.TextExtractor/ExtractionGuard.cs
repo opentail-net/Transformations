@@ -162,8 +162,24 @@ internal static class ExtractionGuard
         try
         {
             int read;
-            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            while (true)
             {
+                try
+                {
+                    read = source.Read(buffer, 0, buffer.Length);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // The archive refused this read. On net11.0 an entry whose header under-reports its size throws
+                    // before any bytes come back, so nothing else would count the work done for it. Charge one buffer,
+                    // the most a single read can decompress, so the failed entry still uses up the budget.
+                    total += buffer.Length;
+                    throw;
+                }
+
+                if (read <= 0)
+                    break;
+
                 total += read;
                 if (total > maxBytes)
                     throw new ExtractionLimitExceededException(

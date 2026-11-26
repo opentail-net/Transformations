@@ -3,7 +3,7 @@
 The .NET extension method library that kills boilerplate. Type conversions, string manipulation, collection utilities, date helpers, HTML sanitization, batch processing, diagnostics, resilience — all as clean one-liners on the types you already use.
 
 [![License: PolyForm Strict 1.0.0](https://img.shields.io/badge/License-PolyForm%20Strict%201.0.0-blue.svg)](https://polyformproject.org/licenses/strict/1.0.0)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 [![NUnit](https://img.shields.io/badge/Tests-NUnit-green)]()
 
 > **Built by [opentail.net](https://opentail.net)**
@@ -317,7 +317,7 @@ dotnet build
 dotnet test
 ```
 
-**Prerequisites:** .NET 8, 9, or 10 SDK
+**Prerequisites:** .NET 8, 9, 10, or 11 SDK
 
 ---
 
@@ -456,7 +456,7 @@ See [DEPRECATION_POLICY.md](DEPRECATION_POLICY.md) for full details.
 
 GitHub Actions workflow: `.github/workflows/ci-quality-gates.yml`
 
-- Build + test on .NET 10
+- Build + test on .NET 8, 9, 10 and 11
 - Line/branch coverage thresholds from Cobertura report
 - Public-method test policy for critical modules (`BasicTypeConverter`, `CollectionConvertor`, `HolidayHelper`)
 - XML documentation artifact publication

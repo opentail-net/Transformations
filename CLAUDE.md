@@ -13,7 +13,7 @@ The git root is this directory (`.../Transformations2/Transformations2`), which 
 Run from the git root (where `Transformations.sln` lives).
 
 ```bash
-dotnet build Transformations.sln                 # build all (multi-targets net8.0;net9.0;net10.0)
+dotnet build Transformations.sln                 # build all (multi-targets net8.0;net9.0;net10.0;net11.0)
 dotnet test  Transformations.sln                 # run all test projects (NUnit 4)
 
 # run a single test project

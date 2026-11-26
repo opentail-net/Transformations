@@ -3,7 +3,7 @@
 Typed, null-safe extensions for ADO.NET `DataRow`, `IDataReader`, and `SqlParameter` — eliminating boilerplate DBNull checks and manual parameter wiring in data-access layers.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.Data.svg)](https://nuget.org/packages/Transformations.Data)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 
 ## 📖 Overview
 

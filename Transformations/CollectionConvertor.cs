@@ -933,11 +933,11 @@ public static class CollectionConvertor
 
                             if (nullableType != null)
                             {
-                                prop.SetValue(obj, Convert.ChangeType(value, nullableType));
+                                prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, nullableType));
                             }
                             else
                             {
-                                prop.SetValue(obj, Convert.ChangeType(value, prop.PropertyType));
+                                prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, prop.PropertyType));
                             }
                         }
                         catch
@@ -989,11 +989,11 @@ public static class CollectionConvertor
 
                         if (nullableType != null)
                         {
-                            prop.SetValue(obj, Convert.ChangeType(value, nullableType));
+                            prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, nullableType));
                         }
                         else
                         {
-                            prop.SetValue(obj, Convert.ChangeType(value, prop.PropertyType));
+                            prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, prop.PropertyType));
                         }
                     }
                 }
@@ -2260,11 +2260,11 @@ public static class CollectionConvertor
 
                             if (nullableType != null)
                             {
-                                prop.SetValue(obj, Convert.ChangeType(value, nullableType));
+                                prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, nullableType));
                             }
                             else
                             {
-                                prop.SetValue(obj, Convert.ChangeType(value, prop.PropertyType));
+                                prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, prop.PropertyType));
                             }
                         }
                         catch
@@ -2316,11 +2316,11 @@ public static class CollectionConvertor
 
                         if (nullableType != null)
                         {
-                            prop.SetValue(obj, Convert.ChangeType(value, nullableType));
+                            prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, nullableType));
                         }
                         else
                         {
-                            prop.SetValue(obj, Convert.ChangeType(value, prop.PropertyType));
+                            prop.SetValue(obj, FloatingPointDecimal.ChangeType(value, prop.PropertyType));
                         }
                     }
                 }
@@ -2566,7 +2566,7 @@ public static class CollectionConvertor
                         {
                             if (nullableType == propertyDescriptorSourceList[i].PropertyType.UnderlyingSystemType)
                             {
-                                // Might be able to do something with Convert.ChangeType() instead of this 'fail if not the same type'...
+                                // Might be able to do something with FloatingPointDecimal.ChangeType() instead of this 'fail if not the same type'...
                                 kvp.Add(new KeyValuePair<int, int>(i, j));
                                 break;
                             }
@@ -2575,7 +2575,7 @@ public static class CollectionConvertor
                         {
                             if (propertyDescriptorList[j].PropertyType.UnderlyingSystemType == propertyDescriptorSourceList[i].PropertyType.UnderlyingSystemType)
                             {
-                                // Might be able to do something with Convert.ChangeType() instead of this 'fail if not the same type'...
+                                // Might be able to do something with FloatingPointDecimal.ChangeType() instead of this 'fail if not the same type'...
                                 kvp.Add(new KeyValuePair<int, int>(i, j));
                                 break;
                             }

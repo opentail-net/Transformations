@@ -219,7 +219,7 @@ namespace Transformations
                 object? underlying;
                 try
                 {
-                    underlying = Convert.ChangeType(intEnumValue, Enum.GetUnderlyingType(typeof(TEnum)), CultureInfo.InvariantCulture);
+                    underlying = FloatingPointDecimal.ChangeType(intEnumValue, Enum.GetUnderlyingType(typeof(TEnum)), CultureInfo.InvariantCulture);
                 }
                 catch (OverflowException)
                 {

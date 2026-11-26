@@ -20,7 +20,7 @@ public static class MiscHelper
     public static byte ToByte(this Enum input, byte? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<byte>(defaultValue);
@@ -61,7 +61,7 @@ public static class MiscHelper
     public static decimal ToDecimal(this Enum input, decimal? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<decimal>(defaultValue);
@@ -101,7 +101,7 @@ public static class MiscHelper
     public static double ToDouble(this Enum input, double? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<double>(defaultValue);
@@ -141,7 +141,7 @@ public static class MiscHelper
     public static int ToInt(this Enum input, int? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<int>(defaultValue);
@@ -181,7 +181,7 @@ public static class MiscHelper
     public static long ToLong(this Enum input, long? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<long>(defaultValue);
@@ -222,7 +222,7 @@ public static class MiscHelper
     public static sbyte ToSbyte(this Enum input, sbyte? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<sbyte>(defaultValue);
@@ -262,7 +262,7 @@ public static class MiscHelper
     public static short ToShort(this Enum input, short? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<short>(defaultValue);
@@ -302,7 +302,7 @@ public static class MiscHelper
     public static ushort ToUshort(this Enum input, ushort? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<ushort>(defaultValue);
@@ -343,7 +343,7 @@ public static class MiscHelper
     public static float ToFloat(this Enum input, float? defaultValue = null)
     {
         Type enumType = Enum.GetUnderlyingType(input.GetType());
-        object val = Convert.ChangeType(input, enumType);
+        object val = FloatingPointDecimal.ChangeType(input, enumType);
 
         if (val == null)
             return ConfirmDefault<float>(defaultValue);

@@ -170,7 +170,7 @@
                     }
 
                     var t = typeof(T);
-                    return (T)Convert.ChangeType(value, t);
+                    return (T)FloatingPointDecimal.ChangeType(value, t);
 
                     ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
                 }
@@ -215,7 +215,7 @@
 
                     var t = typeof(T);
 
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     return true;
                     ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
                 }

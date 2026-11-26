@@ -233,7 +233,7 @@ public static class DataRowConverter
                 return null;
             }
 
-            return (string)Convert.ChangeType(value, typeof(string));
+            return (string)FloatingPointDecimal.ChangeType(value, typeof(string));
         }
         catch
         {
@@ -257,7 +257,7 @@ public static class DataRowConverter
                 return null;
             }
 
-            return (string)Convert.ChangeType(value, typeof(string));
+            return (string)FloatingPointDecimal.ChangeType(value, typeof(string));
         }
         catch
         {
@@ -283,7 +283,7 @@ public static class DataRowConverter
             }
 
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
         }
         catch
         {
@@ -309,7 +309,7 @@ public static class DataRowConverter
             }
 
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
         }
         catch
         {
@@ -339,7 +339,7 @@ public static class DataRowConverter
             else
             {
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)FloatingPointDecimal.ChangeType(value, t);
             }
 
             successfulRead = true;
@@ -374,7 +374,7 @@ public static class DataRowConverter
             else
             {
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)FloatingPointDecimal.ChangeType(value, t);
             }
 
             successfulRead = true;
@@ -406,7 +406,7 @@ public static class DataRowConverter
             }
 
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
         }
         catch
         {
@@ -433,7 +433,7 @@ public static class DataRowConverter
             }
 
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
         }
         catch
         {
@@ -469,7 +469,7 @@ public static class DataRowConverter
             else
             {
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)FloatingPointDecimal.ChangeType(value, t);
             }
 
             successfulRead = true;
@@ -510,7 +510,7 @@ public static class DataRowConverter
             else
             {
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)FloatingPointDecimal.ChangeType(value, t);
             }
 
             successfulRead = true;

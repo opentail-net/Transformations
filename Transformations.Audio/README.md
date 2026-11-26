@@ -3,7 +3,7 @@
 Audio transformation helpers for .NET, with repeatable evidence behind quality-sensitive choices.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.Audio.svg)](https://nuget.org/packages/Transformations.Audio)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 
 ## 📖 Overview
 
@@ -19,7 +19,7 @@ Every algorithm in this package is backed by a deterministic fidelity suite that
 <PackageReference Include="Transformations.Audio" Version="{{Version}}" />
 ```
 
-Depends only on [`NAudio`](https://www.nuget.org/packages/NAudio) (for `WaveFormat` interop). Targets .NET 8, 9, and 10.
+Depends only on [`NAudio`](https://www.nuget.org/packages/NAudio) (for `WaveFormat` interop). Targets .NET 8, 9, 10, and 11.
 
 ## 🚀 Quick start
 

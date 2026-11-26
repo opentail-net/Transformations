@@ -3,7 +3,7 @@
 Zero-reflection, NativeAOT-safe object mapper powered by Roslyn source generators. Annotate your `partial class` and the compiler generates typed `To{Target}()`, `From{Target}()`, `MapTo()`, `ToList()`, and `ProjectTo()` methods — no runtime reflection, no IoC wiring.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.Mapping.svg)](https://nuget.org/packages/Transformations.Mapping)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 
 ## 📖 Overview
 

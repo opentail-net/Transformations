@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net9.0;net10.0;net11.0</TargetFrameworks>
     <ImplicitUsings>disable</ImplicitUsings>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 	<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
@@ -14,6 +14,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Transformations\CollectionConvertor.cs" Link="CollectionConvertor.cs" />
+    <Compile Include="..\Transformations\FloatingPointDecimal.cs" Link="FloatingPointDecimal.cs" />
     <Compile Include="..\Transformations\CsvHelper.cs" Link="CsvHelper.cs" />
     <Compile Include="..\Transformations\DataReaderHelper.cs" Link="DataReaderHelper.cs" />
     <Compile Include="..\Transformations\DataRowConverter.cs" Link="DataRowConverter.cs" />

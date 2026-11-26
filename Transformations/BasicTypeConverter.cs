@@ -87,7 +87,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             //// OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -114,7 +114,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 //// OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -140,7 +140,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             //// OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -171,7 +171,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return value.ConvertObjectTo<T>();
             }
             catch
@@ -264,7 +264,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                 }
             }
@@ -313,7 +313,7 @@ public static class BasicTypeConverter
                 }
 
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -442,7 +442,7 @@ public static class BasicTypeConverter
                     return (T)(object)new Guid(value);
                 }
 
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -460,7 +460,7 @@ public static class BasicTypeConverter
                         case "true":
                             {
                                 const short shortValue = 1;
-                                return (T)Convert.ChangeType(shortValue, t);
+                                return (T)FloatingPointDecimal.ChangeType(shortValue, t);
                             }
                         
                         case "0":
@@ -470,7 +470,7 @@ public static class BasicTypeConverter
                         case "false":
                             {
                                 const short shortValue = 0;
-                                return (T)Convert.ChangeType(shortValue, t);
+                                return (T)FloatingPointDecimal.ChangeType(shortValue, t);
                             }
                     }
                 }
@@ -538,7 +538,7 @@ public static class BasicTypeConverter
                     {
                         // it'd be interesting to see when this still happens....
                         var t = typeof(T);
-                        return (T)Convert.ChangeType(value, t);
+                        return (T)FloatingPointDecimal.ChangeType(value, t);
                     }
             }
 
@@ -604,7 +604,7 @@ public static class BasicTypeConverter
                     {
                         // it'd be interesting to see when this still happens....
                         var t = typeof(T);
-                        return (T)Convert.ChangeType(value, t);
+                        return (T)FloatingPointDecimal.ChangeType(value, t);
                     }
             }
 
@@ -676,7 +676,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                 }
 
@@ -749,7 +749,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                 }
 
@@ -820,7 +820,7 @@ public static class BasicTypeConverter
                     {
                         // it'd be interesting to see when this still happens....
                         var t = typeof(T);
-                        return (T)Convert.ChangeType(value, t);
+                        return (T)FloatingPointDecimal.ChangeType(value, t);
                     }
             }
 
@@ -853,7 +853,7 @@ public static class BasicTypeConverter
                     {
                         string stringValue = value.ToString(CultureInfo.InvariantCulture) + ".0";
                         var t = typeof(T);
-                        return (T)Convert.ChangeType(stringValue, t);
+                        return (T)FloatingPointDecimal.ChangeType(stringValue, t);
                     }
 
                     break;
@@ -861,7 +861,7 @@ public static class BasicTypeConverter
             
 
             var t1 = typeof(T);
-            return (T)Convert.ChangeType(value, t1);
+            return (T)FloatingPointDecimal.ChangeType(value, t1);
             */
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -929,7 +929,7 @@ public static class BasicTypeConverter
                     {
                         // it'd be interesting to see when this still happens....
                         var t = typeof(T);
-                        return (T)Convert.ChangeType(value, t);
+                        return (T)FloatingPointDecimal.ChangeType(value, t);
                     }
             }
             
@@ -962,7 +962,7 @@ public static class BasicTypeConverter
                     {
                         string stringValue = value.ToString(CultureInfo.InvariantCulture) + ".0";
                         var t = typeof(T);
-                        return (T)Convert.ChangeType(stringValue, t);
+                        return (T)FloatingPointDecimal.ChangeType(stringValue, t);
                     }
 
                     break;
@@ -970,7 +970,7 @@ public static class BasicTypeConverter
             
 
             var t1 = typeof(T);
-            return (T)Convert.ChangeType(value, t1);
+            return (T)FloatingPointDecimal.ChangeType(value, t1);
             */
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -1056,7 +1056,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                 }
 
@@ -1082,16 +1082,16 @@ public static class BasicTypeConverter
                         {
                             string stringValue = value.ToString() + ".0";
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(stringValue, t);
+                            return (T)FloatingPointDecimal.ChangeType(stringValue, t);
                         }
                         else
                         {
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                     default:
                         var t1 = typeof(T);
-                        return (T)Convert.ChangeType(value, t1);
+                        return (T)FloatingPointDecimal.ChangeType(value, t1);
                 }
                 */
 
@@ -1168,7 +1168,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                 }
 
@@ -1194,16 +1194,16 @@ public static class BasicTypeConverter
                         {
                             string stringValue = value.ToString() + ".0";
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(stringValue, t);
+                            return (T)FloatingPointDecimal.ChangeType(stringValue, t);
                         }
                         else
                         {
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                     default:
                         var t1 = typeof(T);
-                        return (T)Convert.ChangeType(value, t1);
+                        return (T)FloatingPointDecimal.ChangeType(value, t1);
                 }
                 */
 
@@ -1270,7 +1270,7 @@ public static class BasicTypeConverter
                     {
                         // it'd be interesting to see when this still happens....
                         var t = typeof(T);
-                        return (T)Convert.ChangeType(value, t);
+                        return (T)FloatingPointDecimal.ChangeType(value, t);
                     }
             }
 
@@ -1342,7 +1342,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                 }
 
@@ -1414,7 +1414,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                         catch
                         {
@@ -1495,7 +1495,7 @@ public static class BasicTypeConverter
                         {
                             // it'd be interesting to see when this still happens....
                             var t = typeof(T);
-                            return (T)Convert.ChangeType(value, t);
+                            return (T)FloatingPointDecimal.ChangeType(value, t);
                         }
                         catch
                         {
@@ -1521,7 +1521,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -1548,7 +1548,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -1574,7 +1574,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -1605,7 +1605,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -1628,7 +1628,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -1655,7 +1655,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -1681,7 +1681,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -1712,7 +1712,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -1735,7 +1735,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -1762,7 +1762,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -1788,7 +1788,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -1819,7 +1819,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -1842,7 +1842,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -1869,7 +1869,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -1895,7 +1895,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -1926,7 +1926,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -1949,7 +1949,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -1976,7 +1976,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -2002,7 +2002,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -2033,7 +2033,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -2056,7 +2056,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -2083,7 +2083,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -2109,7 +2109,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -2140,7 +2140,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -2163,7 +2163,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -2190,7 +2190,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -2216,7 +2216,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -2247,7 +2247,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -2270,7 +2270,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -2297,7 +2297,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -2342,7 +2342,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -2365,7 +2365,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -2392,7 +2392,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -2418,7 +2418,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
@@ -2451,7 +2451,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -2474,7 +2474,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -2501,7 +2501,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -2527,7 +2527,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
         }
         catch
         {
@@ -2558,7 +2558,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -2581,7 +2581,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>();
         }
         catch
@@ -2608,7 +2608,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>();
             }
@@ -2634,7 +2634,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
         }
         catch
         {
@@ -2664,7 +2664,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return value.ConvertObjectTo<T>();
             }
@@ -2741,7 +2741,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -2772,7 +2772,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 //// OLD return (T)value.ConvertObjectTo<T>(defaultValue);
             }
@@ -2827,7 +2827,7 @@ public static class BasicTypeConverter
                 }
 
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
 
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
@@ -2881,13 +2881,13 @@ public static class BasicTypeConverter
                     if (value.ToString(CultureInfo.InvariantCulture).ContainsDigits())
                     {
                         string stringValue = value.ToString(CultureInfo.InvariantCulture) + ".0";
-                        return (T)Convert.ChangeType(stringValue, t);
+                        return (T)FloatingPointDecimal.ChangeType(stringValue, t);
                     }
 
                     break;
             }
 
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
 
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -2960,7 +2960,7 @@ public static class BasicTypeConverter
                         if (value!.ToString()!.ContainsDigits())
                         {
                             string stringValue = value.ToString() + ".0";
-                            return (T)Convert.ChangeType(stringValue, t);
+                            return (T)FloatingPointDecimal.ChangeType(stringValue, t);
                         }
                         else
                         {
@@ -2968,7 +2968,7 @@ public static class BasicTypeConverter
                         }
                 }
 
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
@@ -2994,7 +2994,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3036,7 +3036,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3073,7 +3073,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3115,7 +3115,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3152,7 +3152,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3206,7 +3206,7 @@ public static class BasicTypeConverter
                 }
 
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3231,7 +3231,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3273,7 +3273,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3310,7 +3310,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3352,7 +3352,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3389,7 +3389,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3431,7 +3431,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3468,7 +3468,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3510,7 +3510,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3547,7 +3547,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3589,7 +3589,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3626,7 +3626,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3663,7 +3663,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3705,7 +3705,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3742,7 +3742,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3784,7 +3784,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3821,7 +3821,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3863,7 +3863,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -3900,7 +3900,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            return (T)Convert.ChangeType(value, t);
+            return (T)FloatingPointDecimal.ChangeType(value, t);
             ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
         }
         catch
@@ -3942,7 +3942,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                return (T)Convert.ChangeType(value, t);
+                return (T)FloatingPointDecimal.ChangeType(value, t);
                 ////OLD: return (T)value.ConvertObjectTo<T>(defaultValue);
             }
             catch
@@ -4154,7 +4154,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             //// OLD: result = (T)value.ConvertObjectTo<T>();
         }
@@ -4187,7 +4187,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)FloatingPointDecimal.ChangeType(value, t);
                 return true;
                 //// OLD: result = (T)value.ConvertObjectTo<T>();
             }
@@ -4215,7 +4215,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             //// OLD: result = (T)value.ConvertObjectTo<T>();
         }
@@ -4250,7 +4250,7 @@ public static class BasicTypeConverter
             try
             {
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)FloatingPointDecimal.ChangeType(value, t);
                 return true;
                 ////OLD: result = value.ConvertObjectTo<T>();
             }
@@ -4363,7 +4363,7 @@ public static class BasicTypeConverter
                 }
 
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t, provider);
+                result = (T)FloatingPointDecimal.ChangeType(value, t, provider);
                 return true;
 
                 ////OLD: result = (T)value.ConvertObjectTo<T>();
@@ -4423,7 +4423,7 @@ public static class BasicTypeConverter
                     return true;
                 }
 
-                result = (T)Convert.ChangeType(value, t, provider);
+                result = (T)FloatingPointDecimal.ChangeType(value, t, provider);
                 return true;
 
                 ////OLD: result = (T)value.ConvertObjectTo<T>();
@@ -4441,7 +4441,7 @@ public static class BasicTypeConverter
                         case "true":
                             {
                                 const short ShortValue = 1;
-                                result = (T)Convert.ChangeType(ShortValue, t, provider);
+                                result = (T)FloatingPointDecimal.ChangeType(ShortValue, t, provider);
                                 return true;
                             }
 
@@ -4451,7 +4451,7 @@ public static class BasicTypeConverter
                         case "false":
                             {
                                 const short ShortValue = 0;
-                                result = (T)Convert.ChangeType(ShortValue, t, provider);
+                                result = (T)FloatingPointDecimal.ChangeType(ShortValue, t, provider);
                                 return true;
                             }
                     }
@@ -4522,11 +4522,11 @@ public static class BasicTypeConverter
                     }
 
                     int numeric = value - '0';
-                    result = (T)Convert.ChangeType(numeric, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(numeric, typeof(T));
                     return true;
 
                 default:
-                    result = (T)Convert.ChangeType(value, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(value, typeof(T));
                     return true;
             }
         }
@@ -4599,11 +4599,11 @@ public static class BasicTypeConverter
                     }
 
                     int numeric = v - '0';
-                    result = (T)Convert.ChangeType(numeric, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(numeric, typeof(T));
                     return true;
 
                 default:
-                    result = (T)Convert.ChangeType(v, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(v, typeof(T));
                     return true;
             }
         }
@@ -4669,11 +4669,11 @@ public static class BasicTypeConverter
                     }
 
                     int numeric = value - '0';
-                    result = (T)Convert.ChangeType(numeric, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(numeric, typeof(T));
                     return true;
 
                 default:
-                    result = (T)Convert.ChangeType(value, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(value, typeof(T));
                     return true;
             }
         }
@@ -4745,11 +4745,11 @@ public static class BasicTypeConverter
                     }
 
                     int numeric = value.Value - '0';
-                    result = (T)Convert.ChangeType(numeric, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(numeric, typeof(T));
                     return true;
 
                 default:
-                    result = (T)Convert.ChangeType(value.Value, typeof(T));
+                    result = (T)FloatingPointDecimal.ChangeType(value.Value, typeof(T));
                     return true;
             }
         }
@@ -4834,7 +4834,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -4929,7 +4929,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -5020,7 +5020,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -5117,7 +5117,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -5231,7 +5231,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -5350,7 +5350,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -5465,7 +5465,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -5586,7 +5586,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -5728,7 +5728,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -5875,7 +5875,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -6018,7 +6018,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -6167,7 +6167,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -6199,7 +6199,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>();
         }
@@ -6346,7 +6346,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -6503,7 +6503,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -6655,7 +6655,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -6813,7 +6813,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -6945,7 +6945,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -7082,7 +7082,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -7215,7 +7215,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -7354,7 +7354,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -7511,7 +7511,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -7673,7 +7673,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -7831,7 +7831,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -7994,7 +7994,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -8144,12 +8144,12 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
             //var t = typeof(T);
-            //result = (T)Convert.ChangeType(value, t);
+            //result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>();
         }
@@ -8302,7 +8302,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -8454,7 +8454,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -8612,7 +8612,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -8777,7 +8777,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -8948,7 +8948,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -9114,7 +9114,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -9286,7 +9286,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -9455,7 +9455,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -9629,7 +9629,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -9819,7 +9819,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -9886,7 +9886,7 @@ public static class BasicTypeConverter
                     break;
 
                 case TypeCode.Decimal:
-                    result = (T)(object)(decimal)value;
+                    result = (T)(object)FloatingPointDecimal.FromSingle(value);
                     break;
 
                 case TypeCode.Double:
@@ -9984,7 +9984,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -10053,7 +10053,7 @@ public static class BasicTypeConverter
                         result = (T)(object)(char)value.ToString()![0];
                         break;
                     case TypeCode.Decimal:
-                        result = (T)(object)(decimal)value;
+                        result = (T)(object)FloatingPointDecimal.FromSingle(value.Value);
                         break;
                     case TypeCode.Double:
                         result = (T)(object)(double)value;
@@ -10135,7 +10135,7 @@ public static class BasicTypeConverter
                         break;
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -10203,7 +10203,7 @@ public static class BasicTypeConverter
                     break;
 
                 case TypeCode.Decimal:
-                    result = (T)(object)(decimal)value;
+                    result = (T)(object)FloatingPointDecimal.FromSingle(value);
                     break;
 
                 case TypeCode.Double:
@@ -10301,7 +10301,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -10377,7 +10377,7 @@ public static class BasicTypeConverter
                         break;
 
                     case TypeCode.Decimal:
-                        result = (T)(object)(decimal)value;
+                        result = (T)(object)FloatingPointDecimal.FromSingle(value.Value);
                         break;
 
                     case TypeCode.Double:
@@ -10475,7 +10475,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -10640,7 +10640,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -10810,7 +10810,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -10976,7 +10976,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -11148,7 +11148,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -11215,7 +11215,7 @@ public static class BasicTypeConverter
                     break;
 
                 case TypeCode.Decimal:
-                    result = (T)(object)(decimal)value;
+                    result = (T)(object)FloatingPointDecimal.FromDouble(value);
                     break;
 
                 case TypeCode.Double:
@@ -11313,7 +11313,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -11385,7 +11385,7 @@ public static class BasicTypeConverter
                         break;
 
                     case TypeCode.Decimal:
-                        result = (T)(object)(decimal)value;
+                        result = (T)(object)FloatingPointDecimal.FromDouble(value.Value);
                         break;
 
                     case TypeCode.Double:
@@ -11483,7 +11483,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -11551,7 +11551,7 @@ public static class BasicTypeConverter
                     break;
 
                 case TypeCode.Decimal:
-                    result = (T)(object)(decimal)value;
+                    result = (T)(object)FloatingPointDecimal.FromDouble(value);
                     break;
 
                 case TypeCode.Double:
@@ -11649,7 +11649,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -11722,7 +11722,7 @@ public static class BasicTypeConverter
                         break;
 
                     case TypeCode.Decimal:
-                        result = (T)(object)(decimal)value;
+                        result = (T)(object)FloatingPointDecimal.FromDouble(value.Value);
                         break;
 
                     case TypeCode.Double:
@@ -11820,7 +11820,7 @@ public static class BasicTypeConverter
 
                     default:
                         var t = typeof(T);
-                        result = (T)Convert.ChangeType(value, t);
+                        result = (T)FloatingPointDecimal.ChangeType(value, t);
                         break;
                 }
 
@@ -11914,7 +11914,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
 
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
@@ -12005,7 +12005,7 @@ public static class BasicTypeConverter
                 }
 
                 var t = typeof(T);
-                result = (T)Convert.ChangeType(value, t);
+                result = (T)FloatingPointDecimal.ChangeType(value, t);
                 return true;
 
                 ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
@@ -12065,14 +12065,14 @@ public static class BasicTypeConverter
                     if (value.ToString(CultureInfo.InvariantCulture).ContainsDigits())
                     {
                         string stringValue = value.ToString(CultureInfo.InvariantCulture) + ".0";
-                        result = (T)Convert.ChangeType(stringValue, t);
+                        result = (T)FloatingPointDecimal.ChangeType(stringValue, t);
                         return true;
                     }
 
                     break;
             }
 
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
 
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
@@ -12124,7 +12124,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12189,7 +12189,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12254,7 +12254,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12319,7 +12319,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12384,7 +12384,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12449,7 +12449,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12514,7 +12514,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12579,7 +12579,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -12782,7 +12782,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -12965,7 +12965,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -13069,7 +13069,7 @@ public static class BasicTypeConverter
                     break;
 
                 case TypeCode.Decimal:
-                    result = (T)(object)(decimal)value;
+                    result = (T)(object)FloatingPointDecimal.FromSingle(value);
                     break;
 
                 case TypeCode.Double:
@@ -13167,7 +13167,7 @@ public static class BasicTypeConverter
 
                 default:
                     var t = typeof(T);
-                    result = (T)Convert.ChangeType(value, t);
+                    result = (T)FloatingPointDecimal.ChangeType(value, t);
                     break;
             }
 
@@ -13235,7 +13235,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -13300,7 +13300,7 @@ public static class BasicTypeConverter
         try
         {
             var t = typeof(T);
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
             return true;
             ////OLD: result = (T)value.ConvertObjectTo<T>(defaultValue);
         }
@@ -13372,7 +13372,7 @@ public static class BasicTypeConverter
             }
             else
             {
-                destination = (string)Convert.ChangeType(source, typeof(string));
+                destination = (string)FloatingPointDecimal.ChangeType(source, typeof(string));
                 result = true;
             }
         }
@@ -13410,7 +13410,7 @@ public static class BasicTypeConverter
             }
             else
             {
-                destination = (string)Convert.ChangeType(source, typeof(string));
+                destination = (string)FloatingPointDecimal.ChangeType(source, typeof(string));
                 result = true;
             }
         }
@@ -13448,7 +13448,7 @@ public static class BasicTypeConverter
             }
             else
             {
-                destination = (byte[])Convert.ChangeType(source, typeof(byte[]));
+                destination = (byte[])FloatingPointDecimal.ChangeType(source, typeof(byte[]));
                 result = true;
             }
         }
@@ -13920,7 +13920,7 @@ public static class BasicTypeConverter
             }
             else
             {
-                destination = Convert.ToDecimal(source);
+                destination = FloatingPointDecimal.ToDecimal(source);
                 result = true;
             }
         }
@@ -13952,7 +13952,7 @@ public static class BasicTypeConverter
             }
             else
             {
-                destination = Convert.ToDecimal(source);
+                destination = FloatingPointDecimal.ToDecimal(source);
                 result = true;
             }
         }
@@ -14766,7 +14766,7 @@ public static class BasicTypeConverter
         result = (decimal)possibleResult;
         */
 
-        result = (decimal)value;
+        result = FloatingPointDecimal.FromDouble(value);
         return true;
     }
 
@@ -17802,7 +17802,7 @@ private static bool TryConvertObjectTo<T>(this object value, T? defaultValue, ou
                 return true;
             }
 
-            result = (T)Convert.ChangeType(value, t);
+            result = (T)FloatingPointDecimal.ChangeType(value, t);
 
             // conversion success:
             return true;
@@ -17914,7 +17914,7 @@ private static bool TryConvertObjectTo<T>(this object value, T? defaultValue, ou
             t = Nullable.GetUnderlyingType(t);
         }
 
-        result = (T)Convert.ChangeType(value, t);
+        result = (T)FloatingPointDecimal.ChangeType(value, t);
         return true;
     }
     catch

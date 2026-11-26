@@ -3,7 +3,7 @@
 Typed ASP.NET Core helpers for `IConfiguration`, session, cookies, query strings, HTTP responses, and MVC dropdowns — eliminating repetitive untyped boilerplate in controllers and middleware.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.Web.svg)](https://nuget.org/packages/Transformations.Web)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 
 ## 📖 Overview
 

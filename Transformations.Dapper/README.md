@@ -3,7 +3,7 @@
 Resilient Dapper query wrappers with built-in transient SQL fault detection — drop-in replacements for standard Dapper methods that automatically retry on deadlocks, timeouts, and Azure SQL throttling.
 
 [![NuGet](https://img.shields.io/nuget/v/Transformations.Dapper.svg)](https://nuget.org/packages/Transformations.Dapper)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 
 ## 📖 Overview
 

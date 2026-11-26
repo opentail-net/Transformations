@@ -50,7 +50,7 @@ $core = @'
 `Transformations.Core` is the dependency-minimal foundation of the Transformations ecosystem. Rather than scattering repetitive generic helper methods across your codebase, this library aggregates hardened, production-ready tools for common infrastructural tasks. It covers resilient execution primitives, deep reflection-based object deltas, array batching, and semantic string parsing.
 
 ## 🚀 Why Transformations.Core?
-When developing modern .NET microservices, you often need robust retries, reliable type conversion (with fallbacks), and fast collection handling. `Transformations.Core` is built strictly for .NET 8/9/10, aggressively utilizing `Span<T>` and modern BCL enhancements to ensure a virtually zero-allocation profile for hot-path operations.
+When developing modern .NET microservices, you often need robust retries, reliable type conversion (with fallbacks), and fast collection handling. `Transformations.Core` is built strictly for .NET 8/9/10/11, aggressively utilizing `Span<T>` and modern BCL enhancements to ensure a virtually zero-allocation profile for hot-path operations.
 
 ## 💡 Key Features & Examples
 
@@ -99,7 +99,7 @@ string cleanHtml = dirtyHtml.SanitizeHtml(HtmlSanitizationPolicy.PermitInlineFor
 - **Batching:** `BatchTransformations` uses highly optimized `Span<T>` APIs to mutate arrays completely in place without creating intermediate lists.
 
 ## 📦 Dependencies
-* **.NET 8.0, 9.0, 10.0** 
+* **.NET 8.0, 9.0, 10.0, 11.0** 
 * *(Zero external NuGet dependencies)*
 
 ---
@@ -390,7 +390,7 @@ $monolith = @'
 # **Transformations**
 
 [![License: PolyForm Strict 1.0.0](https://img.shields.io/badge/License-PolyForm%20Strict%201.0.0-blue.svg)](https://polyformproject.org/licenses/strict/1.0.0)
-[![.NET 8 | 9 | 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-blue)]()
+[![.NET 8 | 9 | 10 | 11](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010%20%7C%2011-blue)]()
 [![NUnit](https://img.shields.io/badge/Tests-NUnit-green)]()
 
 Transformations is a .NET extension method library designed to reduce boilerplate across your projects. It provides safe type conversions, context-aware string manipulation, and resilient data access through clean one-liners on the types you already use.
@@ -779,7 +779,7 @@ dotnet build
 dotnet test
 ```
 
-**Prerequisites:** .NET 8, 9, or 10 SDK
+**Prerequisites:** .NET 8, 9, 10, or 11 SDK
 
 ---
 
@@ -910,7 +910,7 @@ See [DEPRECATION_POLICY.md](DEPRECATION_POLICY.md) for full details.
 
 GitHub Actions workflow: `.github/workflows/ci-quality-gates.yml`
 
-- Build + test on .NET 10
+- Build + test on .NET 8, 9, 10 and 11
 - Line/branch coverage thresholds from Cobertura report
 - Public-method test policy for critical modules (`BasicTypeConverter`, `CollectionConvertor`, `HolidayHelper`)
 - XML documentation artifact publication

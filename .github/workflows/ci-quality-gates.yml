@@ -13,14 +13,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The libraries and Transformations.Tests target net8.0, net9.0 and net10.0; each test run needs its runtime.
-      - name: Setup .NET 8, 9 and 10
+      # The libraries and Transformations.Tests target net8.0, net9.0, net10.0 and net11.0; each test run needs its runtime.
+      - name: Setup .NET 8 to 11
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
             9.0.x
             10.0.x
+            11.0.x
 
       - name: Restore
         run: dotnet restore Transformations.sln
@@ -29,7 +30,7 @@ jobs:
         run: dotnet build Transformations.sln --configuration Release --no-restore
 
       # coverlet.runsettings leaves out Transformations.Core, which compiles the meta package's sources a second time.
-      - name: Test with coverage (net8.0, net9.0, net10.0)
+      - name: Test with coverage (net8.0, net9.0, net10.0, net11.0)
         run: dotnet test Transformations.Tests/Transformations.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings
 
       # The mapping generator's tests compile the generated code for each supported (and rejected) input. No coverage
@@ -67,6 +68,7 @@ jobs:
           name: xmldocs
           path: |
             **/bin/Release/net10.0/*.xml
+            **/bin/Release/net11.0/*.xml
 
   # Text extraction on Windows: the OCR package's native Tesseract binaries only load there, and file-path,
   # encoding and line-ending behaviour differ from Linux.
@@ -77,13 +79,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 8, 9 and 10
+      - name: Setup .NET 8 to 11
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
             9.0.x
             10.0.x
+            11.0.x
 
       - name: Test text extraction and safety corpus
         run: dotnet test Transformations.Tests/Transformations.Tests.csproj --configuration Release --filter "FullyQualifiedName~TextExtractor|FullyQualifiedName~CsvDataProfiler|FullyQualifiedName~JsonSchema"
