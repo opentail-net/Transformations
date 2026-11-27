@@ -26,10 +26,16 @@
     <SmokeEfCoreVersion Condition="'$(TargetFramework)' == 'net11.0'">11.0.0</SmokeEfCoreVersion>
   </PropertyGroup>
 
+  <!-- EF Core 11 needs SQLitePCLRaw 3.x; the older targets keep the 2.1.13 pin they were verified with. -->
+  <PropertyGroup>
+    <SmokeSqlitePclRawVersion>2.1.13</SmokeSqlitePclRawVersion>
+    <SmokeSqlitePclRawVersion Condition="'$(TargetFramework)' == 'net11.0'">3.0.5</SmokeSqlitePclRawVersion>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Transformations.Mapping" Version="$(SmokeMappingVersion)" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="$(SmokeEfCoreVersion)" />
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(SmokeSqlitePclRawVersion)" />
   </ItemGroup>
 
 </Project>
