@@ -13,8 +13,13 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AssemblyName>Smoke.SqlServer</AssemblyName>
-    <!-- EF Core 9 matches Transformations.EntityFramework 9.0.21. -->
+  </PropertyGroup>
+
+  <!-- The EF Core major must match the target framework, and the library resolves the same major on each one:
+       EF Core 9 on net8.0 to net10.0 (Transformations.EntityFramework 9.0.21), EF Core 11 on net11.0. -->
+  <PropertyGroup>
     <SmokeEfCoreVersion>9.0.21</SmokeEfCoreVersion>
+    <SmokeEfCoreVersion Condition="'$(TargetFramework)' == 'net11.0'">11.0.0</SmokeEfCoreVersion>
   </PropertyGroup>
 
   <ItemGroup>

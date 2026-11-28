@@ -32,6 +32,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# dotnet writes UTF-8, and the TX0001 message contains an em dash that the check matches exactly. Decode the captured
+# output as UTF-8 whatever console launched this script (a non-UTF-8 console code page turned the dash into mojibake).
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $smokeRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
