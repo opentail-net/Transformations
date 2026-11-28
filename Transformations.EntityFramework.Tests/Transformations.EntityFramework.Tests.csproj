@@ -14,7 +14,14 @@
     <PackageReference Include="NUnit" Version="4.6.1" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="NUnit.Analyzers" Version="4.15.0" />
+  </ItemGroup>
+
+  <!-- The InMemory provider must match the EF Core release the library resolves on each target. -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net11.0'">
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.13" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="11.0.0" />
   </ItemGroup>
 
   <ItemGroup>

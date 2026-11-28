@@ -16,8 +16,13 @@
     <ProjectReference Include="..\Transformations.Core\Transformations.Core.csproj" />
     <ProjectReference Include="..\Transformations.Sql\Transformations.Sql.csproj" />
   </ItemGroup>
-  <ItemGroup>
+  <!-- net8.0 to net10.0 keep the EF Core 9 floor they have always shipped with. net11.0 takes the matching EF Core 11
+       release, so the package does not pull an older EF Core onto the newest runtime. -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net11.0'">
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.21" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="11.0.0" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" Visible="false" />

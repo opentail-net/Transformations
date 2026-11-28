@@ -457,7 +457,7 @@ See [DEPRECATION_POLICY.md](DEPRECATION_POLICY.md) for full details.
 | `Microsoft.Extensions.Configuration` | 10.0.13 | `ConfigurationHelper` |
 | `Microsoft.Extensions.Configuration.Binder` | 10.0.13 | `ConfigurationHelper.GetValue<T>` |
 | `Dapper` | 2.1.89 | `Transformations.Dapper` |
-| `Microsoft.EntityFrameworkCore` | 9.0.21 | `Transformations.EntityFramework` |
+| `Microsoft.EntityFrameworkCore` | 9.0.21 (net8.0 to net10.0), 11.0.0 (net11.0) | `Transformations.EntityFramework` |
 
 **Transformations.Core** and **Transformations.Data** have **no ASP.NET Core dependency**.
 
