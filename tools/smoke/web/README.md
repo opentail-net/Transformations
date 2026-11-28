@@ -13,7 +13,7 @@ It is a release gate for you, not a CI job. Run it after changes to `Transformat
 pwsh ./tools/smoke/web/Run-WebSmoke.ps1
 ```
 
-It packs Core and Web from the working tree, clears their NuGet cache entries, and runs the consumer on net8.0 and net10.0.
+It packs Core and Web from the working tree, clears their NuGet cache entries, and runs the consumer on net8.0, net10.0 and net11.0.
 The host listens on `127.0.0.1` on a free port. Nothing needs installing beyond the .NET SDK, and the report is in `reports/`.
 
 ## What it checks

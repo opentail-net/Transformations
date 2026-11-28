@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `Transformations` is a .NET extension-method library that replaces common utility boilerplate (type conversion, string/collection/date helpers, HTML sanitization, batching, resilience, diagnostics) with one-liner extension methods. It ships as a family of NuGet packages so consumers can take just the slice they need. Public API version is set centrally in `Directory.Build.props` (`<Version>`).
 
-The git root is this directory (`.../Transformations2/Transformations2`), which sits inside an outer `Transformations2` folder alongside `TR_Old/` (archived legacy versions — not part of the build; ignore it).
+The git root is this directory, where `Transformations.sln` lives.
 
 ## Common commands
 
@@ -27,7 +27,7 @@ dotnet test Transformations.Tests/Transformations.Tests.csproj --filter "TestCat
 pwsh ./repack-nuget.ps1
 
 # regenerate the per-package README.md files from templates
-pwsh ./build_rich_readmes.ps1
+pwsh ./zz_build_rich_readmes.ps1
 ```
 
 Coverage / API-surface guard scripts (also useful in CI):

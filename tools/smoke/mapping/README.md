@@ -30,7 +30,7 @@ under `%LOCALAPPDATA%\TransformationsSmoke\runs\`. Delete old run folders when y
    tracked files are modified. A dirty tree is recorded in the report, so a result is never mistaken for a clean
    commit.
 2. **Pack** `Transformations.Core` and `Transformations.Mapping` in Release into a fresh local feed.
-3. **Check the package.** The `.nupkg` must contain `lib/` for net8.0, net9.0 and net10.0, the source generator
+3. **Check the package.** The `.nupkg` must contain `lib/` for net8.0, net9.0, net10.0 and net11.0, the source generator
    under `analyzers/`, the `build/Transformations.Mapping.props` file, and `README.md`. The nuspec must have the
    right version and depend on `Transformations.Core` at the same version. The `.nupkg` SHA-256 is recorded.
 4. **Clear the NuGet cache** for that version (`transformations.mapping` and `transformations.core`). This matters:
@@ -107,7 +107,7 @@ diagnostic, add a case to `negative/Models.cs` and a pattern to the negative che
 ## Limits
 
 - It runs on Windows, using PowerShell 7 and the installed .NET SDK. Runtimes and targeting packs for the target
-  frameworks must be installed (currently 8.0, 9.0 and 10.0).
+  frameworks must be installed (currently 8.0, 9.0, 10.0 and 11.0).
 - EF Core and SQLite packages come from nuget.org, and the run needs network access on the first use.
 - It tests the working tree you pack. The report records whether that tree was modified, but the run does not
   check out the commit. Commit first if you want the report to describe a commit exactly.

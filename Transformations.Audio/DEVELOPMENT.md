@@ -5,7 +5,7 @@ Audio transformation helpers for .NET. The current focus is sample-rate conversi
 ## Build
 
 ```powershell
-dotnet build C:\Git\Transformations2\Transformations2\Transformations.Audio\Transformations.Audio.csproj
+dotnet build Transformations.Audio\Transformations.Audio.csproj
 ```
 
 The library currently targets `net8.0`, `net9.0`, `net10.0`, and `net11.0`.
@@ -15,7 +15,7 @@ The library currently targets `net8.0`, `net9.0`, `net10.0`, and `net11.0`.
 Run the repeatable fidelity suite:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1
+pwsh Transformations.Audio\run-fidelity.ps1
 ```
 
 The suite generates deterministic signals, resamples each signal to a target rate, resamples it back, and records:
@@ -29,10 +29,10 @@ The suite generates deterministic signals, resamples each signal to a target rat
 Generate all evidence artifact formats:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1 `
-  -Output C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report.md `
-  -JsonOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report.json `
-  -CsvOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report.csv
+pwsh Transformations.Audio\run-fidelity.ps1 `
+  -Output Transformations.Audio\fidelity-report.md `
+  -JsonOutput Transformations.Audio\fidelity-report.json `
+  -CsvOutput Transformations.Audio\fidelity-report.csv
 ```
 
 Default scenarios:
@@ -57,47 +57,47 @@ Default thresholds are deliberately modest. They are the first evidence gate, no
 Tighten them as the implementations improve:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1 -MinimumSnrDb 25 -MinimumPsnrDb 35 -MaximumMeanSquaredError 0.003
+pwsh Transformations.Audio\run-fidelity.ps1 -MinimumSnrDb 25 -MinimumPsnrDb 35 -MaximumMeanSquaredError 0.003
 ```
 
 Run only stable algorithms:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1 -StableOnly
+pwsh Transformations.Audio\run-fidelity.ps1 -StableOnly
 ```
 
 List versioned algorithm IDs:
 
 ```powershell
-dotnet run --project C:\Git\Transformations2\Transformations2\Transformations.Audio.Fidelity\Transformations.Audio.Fidelity.csproj --framework net10.0 -- --list-algorithms
+dotnet run --project Transformations.Audio.Fidelity\Transformations.Audio.Fidelity.csproj --framework net10.0 -- --list-algorithms
 ```
 
 Run a focused comparison:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1 -Algorithm sinc,wdl_sinc
+pwsh Transformations.Audio\run-fidelity.ps1 -Algorithm sinc,wdl_sinc
 ```
 
 Run the real-audio-like fixture suite:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1 `
+pwsh Transformations.Audio\run-fidelity.ps1 `
   -Suite RealLike `
-  -Output C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-real-like.md `
-  -JsonOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-real-like.json `
-  -CsvOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-real-like.csv
+  -Output Transformations.Audio\fidelity-report-real-like.md `
+  -JsonOutput Transformations.Audio\fidelity-report-real-like.json `
+  -CsvOutput Transformations.Audio\fidelity-report-real-like.csv
 ```
 
 Tune the `ratio_aware_sinc_hybrid` near-unity threshold:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1 `
+pwsh Transformations.Audio\run-fidelity.ps1 `
   -Suite All `
   -RatioThresholdSweep `
   -Threshold "0.50,0.60,0.667,0.75,0.80,0.875,0.90,0.95,1.00" `
-  -Output C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-ratio-threshold-sweep.md `
-  -JsonOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-ratio-threshold-sweep.json `
-  -CsvOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-ratio-threshold-sweep.csv
+  -Output Transformations.Audio\fidelity-report-ratio-threshold-sweep.md `
+  -JsonOutput Transformations.Audio\fidelity-report-ratio-threshold-sweep.json `
+  -CsvOutput Transformations.Audio\fidelity-report-ratio-threshold-sweep.csv
 ```
 
 Current extra A/B candidates mined from the reference stack:
@@ -287,11 +287,11 @@ ID went, later.
 Compare the current sinc family:
 
 ```powershell
-pwsh C:\Git\Transformations2\Transformations2\Transformations.Audio\run-fidelity.ps1 `
+pwsh Transformations.Audio\run-fidelity.ps1 `
   -Algorithm sinc,wdl_sinc,sinc_v2,sinc_v3,halfband_cascade,right_wing_sinc `
-  -Output C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-sinc-ab.md `
-  -JsonOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-sinc-ab.json `
-  -CsvOutput C:\Git\Transformations2\Transformations2\Transformations.Audio\fidelity-report-sinc-ab.csv
+  -Output Transformations.Audio\fidelity-report-sinc-ab.md `
+  -JsonOutput Transformations.Audio\fidelity-report-sinc-ab.json `
+  -CsvOutput Transformations.Audio\fidelity-report-sinc-ab.csv
 ```
 
 The process exits with code `0` when every measured algorithm/scenario pair passes and `1` otherwise.
@@ -401,7 +401,7 @@ That lets `sinc/v1` and `sinc_v24/v1` appear in the same Markdown/JSON/CSV repor
 Run the test project:
 
 ```powershell
-dotnet test C:\Git\Transformations2\Transformations2\Transformations.Audio.Tests\Transformations.Audio.Tests.csproj
+dotnet test Transformations.Audio.Tests\Transformations.Audio.Tests.csproj
 ```
 
 The tests currently verify the evidence harness itself: unique versioned algorithm IDs, algorithm filtering, deterministic metrics for repeated runs, and report formats that include identity fields.

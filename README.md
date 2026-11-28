@@ -25,28 +25,32 @@ Pick what you need:
 | Package | What you get | Dependencies |
 |---------|-------------|-------------|
 | **`Transformations`** | Everything — the all-in-one package | ASP.NET Core, SqlClient, Configuration |
-| **`Transformations.Core`** | Strings, collections, conversion, dates, files, diagnostics, batching, resilience | SqlClient only |
-| **`Transformations.Data`** | DataRow, DataReader, SQL parameters, CSV, DataTable conversion | Core |
+| **`Transformations.Core`** | Strings, collections, conversion, dates, files, diagnostics, batching, resilience | None |
+| **`Transformations.Data`** | DataRow, DataReader, SQL parameters, CSV, DataTable conversion | Core + SqlClient |
 | **`Transformations.Web`** | HTTP, session, cookies, query strings, configuration, SelectList helpers | Core + ASP.NET Core |
-| **`Transformations.Dapper`** | Resilient Dapper queries with transient SQL fault detection | Core + Dapper + SqlClient |
-| **`Transformations.EntityFramework`** | Resilient SaveChanges, ChangeTracker audit logging, IQueryable CSV export | Core + EF Core |
+| **`Transformations.Dapper`** | Resilient Dapper queries with transient SQL fault detection | Core + Sql + Dapper + SqlClient |
+| **`Transformations.EntityFramework`** | Resilient SaveChanges, ChangeTracker audit logging, IQueryable CSV export | Core + Sql + EF Core |
 | **`Transformations.Mapping`** | Zero-reflection compile-time object mapper with automatic type conversion | Core + Source Generator |
 | **`Transformations.Text`** | Multi-format text extraction and RAG chunking (PDF, DOCX, EPUB, RTF, and 15 more) | See package |
+| **`Transformations.Sql`** | SQL Server transient fault classification, shared by the data packages | SqlClient |
+| **`Transformations.Audio`** | Audio helpers: resampling, downmixing, level analysis, peak limiting | NAudio |
 
 **Core has zero ASP.NET Core dependency.** If you're building a console app, background service, or library — use Core and keep your dependency graph lean.
 
 ```xml
 <!-- All-in-one -->
-<PackageReference Include="Transformations" Version="3.1.0.0" />
+<PackageReference Include="Transformations" Version="3.2.0.0" />
 
 <!-- Or pick your slice -->
-<PackageReference Include="Transformations.Core" Version="3.1.0.0" />
-<PackageReference Include="Transformations.Data" Version="3.1.0.0" />
-<PackageReference Include="Transformations.Web" Version="3.1.0.0" />
-<PackageReference Include="Transformations.Dapper" Version="3.1.0.0" />
-<PackageReference Include="Transformations.EntityFramework" Version="3.1.0.0" />
-<PackageReference Include="Transformations.Mapping" Version="3.1.0.0" />
-<PackageReference Include="Transformations.Text" Version="3.1.0.0" />
+<PackageReference Include="Transformations.Core" Version="3.2.0.0" />
+<PackageReference Include="Transformations.Data" Version="3.2.0.0" />
+<PackageReference Include="Transformations.Web" Version="3.2.0.0" />
+<PackageReference Include="Transformations.Dapper" Version="3.2.0.0" />
+<PackageReference Include="Transformations.EntityFramework" Version="3.2.0.0" />
+<PackageReference Include="Transformations.Mapping" Version="3.2.0.0" />
+<PackageReference Include="Transformations.Text" Version="3.2.0.0" />
+<PackageReference Include="Transformations.Sql" Version="3.2.0.0" />
+<PackageReference Include="Transformations.Audio" Version="3.2.0.0" />
 ```
 
 ---
@@ -398,6 +402,13 @@ dotnet test
 ├── Transformations.Mapping.Tests/      # Mapper tests (verifies generated code)
 ├── Transformations.Analyzers.Tests/    # Analyzer tests
 │
+├── Transformations.Sql/                # SQL Server transient fault classification (SqlClient)
+│   └── SqlTransientFaultDetector.cs    # IsTransient: retry-safe SQL Server exceptions
+├── Transformations.Sql.Tests/          # Sql package tests
+├── Transformations.Audio/              # Audio helpers: resampling, downmixing, levels, limiting (NAudio)
+├── Transformations.Audio.Tests/        # Audio package tests
+├── Transformations.TextExtractor/      # Text extraction and RAG chunking (package Transformations.Text)
+│
 ├── COOKBOOK.md                           # Problem-first recipes
 ├── Batching.md                          # Performance deep dive
 ├── Sanitation.md                        # HTML sanitization deep dive
@@ -442,11 +453,11 @@ See [DEPRECATION_POLICY.md](DEPRECATION_POLICY.md) for full details.
 | Package | Version | Used By |
 |---------|---------|---------|
 | `Microsoft.AspNetCore.App` (FrameworkReference) | — | `Transformations`, `Transformations.Web` |
-| `Microsoft.Data.SqlClient` | 7.0.0 | `SqlHelper`, `DataReaderHelper`, `StringHelper.ParseConnectionString` |
-| `Microsoft.Extensions.Configuration` | 10.0.5 | `ConfigurationHelper` |
-| `Microsoft.Extensions.Configuration.Binder` | 10.0.5 | `ConfigurationHelper.GetValue<T>` |
-| `Dapper` | 2.1.72 | `Transformations.Dapper` |
-| `Microsoft.EntityFrameworkCore` | 9.0.7 | `Transformations.EntityFramework` |
+| `Microsoft.Data.SqlClient` | 7.1.1 | `SqlHelper`, `DataReaderHelper`, `StringHelper.ParseConnectionString` |
+| `Microsoft.Extensions.Configuration` | 10.0.13 | `ConfigurationHelper` |
+| `Microsoft.Extensions.Configuration.Binder` | 10.0.13 | `ConfigurationHelper.GetValue<T>` |
+| `Dapper` | 2.1.89 | `Transformations.Dapper` |
+| `Microsoft.EntityFrameworkCore` | 9.0.21 | `Transformations.EntityFramework` |
 
 **Transformations.Core** and **Transformations.Data** have **no ASP.NET Core dependency**.
 

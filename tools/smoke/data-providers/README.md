@@ -12,8 +12,8 @@ It is a release gate for you, not a CI job. Run it after changes to `Transformat
 pwsh ./tools/smoke/data-providers/Run-DataProvidersSmoke.ps1
 ```
 
-It packs Core, Dapper and EF from the working tree, clears their NuGet cache entries, and runs the consumer on net8.0 and
-net10.0. Each check starts from an empty table in a file database. The report is in `reports/`.
+It packs Core, Dapper and EF from the working tree, clears their NuGet cache entries, and runs the consumer on net8.0, net10.0 and
+net11.0. Each check starts from an empty table in a file database. The report is in `reports/`.
 
 ## Provider
 

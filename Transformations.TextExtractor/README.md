@@ -29,6 +29,7 @@ dotnet add package Transformations.Text
 
 ## Supported .NET Versions
 
+- .NET 11.0
 - .NET 10.0
 - .NET 9.0
 - .NET 8.0
@@ -177,7 +178,7 @@ and re-check documents when the library's rules improve (re-extract stored origi
 
 ### How the safety behaviour is validated
 
-On every test run (and in CI on Linux and Windows, .NET 8, 9 and 10):
+On every test run (and in CI on Linux and Windows, .NET 8, 9, 10 and 11):
 
 - **Labelled corpus** (`TextExtractorSafetyCorpusTests`): adversarial, known-gap and benign documents across formats;
   recall and false-positive rate are printed and enforced.
@@ -866,9 +867,9 @@ package reference.
 - `CodeExtractor` strips copyright `/* */` comments only from the leading file header, never from string literals or later code.
 - `WarningSink`/`FindingSink` never report a first attempt that failed and was retried with the detected format.
 - PDF invisible text is exempt as a scan's text layer only where it lies over an image.
-- `Transformations.Tests` runs on .NET 8, 9 and 10, and includes mutation fuzzing of every built-in format.
+- `Transformations.Tests` runs on .NET 8, 9, 10 and 11, and includes mutation fuzzing of every built-in format.
 - AI ingestion: `ExtractionOptions.ForAiIngestion()`, `SafetyPolicy.AiIngestion`, `ReviewAt`, `RejectAt`, `RetainHiddenText`, `ShareContainerBudget`, `SafetyVerdict` on results, `SafetyFinding.Category`/`Confidence`; detection of obfuscated (lookalike, fullwidth, letter-spaced, base64) and correlated instructions; tool-action, disclosure, role and concealment rules; hidden content from HTML `<style>` rules and `<template>`, DOCX styles and tracked deletions (which no longer leak into `Text`), PPTX hidden slides/shapes, XLSX hidden sheets/rows/columns. See [AI ingestion](#ai-ingestion).
-- Dependencies: HtmlAgilityPack 1.13.1, JsonSchema.Net 9.4.1, Markdig 1.4.2, Microsoft.Extensions.Logging.Abstractions 8.0.3, MimeKit 4.18.2, MSGReader 6.2.0, PdfPig 0.1.16, YamlDotNet 17.1.0.
+- Dependencies: CsvHelper 33.1.0, DocumentFormat.OpenXml 3.5.1, ExcelDataReader 3.9.0, HtmlAgilityPack 1.13.1, JsonSchema.Net 9.4.1, Markdig 1.4.2, Microsoft.Extensions.DependencyInjection.Abstractions 10.0.13, Microsoft.Extensions.Logging.Abstractions 10.0.13, MimeKit 4.18.2, MSGReader 6.2.0, PdfPig 0.1.16, TesseractOCR 5.5.2, YamlDotNet 17.1.0.
 
 **Safety limits and cancellation:**
 - `ExtractionOptions.CancellationToken` and `ExtractionOptions.Timeout`. The built-in extractors check the token while they work, so a cancelled parse stops. `GetTextBatchAsync` and the async methods pass their `cancellationToken` through to the parser as well.

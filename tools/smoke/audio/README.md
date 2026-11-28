@@ -14,7 +14,7 @@ pwsh ./tools/smoke/audio/Run-AudioSmoke.ps1
 ```
 
 It packs `Transformations.Audio` from the working tree, checks the package for the licence file, the framework targets and
-the NAudio dependency, clears its NuGet cache entries, and runs the consumer on net8.0 and net10.0.
+the NAudio dependency, clears its NuGet cache entries, and runs the consumer on net8.0, net10.0 and net11.0.
 
 ## What the checks cover
 

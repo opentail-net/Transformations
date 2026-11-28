@@ -113,7 +113,7 @@ finally {
 }
 
 $packageChecks = @(
-    New-Check 'package contains lib/net8.0 and lib/net10.0' (($entryNames -contains 'lib/net8.0/Transformations.Text.dll') -and ($entryNames -contains 'lib/net10.0/Transformations.Text.dll'))
+    New-Check 'package contains lib/net8.0, lib/net10.0 and lib/net11.0' (($entryNames -contains 'lib/net8.0/Transformations.Text.dll') -and ($entryNames -contains 'lib/net10.0/Transformations.Text.dll') -and ($entryNames -contains 'lib/net11.0/Transformations.Text.dll'))
     New-Check 'nuspec depends on TesseractOCR (native binaries come through it)' ($nuspec -match 'dependency id="TesseractOCR"')
 )
 $textSha512 = [Convert]::ToBase64String([Security.Cryptography.SHA512]::HashData([IO.File]::ReadAllBytes($textPackage)))

@@ -96,7 +96,7 @@ finally {
     $zip.Dispose()
 }
 
-foreach ($tfm in 'net8.0', 'net9.0', 'net10.0') {
+foreach ($tfm in 'net8.0', 'net9.0', 'net10.0', 'net11.0') {
     $entry = "lib/$tfm/Transformations.Text.dll"
     $packageChecks += New-Check "package contains $entry" ($entryNames -contains $entry)
 }

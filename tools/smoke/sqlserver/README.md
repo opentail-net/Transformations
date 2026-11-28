@@ -17,7 +17,7 @@ pwsh ./tools/smoke/sqlserver/Run-SqlServerSmoke.ps1
 ```
 
 It packs Core, Sql, Data, Dapper and EF from the working tree, clears their NuGet cache entries, and runs the consumer on
-net8.0 and net10.0. The report is in `reports/`.
+net8.0, net10.0 and net11.0. The report is in `reports/`.
 
 Requirements: SQL Server LocalDB (the `SqlLocalDB.exe` tool and the `MSSQLLocalDB` instance). The runner starts the instance if
 it is stopped. Pass `-Server` to use another server, for example `-Server 'localhost\SQLEXPRESS'`. The consumer creates one

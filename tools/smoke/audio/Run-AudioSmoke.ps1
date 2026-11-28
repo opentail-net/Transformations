@@ -74,7 +74,7 @@ finally {
 }
 
 $packageChecks = @(
-    [pscustomobject]@{ Name = 'package contains lib/net8.0 and lib/net10.0'; Passed = (($entryNames -contains 'lib/net8.0/Transformations.Audio.dll') -and ($entryNames -contains 'lib/net10.0/Transformations.Audio.dll')); Detail = '' }
+    [pscustomobject]@{ Name = 'package contains lib/net8.0, lib/net10.0 and lib/net11.0'; Passed = (($entryNames -contains 'lib/net8.0/Transformations.Audio.dll') -and ($entryNames -contains 'lib/net10.0/Transformations.Audio.dll') -and ($entryNames -contains 'lib/net11.0/Transformations.Audio.dll')); Detail = '' }
     [pscustomobject]@{ Name = 'package contains LICENSE.md at its root'; Passed = ($entryNames -contains 'LICENSE.md'); Detail = '' }
     [pscustomobject]@{ Name = 'nuspec depends on NAudio'; Passed = ($nuspec -match 'dependency id="NAudio"'); Detail = '' }
 )
